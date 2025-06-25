@@ -1,1 +1,5 @@
 # videotargets
+
+## camera
+## projector
+## game
