@@ -2,6 +2,7 @@ use bevy::prelude::*;
 //use bevy::render::mesh::PrimitiveTopology;
 use bevy::window::PrimaryWindow;
 use crate::plugins::config::ConfigState;
+use crate::util::scale::ScaleCalculations;
 //use crate::plugins::cursor::CursorSystemSet;
 //use bevy::render::render_asset::RenderAssetUsages;
 //use bevy::color::palettes::css::GREY;
@@ -21,7 +22,7 @@ impl Plugin for InstructionsPlugin {
         app
         .add_systems(Startup,setup_instructions)
         //.add_systems(FixedUpdate, update_instructions.after(CursorSystemSet));
-        .add_systems(FixedUpdate, update_instructions);
+        .add_systems(Update, update_instructions);
     }
 }
 
@@ -85,66 +86,59 @@ fn update_instructions(
 
             if config.as_mut().instructions_visible{
                 
-                let fps = 1.0 / time.delta_secs();
-                let cursor_pos = window.cursor_position().unwrap_or(Vec2::ZERO);
-                let world_pos = camera
-                    .viewport_to_world_2d(camera_transform, cursor_pos)
-                    .unwrap_or(Vec2::ZERO);
-            
+                if let Some(viewport) = &camera.viewport {
 
-                let window_size = window. resolution. physical_size(); 
+                    let cursor_pos = window.cursor_position().unwrap_or(Vec2::ZERO); 
+                    if let Ok(ray) = camera.viewport_to_world(camera_transform, cursor_pos)  {
                 
-                let window_logcial_x= window_size.x as f32 / window.scale_factor();
-                
-                let window_logical_y = window_size.y as f32 / window.scale_factor();
-                
-                let scale_factor = window.scale_factor();
-                
+                        let fps = 1.0 / time.delta_secs();
 
-                let viewport_pos = if let Some(viewport) = &camera.viewport {
-                    viewport.physical_position.as_vec2()
-                } else {
-                    Vec2::ZERO
-                };
+                        let calc = ScaleCalculations::new(
+                window.physical_size(),
+                             config.termocamera_size, 
+                             window.scale_factor()
+                        ); 
 
-                let viewport_pos_x = viewport_pos.x / scale_factor;
-                let viewport_pos_y = viewport_pos.y / scale_factor;
-                
-                let viewport_relative_pos_x = cursor_pos.x - viewport_pos_x;
-                let viewport_relative_pos_y = cursor_pos.y - viewport_pos_y;
-            
-                let viewport_size = if let Some(viewport) = &camera.viewport {
-                    viewport.physical_size.as_vec2()
-                } else {
-                    window_size.as_vec2()
-                };
+                        let vp_pos = calc.get_viewport_cursor_coordinates(cursor_pos);
 
-                let viewport_x = viewport_relative_pos_x * scale_factor;
-                let viewport_y = viewport_relative_pos_y * scale_factor;
+                        let window_txt =  format!("Window size: {}x{} scale factor {}\n", window.physical_size().x ,window.physical_size().y, window.scale_factor());
+                        let window_scaled_txt =  format!("Window scaled size: {}x{}\n", calc.get_window_scaled_size().x ,calc.get_window_scaled_size().y);
+                        let mouse_txt =  format!("Window cursor position: x:{:.2} y{:.2}\n", cursor_pos.x ,cursor_pos.y);
+                        let world_txt =  format!("World pos: x:{:.2} y{:.2} z{:.2}\n", ray.origin.x ,ray.origin.y,ray.origin.z);
+                        let termocam_size =  format!("Termo camera size: {}x{}\n", config.termocamera_size.x ,config.termocamera_size.y);
+                        
+                        let viewport_size =  format!("Viewport size: {}x{}\n", calc.get_viewport_size().x ,calc.get_viewport_size().y);
+                        let viewport_scaled_size =  format!("Viewport scaled_size: {}x{}\n", calc.get_viewport_scaled_size().x ,calc.get_viewport_scaled_size());
+                        let viewport_pos =  format!("Viewport position: {}x{}\n", calc.get_viewport_position().x ,calc.get_viewport_position().y); 
+                        let viewport_scaled_pos =  format!("Viewport scaled pos: {}x{}\n", calc.get_viewport_scaled_position().x ,calc.get_viewport_scaled_position());              
+                        let viewport_cursor_position =  format!("Viewport cursor position: x:{:.2} y{:.2}\n", calc.get_viewport_cursor_coordinates(cursor_pos).x ,calc.get_viewport_cursor_coordinates(cursor_pos).y);
 
+                        let viewport_to_world_txt =  format!("Viewport position to window position: x:{:.2} y{:.2}\n", calc.translate_viewport_coordinates_to_window_coordinates(vp_pos).x, calc.translate_viewport_coordinates_to_window_coordinates(vp_pos).y);
 
-                let window_txt =  format!("Window size: {}x{} scale factor {}\n", window_size.x ,window_size.y, window.scale_factor());
-                let window_logical_txt =  format!("Window logical size: {}x{} {}\n", window_logcial_x ,window_logical_y, window.scale_factor());
-                let viewport_txt =  format!("Viewport size: {}x{}\n", viewport_size.x ,viewport_size.y);
-                let viewport_pos =  format!("Viewport pos: {}x{}\n", viewport_pos_x ,viewport_pos_y);
-                let mouse_txt =  format!("Window Mouse Position: x:{:.2} y{:.2}\n", cursor_pos.x ,cursor_pos.y);
-                let vp_txt =  format!("Viewport Mouse Position: x:{:.2} y{:.2}\n", viewport_x ,viewport_y);
-                let world_txt =  format!("World Position: x:{:.2} y{:.2}\n", world_pos.x ,world_pos.y);
-                let fps_txt =  format!("FPS: {:.2} \n", fps);
+                        let fps_txt =  format!("FPS: {:.2} \n", fps);
  
-                for mut text in text.iter_mut() {
-                    text.clear();
-                    text.push_str(INSTRUCTION_TEXT );  
-                    text.push_str(&fps_txt);  
-                    text.push_str(&window_txt); 
-                    text.push_str(&window_logical_txt); 
-                    text.push_str(&viewport_txt); 
-                    text.push_str(&viewport_pos);  
-                    text.push_str(&mouse_txt);  
-                    text.push_str(&vp_txt);  
-                    text.push_str(&world_txt);  
+                        for mut text in text.iter_mut() {
+                            text.clear();
+                            text.push_str(INSTRUCTION_TEXT );  
+                          
+                            text.push_str(&window_txt);
+                            text.push_str(&termocam_size);
+                            text.push_str(&viewport_size);
+                            // text.push_str(&window_scaled_txt); 
+                            text.push_str(&mouse_txt);
+                             
+                            // text.push_str(&viewport_scaled_size);
+                            //  text.push_str(&viewport_pos); 
+                            //  text.push_str(&viewport_scaled_pos);  
+                            text.push_str(&viewport_cursor_position);  
+                            text.push_str(&world_txt);  
+                            //  text.push_str(&viewport_to_world_txt);  
+                            text.push_str(&fps_txt);  
+                        }
+                
+                    }    
 
-                }
+                } 
 
             }
 
@@ -158,18 +152,9 @@ fn update_instructions(
                 };
             }
 
-            //for mut transform in query.iter_mut() {
-            //    transform.translation = Vec3::new(config.world_position.x, config.world_position.y, 1.5);
-            //}
-
-
-
             if keyboard.just_pressed(KeyCode::Space) {
                 config.as_mut().instructions_visible = !config.instructions_visible;
             }
-
-
-
 
         }
 

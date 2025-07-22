@@ -1,9 +1,9 @@
 use bevy::prelude::*;
 use bevy::render::camera::Viewport;
-use bevy::color::palettes::css::FOREST_GREEN;
+//use bevy::color::palettes::css::FOREST_GREEN;
 use bevy::window::WindowResized;
 use crate::plugins::config::ConfigState;
-
+use crate::util::scale::ScaleCalculations;
 
 pub struct CameraPlugin;
 
@@ -18,20 +18,35 @@ impl Plugin for CameraPlugin {
 
 fn setup_camera(mut commands: Commands,window: Single<&Window>, config: ResMut<ConfigState>) {
     
-    //let window_size = window.resolution.physical_size().as_vec2();
-    
+    let calc = ScaleCalculations::new(
+        window.physical_size(),
+        config.termocamera_size,
+        window.scale_factor()
+    ); 
+
     commands.spawn((
-        Camera2d,        
+        Camera3d::default(),       
         Camera {
-          // clear_color: ClearColorConfig::Custom(Color::srgba(10.0, 10.0, 10.0, 1.)), 
-            clear_color: ClearColorConfig::Custom(Color::from(FOREST_GREEN).with_alpha(0.5)), 
+            order: 1,
             viewport: Some(Viewport {
-                physical_position: UVec2::new(100,100),
-                physical_size: config.termocam_size,
+                physical_position: calc.get_viewport_position(),
+                physical_size: calc.get_viewport_size(),
                 ..default()
             }),
             ..default()
-        }));
+        },
+        Projection::from(PerspectiveProjection {
+           fov: std::f32::consts::PI / 3.5,
+           near: 0.1, 
+           far: 1000.0,    
+            ..default()
+        }),
+        Transform::from_translation(config.termocamera_origin)
+            .looking_at(config.termocamera_looking_at, Vec3::Y),
+    ));
+
+
+
 }
 
 fn update_camera(
@@ -63,32 +78,19 @@ fn on_window_resize(
       
             if let Some(viewport) = camera.0.viewport.as_mut() {
 
-                let window_physical_size = window.physical_size();
-            //    let scale_factor = window.scale_factor();
-            //    let physical_viewport_size = ( config.termocam_size * scale_factor as f32).as_uvec2();
-               
-            // let window_size = window.resolution.physical_size().as_vec2();
-                
-                viewport.physical_size = config.termocam_size;
-
-                let window_center_x = window_physical_size.x / 2;
-                let window_center_y = window_physical_size.y / 2;
-
-                let viewport_center_x = viewport.physical_size.x / 2;
-                let viewport_center_y = viewport.physical_size.y / 2;
-
-                let physical_position = UVec2::new(
-                    window_center_x.saturating_sub(viewport_center_x),
-                    window_center_y.saturating_sub(viewport_center_y),
-                );
-
-                viewport.physical_position = physical_position;
+                let calc = ScaleCalculations::new(
+                    window.physical_size(),
+                    config.termocamera_size,
+                    window.scale_factor()
+                ); 
+             
+                viewport.physical_position = calc.get_viewport_position();
+                viewport.physical_size = calc.get_viewport_size();
 
             }
-
-
 
         };
 
     }
 }
+
