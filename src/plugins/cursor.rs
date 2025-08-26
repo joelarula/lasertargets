@@ -1,9 +1,6 @@
 use bevy::prelude::*;
 use bevy::color::palettes::css::SILVER;
 
-//#[derive(SystemSet, Debug, Hash, PartialEq, Eq, Clone)]
-//pub struct CursorSystemSet;
-
 pub struct CursorPlugin;
 
 impl Plugin for CursorPlugin {

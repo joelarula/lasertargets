@@ -2,29 +2,39 @@ use bevy::prelude::*;
 use bevy::render::camera::Viewport;
 //use bevy::color::palettes::css::FOREST_GREEN;
 use bevy::window::WindowResized;
-use crate::plugins::config::ConfigState;
+use crate::plugins::scene::{SceneTag, SceneSystemSet};
+use crate::plugins::config::{ConfigState, DisplayMode};
 use crate::util::scale::ScaleCalculations;
-
+use bevy::render::camera::ScalingMode;
 pub struct CameraPlugin;
+
+#[derive(Component)]
+pub struct CameraTag;
 
 impl Plugin for CameraPlugin {
     fn build(&self, app: &mut App) {
         app
         .add_systems(Startup, setup_camera)
-        .add_systems(FixedUpdate, update_camera)
-        .add_systems(Update, on_window_resize);
+        .add_systems(Update, update_camera.after(SceneSystemSet));
     }
 }
 
-fn setup_camera(mut commands: Commands,window: Single<&Window>, config: ResMut<ConfigState>) {
+
+fn setup_camera(mut commands: Commands, window: Single<&Window>, config: Res<ConfigState>) {
     
     let calc = ScaleCalculations::new(
         window.physical_size(),
         config.termocamera_size,
         window.scale_factor()
     ); 
+  
+    commands.spawn((
+        DirectionalLight::default(),
+        Transform::from_translation(Vec3::ONE).looking_at(Vec3::ZERO, Vec3::Y),
+    ));
 
     commands.spawn((
+        CameraTag,
         Camera3d::default(),       
         Camera {
             order: 1,
@@ -35,48 +45,32 @@ fn setup_camera(mut commands: Commands,window: Single<&Window>, config: ResMut<C
             }),
             ..default()
         },
-        Projection::from(PerspectiveProjection {
-           fov: std::f32::consts::PI / 3.5,
-           near: 0.1, 
-           far: 1000.0,    
-            ..default()
-        }),
+        get_projection(config.display_mode, config.scene_width, calc.get_scene_height(config.scene_width)),
         Transform::from_translation(config.termocamera_origin)
             .looking_at(config.termocamera_looking_at, Vec3::Y),
     ));
 
-
-
 }
 
 fn update_camera(
-     mut camera_query: Query<(&mut Camera, &mut Transform, &mut Projection)>, 
-     window: Single<&Window>,) {
+    mut resize_events: EventReader<WindowResized>,
+    mut camera_query: Query<(&mut Camera, &mut Projection, &mut Transform), With<CameraTag>>,
+    scene_query: Query<&GlobalTransform, With<SceneTag>>,
+    window: Single<&Window>, 
+    mut config: ResMut<ConfigState>,
+    keyboard: Res<ButtonInput<KeyCode>>
+) {
+    if let Ok((mut camera, mut projection, mut transform)) = camera_query.single_mut() {
+    
+        configure_camera(&mut config, &keyboard);
 
-    if let Ok(mut camera) = camera_query.single_mut()  {
-      
-        if let Some(viewport) = camera.0.viewport.as_mut() {
-
-            //let window_size = window.resolution.physical_size().as_vec2();
-         //   viewport.physical_position = UVec2::new(100,100);
-          //  viewport.physical_size = UVec2::new(800,600);
-
+        if let Ok(scene_transform) = scene_query.single() {
+            transform.look_at(scene_transform.translation(), Vec3::Y);
         }
 
-    };
-
-}
-
-fn on_window_resize( 
-    mut resize_events: EventReader<WindowResized>,
-    window: Single<&Window>, 
-    config: ResMut<ConfigState>,
-    mut camera_query: Query<(&mut Camera, &mut Transform, &mut Projection)>) {
-    for _event in resize_events.read() {
-
-        if let Ok(mut camera) = camera_query.single_mut()  {
-      
-            if let Some(viewport) = camera.0.viewport.as_mut() {
+        for _event in resize_events.read() {
+  
+            if let Some(viewport) = camera.viewport.as_mut() {
 
                 let calc = ScaleCalculations::new(
                     window.physical_size(),
@@ -88,9 +82,48 @@ fn on_window_resize(
                 viewport.physical_size = calc.get_viewport_size();
 
             }
+        }
 
-        };
+        if config.is_changed() {
+    
+            let calc = ScaleCalculations::new(
+                window.physical_size(),
+                config.termocamera_size,
+                window.scale_factor()
+            ); 
+  
 
+            *projection = get_projection(config.display_mode,config.scene_width, calc.get_scene_height(config.scene_width));
+        }
+    }
+
+}
+
+
+fn get_projection(display_mode: DisplayMode,w:f32, h:f32) -> Projection {
+    match display_mode {
+        
+        DisplayMode::Mode2D => Projection::from(OrthographicProjection {
+            scaling_mode: ScalingMode::Fixed { width: w, height: h },
+            ..OrthographicProjection::default_2d()
+        }),
+        
+        DisplayMode::Mode3D => Projection::from(PerspectiveProjection {
+            fov: std::f32::consts::PI / 4.0,
+            near: 0.1,
+            far: 1000.0,
+            ..default()
+        }),
     }
 }
 
+fn configure_camera(config: &mut ConfigState, keyboard: &Res<ButtonInput<KeyCode>>){
+
+    if keyboard.just_pressed(KeyCode::F2) {
+        if config.display_mode == DisplayMode::Mode2D {
+            config.display_mode = DisplayMode::Mode3D;
+        } else {
+            config.display_mode = DisplayMode::Mode2D;
+        }    
+    }
+}
