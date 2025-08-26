@@ -1,5 +1,2 @@
-# videotargets
+# laser targets
 
-## camera
-## projector
-## game
