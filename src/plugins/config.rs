@@ -1,5 +1,18 @@
 use bevy::prelude::*;
 
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, States, Default)]
+pub enum AppState {
+    #[default]
+    Calibration,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, States, Default)]
+pub enum DisplayMode{
+    #[default]
+    Mode2D,
+    Mode3D
+}
+
 /// Stores global configuration state for the application.
 #[derive(Resource, Default)]
 pub struct ConfigState {
@@ -15,6 +28,10 @@ pub struct ConfigState {
     pub termocamera_origin: Vec3,
     /// Defines the position where the thermal camera is looking at in world unit.
     pub termocamera_looking_at: Vec3,
+    /// Defines the width of the scene in meters.
+    pub scene_width: f32,
+    /// Defines the display mode of the application (2D or 3D).
+    pub display_mode: DisplayMode,
 }
 pub struct ConfigPlugin;
 
@@ -27,5 +44,7 @@ impl Plugin for ConfigPlugin {
             termocamera_origin: Vec3::new(0., 1.5,5.),
             termocamera_looking_at: Vec3::new(0., 1.5, 0.),
             termocamera_size: UVec2::new(256, 192),
+            scene_width: 10.,
+            display_mode: DisplayMode::Mode2D,
         });
 }} 
