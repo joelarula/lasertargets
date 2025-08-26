@@ -41,6 +41,10 @@ fn setup_instructions(
         InstructionText,
         Name::new("Instructions"),
         Text::new(""), 
+        TextFont {
+            font_size: 10.0,
+            ..default()
+        },
         Node {
             position_type: PositionType::Absolute,
             top: Val::Px(12.0),
