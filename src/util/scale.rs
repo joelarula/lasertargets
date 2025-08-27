@@ -87,4 +87,12 @@ impl ScaleCalculations {
         let aspect_ratio = self.termocamera_size.y as f32 / self.termocamera_size.x as f32;
         scene_width * aspect_ratio
    }
+
+
+   pub fn get_world_units_per_camera_input_pixel(&self) -> f32 {
+      let hscale = self.window_size.x as f32 / self.termocamera_size.x as f32;
+      let vscale = self.window_size.y as f32 / self.termocamera_size.y as f32;
+      let scale = hscale.min(vscale);
+      scale / self.scale_factor
+   }
 }

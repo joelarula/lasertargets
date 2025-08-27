@@ -23,7 +23,7 @@ pub struct ConfigState {
     // Defines the distance of a target detection plane in modeled physical world in meters.
     pub target_projection_distance: f32,
     /// Defines the size of the thermal camera viewport in pixels.
-    pub termocamera_size: UVec2,
+    pub camera_input_size: UVec2,
     /// Defines the orign of the thermal camera viewport in world unit.
     pub termocamera_origin: Vec3,
     /// Defines the position where the thermal camera is looking at in world unit.
@@ -43,7 +43,7 @@ impl Plugin for ConfigPlugin {
             target_projection_distance: 25., 
             termocamera_origin: Vec3::new(0., 1.5,5.),
             termocamera_looking_at: Vec3::new(0., 1.5, 0.),
-            termocamera_size: UVec2::new(256, 192),
+            camera_input_size: UVec2::new(256, 192),
             scene_width: 10.,
             display_mode: DisplayMode::Mode2D,
         });
