@@ -1,12 +1,16 @@
 use bevy::prelude::*;
 use bevy::render::camera::Viewport;
-//use bevy::color::palettes::css::FOREST_GREEN;
 use bevy::window::WindowResized;
-use crate::plugins::scene::{SceneTag, SceneSystemSet};
+use crate::plugins::instructions::InstructionState;
+use crate::plugins::scene::{SceneData, SceneSystemSet, SceneTag};
 use crate::plugins::config::{ConfigState, DisplayMode};
-use crate::util::scale::ScaleCalculations;
 use bevy::render::camera::ScalingMode;
 pub struct CameraPlugin;
+
+const INSTRUCTION_F2: &str = "Press [F2] to toggle between 2d and 3d display mode";
+
+#[derive(SystemSet, Debug, Hash, PartialEq, Eq, Clone)]
+pub struct CameraSystemSet;
 
 #[derive(Component)]
 pub struct CameraTag;
@@ -14,89 +18,77 @@ pub struct CameraTag;
 impl Plugin for CameraPlugin {
     fn build(&self, app: &mut App) {
         app
-        .add_systems(Startup, setup_camera)
-        .add_systems(Update, update_camera.after(SceneSystemSet));
+        .add_systems(Startup, setup_camera.in_set(CameraSystemSet).after(SceneSystemSet))
+        .add_systems(Update, update_camera.in_set(CameraSystemSet).after(SceneSystemSet));
     }
 }
 
 
-fn setup_camera(mut commands: Commands, window: Single<&Window>, config: Res<ConfigState>) {
+fn setup_camera(
+    mut commands: Commands, 
+    mut instruction_state: ResMut<InstructionState>,
+    scene_query: Query<(&SceneData), With<SceneTag>>,
+    config: Res<ConfigState>) {
     
-    let calc = ScaleCalculations::new(
-        window.physical_size(),
-        config.termocamera_size,
-        window.scale_factor()
-    ); 
-  
-    commands.spawn((
-        DirectionalLight::default(),
-        Transform::from_translation(Vec3::ONE).looking_at(Vec3::ZERO, Vec3::Y),
-    ));
+     instruction_state.instructions.push(INSTRUCTION_F2.to_string());
 
-    commands.spawn((
-        CameraTag,
-        Camera3d::default(),       
-        Camera {
-            order: 1,
-            viewport: Some(Viewport {
-                physical_position: calc.get_viewport_position(),
-                physical_size: calc.get_viewport_size(),
+     for (scene_data) in scene_query.iter() {
+
+        commands.spawn((
+            DirectionalLight::default(),
+            Transform::from_translation(Vec3::ONE).looking_at(Vec3::ZERO, Vec3::Y),
+        ));
+
+        commands.spawn((
+            CameraTag,
+            Camera3d::default(),       
+            Camera {
+                order: 1,
+                viewport: Some(Viewport {
+                physical_position: scene_data.get_viewport_position(),
+                physical_size: scene_data.get_viewport_size(),
                 ..default()
             }),
             ..default()
         },
-        get_projection(config.display_mode, config.scene_width, calc.get_scene_height(config.scene_width)),
+        get_projection(config.display_mode, scene_data.dimensions.x, scene_data.dimensions.y),
         Transform::from_translation(config.termocamera_origin)
             .looking_at(config.termocamera_looking_at, Vec3::Y),
-    ));
+        ));
+    }
 
 }
 
 fn update_camera(
     mut resize_events: EventReader<WindowResized>,
     mut camera_query: Query<(&mut Camera, &mut Projection, &mut Transform), With<CameraTag>>,
-    scene_query: Query<&GlobalTransform, With<SceneTag>>,
-    window: Single<&Window>, 
+    scene_query: Query<(&GlobalTransform, &SceneData), With<SceneTag>>,
     mut config: ResMut<ConfigState>,
     keyboard: Res<ButtonInput<KeyCode>>
 ) {
     if let Ok((mut camera, mut projection, mut transform)) = camera_query.single_mut() {
-    
+      for (scene_transform,scene_data) in scene_query.iter() {
+
         configure_camera(&mut config, &keyboard);
-
-        if let Ok(scene_transform) = scene_query.single() {
-            transform.look_at(scene_transform.translation(), Vec3::Y);
-        }
-
+        transform.look_at(scene_transform.translation(), Vec3::Y);
+      
         for _event in resize_events.read() {
   
             if let Some(viewport) = camera.viewport.as_mut() {
 
-                let calc = ScaleCalculations::new(
-                    window.physical_size(),
-                    config.termocamera_size,
-                    window.scale_factor()
-                ); 
-             
-                viewport.physical_position = calc.get_viewport_position();
-                viewport.physical_size = calc.get_viewport_size();
+                viewport.physical_position = scene_data.get_viewport_position();
+                viewport.physical_size = scene_data.get_viewport_size();
 
             }
         }
 
-        if config.is_changed() {
-    
-            let calc = ScaleCalculations::new(
-                window.physical_size(),
-                config.termocamera_size,
-                window.scale_factor()
-            ); 
-  
-
-            *projection = get_projection(config.display_mode,config.scene_width, calc.get_scene_height(config.scene_width));
+        if config.is_changed() { 
+            *projection = get_projection(config.display_mode,scene_data.dimensions.x, scene_data.dimensions.y);
         }
+         
+      }
+       
     }
-
 }
 
 
