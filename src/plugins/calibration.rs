@@ -1,5 +1,6 @@
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
+use crate::plugins::camera::CameraSystemSet;
 use crate::plugins::config::ConfigState;
 use crate::plugins::scene::SceneData;
 use crate::plugins::scene::SceneSystemSet;
@@ -7,156 +8,43 @@ use crate::plugins::scene::SceneTag;
 use std::f32::consts::PI;
 use bevy::color::palettes::css::DARK_GREY;
 use bevy::color::palettes::css::SILVER;
-use bevy::color::palettes::css::LIGHT_GREY;
+//use bevy::color::palettes::css::LIGHT_GREY;
 use bevy::color::palettes::css::GREEN;
 use bevy::color::palettes::css::RED;
 use bevy::color::palettes::css::BLUE;
 use bevy::color::palettes::css::YELLOW;
 
-use crate::util::scale::ScaleCalculations;
-
-pub struct CalibrationPlugin;
-
 #[derive(SystemSet, Debug, Hash, PartialEq, Eq, Clone)]
 pub struct CalibrationSystemSet;
 
+pub struct CalibrationPlugin;
 
-#[derive(Component)]
-pub struct Billboard;
 
 impl Plugin for CalibrationPlugin {
     fn build(&self, app: &mut App) {
         app
-        .add_systems(Startup, setup_grid)
-        .add_systems(Update, update_grid.in_set(CalibrationSystemSet))
-        .add_systems(Update, draw_axes)
-        .add_systems(Update, draw_billboard_gizmos.after(SceneSystemSet));
+        .add_systems(Startup, setup_grid.in_set(CalibrationSystemSet).after(CameraSystemSet))
+        .add_systems(Update, update_grid.in_set(CalibrationSystemSet).after(CameraSystemSet))
+        .add_systems(Update, draw_axes.in_set(CalibrationSystemSet).after(CameraSystemSet))
+        .add_systems(Update, draw_billboard_gizmos.in_set(CalibrationSystemSet).after(CameraSystemSet));
     }
 }
 
-fn setup_grid(  
-
-    //window: Query<&Window, With<PrimaryWindow>> ,
-    mut commands: Commands,
-    //mut meshes: ResMut<Assets<Mesh>>,
-    config: Res<ConfigState>,
-    //mut materials: ResMut<Assets<StandardMaterial>>,
-    ) {
-
-
-       // if let Ok(window) = window.single()  {
-       //     
-       //     let calc = ScaleCalculations::new(
-      //          window.physical_size(),config.termocamera_size,window.scale_factor()
-      //      ); 
-      //
-      //      commands.spawn((
-      //              Mesh3d(meshes.add(Plane3d::default().mesh().size(config.scene_width,calc.get_scene_height(config.scene_width) ))),
-      //              MeshMaterial3d(materials.add(
-      //       StandardMaterial{
-      //                  base_color: Color::from(LIGHT_GREY).with_alpha(1.),
-      //                  alpha_mode: AlphaMode::Blend,
-      //                  ..default()
-      //          })),
-      //          
-      //          Transform::from_xyz(0.0, 0.0, 0.)     
-      //              .with_rotation(Quat::from_rotation_x(std::f32::consts::FRAC_PI_2)),Screen,
-      //      ));
-      //
-      //  }
-
-
-
-   // commands.spawn((
-  //      Mesh3d(meshes.add(Plane3d::default().mesh().size( config.scene_width as f32,config.target_projection_distance))),
-   //     MeshMaterial3d(materials.add(
-   //         StandardMaterial{
-   //             base_color: Color::from(DARK_GREY).with_alpha(0.1),
-   //             alpha_mode: AlphaMode::Blend,
-   //             ..default()
-   //     })),
-   //     Ground,
-   // ));
-
-    commands.spawn((
-        Billboard,
-        // Position the billboard in front of the camera
-        Transform::from_xyz(0.0, 2.5, -config.target_projection_distance),
-        GlobalTransform::default(),
-        Name::new("Billboard"),
-    ));
-
+fn setup_grid(   mut commands: Commands,config: Res<ConfigState>,) {
 
 }
 
-fn update_grid(  
-  //  window: Query<&Window>, 
-    mut gizmos: Gizmos, 
-    //ground: Single<&GlobalTransform, With<Ground>>,
-    mut billboard_query: Query<&mut Transform, With<Billboard>>,
-   // camera: Query<(&Camera, &GlobalTransform), With<Camera>>,
-    config: Res<ConfigState>,
-    //keyboard: Res<ButtonInput<KeyCode>>
-) {
-
-
-    
-
-    //for mut transform in billboard_query.iter_mut() {
-    //    transform.translation.z = -config.target_projection_distance;
-    //}
+fn update_grid(mut gizmos: Gizmos, config: Res<ConfigState>,) {
 
     gizmos.grid(
         Quat::from_rotation_x(PI / 2.),
         UVec2::new((config.scene_width * 4.) as u32, (config.target_projection_distance * 4.) as u32),
         Vec2::new(config.grid_spacing, config.grid_spacing),
-        LIGHT_GREY
+        DARK_GREY
     );
 
-//    if let Ok(window) = window.single()  {
-//
-//            if let Ok((camera, camera_transform)) = camera.single()  {
-//
-//                let cursor_pos = window.cursor_position().unwrap_or(Vec2::ZERO);
-//                if let Ok(ray) = camera.viewport_to_world(camera_transform, cursor_pos)  {
-//
-//                    if let Some(distance) = ray.intersect_plane(ground.translation(), InfinitePlane3d::new(ground.up())){
-//                        
-//                        let point = ray.get_point(distance);
-//                        gizmos.circle(
-//                            Isometry3d::new(
-//                                point + ground.up() * 0.01,
-//                                Quat::from_rotation_arc(Vec3::Z, ground.up().as_vec3()),
-//                            ),
-//                            0.2,
-//                            Color::from(SILVER),
-//                        );
-//
-    //               }
-    //            }
-    //        }
-    //    }
 
-
-    }
-
-
- //   let Ok(window) = window.single() else {
- //       return;
- //   };
-
- //   let window_size = window.resolution.physical_size(); 
- //  let x_cells = (window_size.x as f32 / config.grid_spacing ).round() as u32;
- //   let y_cells = (window_size.y as f32 / config.grid_spacing ).round() as u32;
-
-   // gizmos
-   //     .grid_2d(
-   //         Isometry2d::IDENTITY,
-   //         UVec2::new( x_cells, y_cells),
-   //         Vec2::new(config.grid_spacing , config.grid_spacing),
-   //         LIGHT_GRAY,
-   //     )
-   //     .outer_edges();
+}
 
 
 fn draw_axes(mut gizmos: Gizmos) {
@@ -177,7 +65,6 @@ fn draw_billboard_gizmos(
     // Query for the 3D camera
     camera_query: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
     // Query for your billboard entities
-    billboard_query: Query<&GlobalTransform, With<Billboard>>,
     scene_query: Query<(&GlobalTransform, &SceneData), With<SceneTag>>,
 ) {
 

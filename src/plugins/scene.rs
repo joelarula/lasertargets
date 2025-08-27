@@ -2,8 +2,13 @@ use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 use crate::plugins::config::ConfigState;
 use crate::plugins::camera::CameraTag;
+use crate::plugins::instructions::DebugInfoState;
+use crate::plugins::instructions::InstructionState;
 use bevy::prelude::UVec2;
 use bevy::prelude::Vec2;
+
+const INSTRUCTION_TEXT_A: &str = "Press [Up][Down] to adjust target distance";
+const INSTRUCTION_TEXT_B: &str = "Press [Left][Right] to adjust target width";
 
 #[derive(Component)]
 pub struct SceneTag;
@@ -13,6 +18,12 @@ pub struct SceneSystemSet;
 
 pub struct ScenePlugin;
 
+impl Plugin for ScenePlugin {
+    fn build(&self, app: &mut App) {
+        app.add_systems(Startup, setup_scene.in_set(SceneSystemSet));
+        app.add_systems(Update,update_scene.in_set(SceneSystemSet));
+    }
+}
 
 #[derive(Component,Debug, Default,Clone, Copy)] 
 pub struct SceneData{
@@ -129,31 +140,33 @@ impl SceneData {
 
 
 
-impl Plugin for ScenePlugin {
-    fn build(&self, app: &mut App) {
-        app.add_systems(Startup, setup_scene);
-        app.add_systems(Update,update_scene.in_set(SceneSystemSet),
+
+
+fn setup_scene(
+    mut commands: Commands, 
+    config: Res<ConfigState>,
+    window: Single<&Window>,  
+    mut instruction_state: ResMut<InstructionState>,) {
+
+        instruction_state.instructions.push(INSTRUCTION_TEXT_A.to_string());
+        instruction_state.instructions.push(INSTRUCTION_TEXT_B.to_string());
+
+        let scene_data = SceneData::new(
+            window.physical_size(),
+            config.termocamera_size,
+            config.target_projection_distance,
+            config.scene_width,
+            None,
+            window.scale_factor()
         );
-    }
-}
 
-fn setup_scene(mut commands: Commands, config: Res<ConfigState>,window: Single<&Window>, ) {
-    let scene_data = SceneData::new(
-        window.physical_size(),
-        config.termocamera_size,
-        config.target_projection_distance,
-        config.scene_width,
-        None,
-        window.scale_factor()
-    );
-
-    commands.spawn((
-        SceneTag,
-        scene_data,
-        Transform::from_xyz(0.0, scene_data.dimensions.y / 2.0, -config.target_projection_distance),
-        GlobalTransform::default(),
-        Name::new("SceneTag"),
-    ));
+        commands.spawn((
+            SceneTag,
+            scene_data,
+            Transform::from_xyz(0.0, scene_data.dimensions.y / 2.0, -config.target_projection_distance),
+            GlobalTransform::default(),
+            Name::new("SceneTag"),
+        ));
 }
 
 fn update_scene(
@@ -161,14 +174,17 @@ fn update_scene(
     window_query: Query<&Window, With<PrimaryWindow>>,
     mut scene_query: Query<(&GlobalTransform, &mut Transform,&mut SceneData), With<SceneTag>>,
     mut config: ResMut<ConfigState>,
-    keyboard: Res<ButtonInput<KeyCode>>
+    keyboard: Res<ButtonInput<KeyCode>>,
+    mut debug_info: ResMut<DebugInfoState>,
+    time: Res<Time>,
 ) {
 
     configure_scene(&mut config, &keyboard);
 
-
-
     if let Ok(window) = window_query.single()  {
+
+
+
         if let Ok((camera,camera_transform)) = camera_query.single()  {
 
             let mut mouse_pos: Option<Vec3> = None;
@@ -210,6 +226,7 @@ fn update_scene(
                         window.scale_factor(),
                     );
 
+                   update_debug_info(&mut debug_info, &window, &config, &scene_data, &time); 
 
                 }
             }
@@ -236,4 +253,43 @@ fn configure_scene(config: &mut ConfigState, keyboard: &Res<ButtonInput<KeyCode>
         config.scene_width =  config.scene_width+1.;
     }
 
+}
+
+fn update_debug_info(debug_info: &mut DebugInfoState, window: &Window, config: &ConfigState, scene_data: &SceneData, time: &Time){
+        
+        let window_txt =  format!("Window size: {}x{} Camera input size: {}x{} Viewport size: {}x{} scale factor {}", 
+            window.physical_size().x ,
+            window.physical_size().y, 
+            config.termocamera_size.x,
+            config.termocamera_size.y,
+            scene_data.get_viewport_size().x,
+            scene_data.get_viewport_size().y,
+            window.scale_factor());
+
+        debug_info.messages.push(window_txt);
+
+        let cursor_pos = window.cursor_position().unwrap_or(Vec2::ZERO); 
+        let mouse_txt =  format!("Window cursor pos: x:{:.2} y{:.2} Viewport cursor pos: x:{:.2} y{:.2}", 
+            cursor_pos.x ,
+            cursor_pos.y,
+            scene_data.get_viewport_cursor_coordinates(cursor_pos).x,
+            scene_data.get_viewport_cursor_coordinates(cursor_pos).y
+        );
+
+        debug_info.messages.push(mouse_txt);
+
+        let target_txt =  format!("Target distance {:.2} m , width {:.2}, height {:.2} \n", scene_data.distance, scene_data.dimensions.x,scene_data.dimensions.y);
+        debug_info.messages.push(target_txt);
+
+        if(scene_data.mouse_world_pos.is_some()){
+            let raypos = scene_data.mouse_world_pos.unwrap();
+            let world_txt =  format!("Scene cursor pos: x:{:.2} y{:.2} z{:.2}\n", raypos.x ,raypos.y,raypos.z);
+            debug_info.messages.push(world_txt);
+        }
+
+        let fps = 1.0 / time.delta_secs();
+        let fps_txt =  format!("Time {:.2} FPS: {:.2} \n", time.elapsed_secs(), fps);
+        debug_info.messages.push(fps_txt);     
+
+    
 }
