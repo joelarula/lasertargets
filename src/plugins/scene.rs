@@ -135,7 +135,13 @@ impl SceneData {
       Vec2::new(normalized_x, normalized_y)
    }
 
+   pub fn get_world_units_per_camera_input_pixel(&self) -> f32 {
+      self.dimensions.x / self.camera_input_size.x as f32
+   }
 
+   pub fn get_world_units_per_viewport_pixel(&self) -> f32 {
+      self.dimensions.x / self.viewport_size.x as f32
+   }
 }
 
 
@@ -153,7 +159,7 @@ fn setup_scene(
 
         let scene_data = SceneData::new(
             window.physical_size(),
-            config.termocamera_size,
+            config.camera_input_size,
             config.target_projection_distance,
             config.scene_width,
             None,
@@ -182,7 +188,6 @@ fn update_scene(
     configure_scene(&mut config, &keyboard);
 
     if let Ok(window) = window_query.single()  {
-
 
 
         if let Ok((camera,camera_transform)) = camera_query.single()  {
@@ -217,18 +222,21 @@ fn update_scene(
                         }
                     }
 
-                    *scene_data = SceneData::new(
-                        window.physical_size(),
-                        config.termocamera_size,
-                        config.target_projection_distance,
-                        config.scene_width,
-                        mouse_pos,
-                        window.scale_factor(),
-                    );
 
-                   update_debug_info(&mut debug_info, &window, &config, &scene_data, &time); 
 
                 }
+
+                *scene_data = SceneData::new(
+                    window.physical_size(),
+                    config.camera_input_size,
+                    config.target_projection_distance,
+                    config.scene_width,
+                    mouse_pos,
+                    window.scale_factor(),
+                );
+
+                update_debug_info(&mut debug_info, &window, &config, &scene_data, &time); 
+
             }
         }
     }
@@ -260,8 +268,8 @@ fn update_debug_info(debug_info: &mut DebugInfoState, window: &Window, config: &
         let window_txt =  format!("Window size: {}x{} Camera input size: {}x{} Viewport size: {}x{} scale factor {}", 
             window.physical_size().x ,
             window.physical_size().y, 
-            config.termocamera_size.x,
-            config.termocamera_size.y,
+            config.camera_input_size.x,
+            config.camera_input_size.y,
             scene_data.get_viewport_size().x,
             scene_data.get_viewport_size().y,
             window.scale_factor());
@@ -278,17 +286,22 @@ fn update_debug_info(debug_info: &mut DebugInfoState, window: &Window, config: &
 
         debug_info.messages.push(mouse_txt);
 
-        let target_txt =  format!("Target distance {:.2} m , width {:.2}, height {:.2} \n", scene_data.distance, scene_data.dimensions.x,scene_data.dimensions.y);
+        let target_txt =  format!("Target distance {:.2} m , width {:.2}, height {:.2}", scene_data.distance, scene_data.dimensions.x,scene_data.dimensions.y);
         debug_info.messages.push(target_txt);
+
+        let ratio_txt =  format!("Input camera pixels  to world:{:.2} Viewport pixels to world{:.2}", 
+            scene_data.get_world_units_per_camera_input_pixel(), scene_data.get_world_units_per_viewport_pixel());
+        
+        debug_info.messages.push(ratio_txt);
 
         if(scene_data.mouse_world_pos.is_some()){
             let raypos = scene_data.mouse_world_pos.unwrap();
-            let world_txt =  format!("Scene cursor pos: x:{:.2} y{:.2} z{:.2}\n", raypos.x ,raypos.y,raypos.z);
+            let world_txt =  format!("Scene cursor pos: x:{:.2} y{:.2} z{:.2}", raypos.x ,raypos.y,raypos.z);
             debug_info.messages.push(world_txt);
         }
 
         let fps = 1.0 / time.delta_secs();
-        let fps_txt =  format!("Time {:.2} FPS: {:.2} \n", time.elapsed_secs(), fps);
+        let fps_txt =  format!("Time {:.2} FPS: {:.2} ", time.elapsed_secs(), fps);
         debug_info.messages.push(fps_txt);     
 
     

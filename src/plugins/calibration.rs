@@ -1,18 +1,18 @@
 use bevy::prelude::*;
-use bevy::window::PrimaryWindow;
 use crate::plugins::camera::CameraSystemSet;
 use crate::plugins::config::ConfigState;
+use crate::plugins::config::DisplayMode;
 use crate::plugins::scene::SceneData;
-use crate::plugins::scene::SceneSystemSet;
 use crate::plugins::scene::SceneTag;
 use std::f32::consts::PI;
 use bevy::color::palettes::css::DARK_GREY;
-use bevy::color::palettes::css::SILVER;
-//use bevy::color::palettes::css::LIGHT_GREY;
+use bevy::color::palettes::css::SILVER;;
 use bevy::color::palettes::css::GREEN;
 use bevy::color::palettes::css::RED;
 use bevy::color::palettes::css::BLUE;
 use bevy::color::palettes::css::YELLOW;
+
+pub const DARK_GREY_THIRD: Srgba = Srgba::new(0.663, 0.663, 0.663, 0.3);
 
 #[derive(SystemSet, Debug, Hash, PartialEq, Eq, Clone)]
 pub struct CalibrationSystemSet;
@@ -36,12 +36,14 @@ fn setup_grid(   mut commands: Commands,config: Res<ConfigState>,) {
 
 fn update_grid(mut gizmos: Gizmos, config: Res<ConfigState>,) {
 
-    gizmos.grid(
-        Quat::from_rotation_x(PI / 2.),
-        UVec2::new((config.scene_width * 4.) as u32, (config.target_projection_distance * 4.) as u32),
-        Vec2::new(config.grid_spacing, config.grid_spacing),
-        DARK_GREY
-    );
+    if(config.display_mode == DisplayMode::Mode3D){
+        gizmos.grid(
+            Quat::from_rotation_x(PI / 2.),
+            UVec2::new((config.scene_width * 4.) as u32, (config.target_projection_distance * 4.) as u32),
+            Vec2::new(config.grid_spacing, config.grid_spacing),
+            DARK_GREY
+        );  
+    }
 
 
 }
@@ -109,7 +111,7 @@ fn draw_billboard_gizmos(
                 let offset_x = (i as f32) * grid_size - width / 2.0;
                 let start = billboard_position + billboard_right * offset_x - billboard_up * (height / 2.0);
                 let end = billboard_position + billboard_right * offset_x + billboard_up * (height / 2.0);
-                gizmos.line(start, end, SILVER);
+                gizmos.line(start, end, DARK_GREY_THIRD);
             }
 
             // Horizontal grid lines.
@@ -117,10 +119,27 @@ fn draw_billboard_gizmos(
                 let offset_y = (i as f32) * grid_size - height / 2.0;
                 let start = billboard_position + billboard_up * offset_y - billboard_right * (width / 2.0);
                 let end = billboard_position + billboard_up * offset_y + billboard_right * (width / 2.0);
-                gizmos.line(start, end, SILVER);
+                gizmos.line(start, end, DARK_GREY_THIRD);
             }
 
-            if(scene_data.mouse_world_pos.is_some()){
+            
+            draw_crosshair(&mut gizmos, &config, &scene_data, &billboard_right, &billboard_up);
+            
+        }
+    }
+
+
+}
+
+
+fn draw_crosshair(
+    gizmos: &mut Gizmos,
+    config: &ConfigState,
+    scene_data: &SceneData,
+    billboard_right: &Vec3,
+    billboard_up: &Vec3,
+) {
+      if(scene_data.mouse_world_pos.is_some()){
                 let intersection_point = scene_data.mouse_world_pos.unwrap();
 
                 // Draw a 3D crosshair at the intersection point.
@@ -135,13 +154,5 @@ fn draw_billboard_gizmos(
                     intersection_point + billboard_up * crosshair_size,
                     YELLOW,
                 );
-            }
-
-
-        }
     }
-
-
 }
-
-
