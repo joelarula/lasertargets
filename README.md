@@ -1,2 +1,2 @@
 # lasertargets
-AR game 
+Augmented reality game 

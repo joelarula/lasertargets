@@ -182,7 +182,7 @@ fn update_scene(
     mut config: ResMut<ConfigState>,
     keyboard: Res<ButtonInput<KeyCode>>,
     mut debug_info: ResMut<DebugInfoState>,
-    time: Res<Time>,
+   // time: Res<Time>,
 ) {
 
     configure_scene(&mut config, &keyboard);
@@ -235,7 +235,7 @@ fn update_scene(
                     window.scale_factor(),
                 );
 
-                update_debug_info(&mut debug_info, &window, &config, &scene_data, &time); 
+                update_debug_info(&mut debug_info, &window, &config, &scene_data); 
 
             }
         }
@@ -263,7 +263,7 @@ fn configure_scene(config: &mut ConfigState, keyboard: &Res<ButtonInput<KeyCode>
 
 }
 
-fn update_debug_info(debug_info: &mut DebugInfoState, window: &Window, config: &ConfigState, scene_data: &SceneData, time: &Time){
+fn update_debug_info(debug_info: &mut DebugInfoState, window: &Window, config: &ConfigState, scene_data: &SceneData){
         
         let window_txt =  format!("Window size: {}x{} Camera input size: {}x{} Viewport size: {}x{} scale factor {}", 
             window.physical_size().x ,
@@ -300,9 +300,9 @@ fn update_debug_info(debug_info: &mut DebugInfoState, window: &Window, config: &
             debug_info.messages.push(world_txt);
         }
 
-        let fps = 1.0 / time.delta_secs();
-        let fps_txt =  format!("Time {:.2} FPS: {:.2} ", time.elapsed_secs(), fps);
-        debug_info.messages.push(fps_txt);     
+       // let fps = 1.0 / time.delta_secs();
+       // let fps_txt =  format!("Time {:.2} FPS: {:.2} ", time.elapsed_secs(), fps);
+       // debug_info.messages.push(fps_txt);     
 
     
 }

@@ -32,6 +32,9 @@ pub struct ConfigState {
     pub scene_width: f32,
     /// Defines the display mode of the application (2D or 3D).
     pub display_mode: DisplayMode,
+    /// Defines the laser beam divergence angle in milliradians.
+    pub beam_divergence_angle: f32, 
+    pub beam_max_angle: f32, // in radians
 }
 pub struct ConfigPlugin;
 
@@ -46,5 +49,7 @@ impl Plugin for ConfigPlugin {
             camera_input_size: UVec2::new(256, 192),
             scene_width: 10.,
             display_mode: DisplayMode::Mode2D,
+            beam_divergence_angle: 1.5,
+            beam_max_angle: 1.0, // in milliradians
         });
 }} 

@@ -6,7 +6,7 @@ use crate::plugins::scene::SceneData;
 use crate::plugins::scene::SceneTag;
 use std::f32::consts::PI;
 use bevy::color::palettes::css::DARK_GREY;
-use bevy::color::palettes::css::SILVER;;
+use bevy::color::palettes::css::SILVER;
 use bevy::color::palettes::css::GREEN;
 use bevy::color::palettes::css::RED;
 use bevy::color::palettes::css::BLUE;
@@ -36,14 +36,14 @@ fn setup_grid(   mut commands: Commands,config: Res<ConfigState>,) {
 
 fn update_grid(mut gizmos: Gizmos, config: Res<ConfigState>,) {
 
-    if(config.display_mode == DisplayMode::Mode3D){
+   // if(config.display_mode == DisplayMode::Mode3D){
         gizmos.grid(
             Quat::from_rotation_x(PI / 2.),
             UVec2::new((config.scene_width * 4.) as u32, (config.target_projection_distance * 4.) as u32),
             Vec2::new(config.grid_spacing, config.grid_spacing),
             DARK_GREY
         );  
-    }
+   // }
 
 
 }

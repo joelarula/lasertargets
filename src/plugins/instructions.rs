@@ -51,8 +51,8 @@ fn setup_instructions(
         },
         Node {
             position_type: PositionType::Absolute,
-            top: Val::Px(12.0),
-            left: Val::Px(12.0),
+            top: Val::Px(40.0),
+            left: Val::Px(100.0),
             ..default()
         },
     ));

@@ -1,3 +1,5 @@
+use std::env;
+
 use bevy::prelude::*;
 mod plugins;
 mod util;
@@ -6,10 +8,16 @@ use crate::plugins::config::ConfigPlugin;
 use crate::plugins::camera::CameraPlugin;
 use crate::plugins::calibration::CalibrationPlugin;
 use crate::plugins::scene::ScenePlugin;
+use crate::plugins::toolbar::ToolbarPlugin;
 
 const FIXED_TIMESTEP: f64 = 1.0 / 50.0; 
 
 fn main() {
+
+    util::setup_logging();
+    unsafe {
+        env::set_var("RUST_LOG", "debug");
+    }
 
     let mut app = App::new();
 
@@ -28,6 +36,7 @@ fn main() {
     .add_plugins(ConfigPlugin)
     .add_plugins(ScenePlugin)
     .add_plugins(CameraPlugin)
-    .add_plugins(CalibrationPlugin);
+    .add_plugins(CalibrationPlugin)
+    .add_plugins(ToolbarPlugin);
     app.run();
 }
