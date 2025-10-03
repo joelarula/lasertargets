@@ -1,0 +1,51 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Rust: cargo build", // This label matches the preLaunchTask in launch.json
+            "type": "shell",
+            "command": "cargo build",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": [
+                "$rustc"
+            ],
+            "detail": "Runs cargo build to compile the Rust project."
+        },
+        {
+            "label": "Rust: cargo test", // For debugging tests
+            "type": "shell",
+            "command": "cargo test --no-run", // --no-run just compiles the tests
+            "group": "test",
+            "problemMatcher": [
+                "$rustc"
+            ],
+            "detail": "Runs cargo test --no-run to compile tests."
+        },
+        {
+            "label": "Rust: cargo build --all-targets", // For projects with multiple binaries/libs
+            "type": "shell",
+            "command": "cargo build --all-targets",
+            "group": {
+                "kind": "build",
+                "isDefault": false // Not default, as it builds everything
+            },
+            "problemMatcher": [
+                "$rustc"
+            ],
+            "detail": "Runs cargo build --all-targets to compile all Rust targets."
+        },
+        {
+            "label": "Rust: cargo build --bin my_cli_tool", // Specific bin build
+            "type": "shell",
+            "command": "cargo build --bin my_cli_tool",
+            "group": "build",
+            "problemMatcher": [
+                "$rustc"
+            ],
+            "detail": "Compiles specific binary target 'my_cli_tool'."
+        }
+    ]
+}

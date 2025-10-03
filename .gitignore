@@ -1,7 +1,0 @@
-/examples
-.vscode/
-/target
-/debug
-debug
-target/.
-**/*.rs.bk
