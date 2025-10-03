@@ -1,6 +1,7 @@
 use std::env;
-
 use bevy::prelude::*;
+use log::info;
+
 mod plugins;
 mod util;
 use crate::plugins::instructions::InstructionsPlugin;
@@ -13,18 +14,22 @@ use crate::plugins::toolbar::ToolbarPlugin;
 const FIXED_TIMESTEP: f64 = 1.0 / 50.0; 
 
 fn main() {
+    // Initialize logger
+    pretty_env_logger::init();
+    info!("Starting LaserTargets Server...");
 
     util::setup_logging();
     unsafe {
         env::set_var("RUST_LOG", "debug");
     }
 
+    info!("Initializing LaserTargets Server application...");
     let mut app = App::new();
 
     app.add_plugins(
         DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
-                title: "Video Targets".to_string(),
+                title: "LaserTargets Server".to_string(),
                 present_mode: bevy::window::PresentMode::AutoNoVsync ,
                 ..Default::default()
             }),
