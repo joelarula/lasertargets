@@ -20,8 +20,6 @@ pub struct ConfigState {
     pub instructions_visible: bool,
     /// Defines the grid spacing in modeled physical world in meters.
     pub grid_spacing: f32,
-    // Defines the distance of a target detection plane in modeled physical world in meters.
-    pub target_projection_distance: f32,
     /// Defines the size of the thermal camera viewport in pixels.
     pub camera_input_size: UVec2,
     /// Defines the orign of the thermal camera viewport in world unit.
@@ -43,7 +41,6 @@ impl Plugin for ConfigPlugin {
         app.insert_resource(ConfigState{
             instructions_visible: true,
             grid_spacing: 0.25,
-            target_projection_distance: 25., 
             termocamera_origin: Vec3::new(0., 1.5,5.),
             termocamera_looking_at: Vec3::new(0., 1.5, 0.),
             camera_input_size: UVec2::new(256, 192),

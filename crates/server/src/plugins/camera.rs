@@ -22,32 +22,22 @@ pub struct CameraTag;
 impl Plugin for CameraPlugin {
     fn build(&self, app: &mut App) {
         app
-        .add_systems(Startup, (register_camera_button, setup_camera).chain().in_set(CameraSystemSet).after(SceneSystemSet))
+        .add_systems(Startup, (setup_camera).chain().in_set(CameraSystemSet).after(SceneSystemSet))
         .add_systems(Update, update_camera.in_set(CameraSystemSet).after(SceneSystemSet));
     }
-}
-
-
-fn register_camera_button(mut toolbar_registry: ResMut<ToolbarRegistry>) {
-    // Using Nerd Font camera icon (nf-md-camera: \u{f0d7})
-    toolbar_registry.register_icon_button("Camera".to_string(), camera_button_callback, "\u{f030}".to_string());
-    
-    // Other popular Nerd Font icons you can use:
-    // toolbar_registry.register_icon_button("Camera".to_string(), camera_button_callback, "\u{f2a4}".to_string()); // GitHub: nf-md-github
-    // toolbar_registry.register_icon_button("Camera".to_string(), camera_button_callback, "\u{f013}".to_string()); // Settings: nf-fa-cog
-    // toolbar_registry.register_icon_button("Camera".to_string(), camera_button_callback, "\u{f1c0}".to_string()); // Database: nf-fa-database
-    // toolbar_registry.register_icon_button("Camera".to_string(), camera_button_callback, "\u{f085}".to_string()); // Gears: nf-fa-gears
 }
 
 
 fn setup_camera(
     mut commands: Commands, 
     mut instruction_state: ResMut<InstructionState>,
+    mut toolbar_registry: ResMut<ToolbarRegistry>,
     scene_query: Query<(&SceneData), With<SceneTag>>,
     config: Res<ConfigState>) {
     
      instruction_state.instructions.push(INSTRUCTION_F2.to_string());
-
+     toolbar_registry.register_icon_button("Camera".to_string(), camera_button_callback, "\u{f030}".to_string());
+     
      for (scene_data) in scene_query.iter() {
 
         commands.spawn((

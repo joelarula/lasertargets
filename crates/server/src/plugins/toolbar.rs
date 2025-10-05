@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use log::info;
 use std::collections::HashMap;
-
+use bevy::color::palettes::css::LIGHT_SKY_BLUE;
 pub struct ToolbarPlugin;
 
 #[derive(Component)]
@@ -28,15 +28,7 @@ pub struct ToolbarRegistry {
 }
 
 impl ToolbarRegistry {
-    pub fn register_button(&mut self, name: String, callback: fn()) {
-        self.buttons.insert(name.clone(), ButtonHandler { 
-            callback,
-            icon: None,
-        });
-        if !self.registered_buttons.contains(&name) {
-            self.registered_buttons.push(name);
-        }
-    }
+
     
     pub fn register_icon_button(&mut self, name: String, callback: fn(), icon: String) {
         self.buttons.insert(name.clone(), ButtonHandler { 
@@ -106,15 +98,15 @@ fn create_toolbar_ui(commands: &mut Commands, registry: &ToolbarRegistry, nerd_f
                 ..default()
             },
             ZIndex(1000), // High z-index to ensure it's on top
-            BackgroundColor(Color::srgba(0.2, 0.2, 0.2, 0.8)),
             BorderRadius::all(Val::Px(5.0)),
         ))
         .with_children(|parent| {
             // Create buttons for all registered buttons
             for button_name in &registry.registered_buttons {
                 if let Some(button_handler) = registry.buttons.get(button_name) {
-                    let button_size = if button_handler.icon.is_some() { 36.0 } else { 60.0 };
                     
+                    let button_size = 36.0 ;
+    
                     parent
                         .spawn((
                             DynamicButton { id: button_name.clone() },
@@ -124,10 +116,10 @@ fn create_toolbar_ui(commands: &mut Commands, registry: &ToolbarRegistry, nerd_f
                                 height: Val::Px(button_size),
                                 justify_content: JustifyContent::Center,
                                 align_items: AlignItems::Center,
-                                margin: UiRect::all(Val::Px(3.0)),
+                                margin: UiRect::all(Val::Px(6.0)),
                                 ..default()
                             },
-                            BackgroundColor(Color::srgba(0.4, 0.6, 0.8, 0.5)),
+                            BackgroundColor(LIGHT_SKY_BLUE.into()),
                             BorderRadius::all(Val::Px(6.0)),
                         ))
                         .with_child((
@@ -142,15 +134,10 @@ fn create_toolbar_ui(commands: &mut Commands, registry: &ToolbarRegistry, nerd_f
                                 } else { 
                                     default() 
                                 },
-                                font_size: if button_handler.icon.is_some() { 18.0 } else { 10.0 },
+                                font_size: 12.0 ,
                                 ..default()
                             },
-                            TextColor(Color::WHITE),
-                            Node {
-                                justify_content: JustifyContent::Center,
-                                align_items: AlignItems::Center,
-                                ..default()
-                            },
+                            TextColor(Color::WHITE)
                         ));
                 }
             }

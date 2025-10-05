@@ -4,24 +4,51 @@ use crate::plugins::config::ConfigState;
 use crate::plugins::camera::CameraTag;
 use crate::plugins::instructions::DebugInfoState;
 use crate::plugins::instructions::InstructionState;
+use crate::plugins::toolbar::ToolbarRegistry;
 use bevy::prelude::UVec2;
 use bevy::prelude::Vec2;
+use bevy_egui::{EguiContexts, EguiPlugin, EguiPrimaryContextPass};
+use std::sync::Mutex;
 
 const INSTRUCTION_TEXT_A: &str = "Press [Up][Down] to adjust target distance";
 const INSTRUCTION_TEXT_B: &str = "Press [Left][Right] to adjust target width";
 
 #[derive(Component)]
 pub struct SceneTag;
-
 #[derive(SystemSet, Debug, Hash, PartialEq, Eq, Clone)]
 pub struct SceneSystemSet;
-
 pub struct ScenePlugin;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, States, Default)]
+pub enum DisplayMode{
+    #[default]
+    Mode2D,
+    Mode3D
+}
+
+/// Stores global configuration state for the application.
+#[derive(Resource)]
+pub struct SceneConfiguration {
+    // Defines the distance of a target detection plane in modeled physical world in meters.
+    pub target_projection_distance: f32,
+}
+
+impl Default for SceneConfiguration {
+    fn default() -> Self {
+        Self {
+            target_projection_distance: 25.0, // Default distance of 25 meters
+        }
+    }
+}
 
 impl Plugin for ScenePlugin {
     fn build(&self, app: &mut App) {
+       
+        app.insert_resource(SceneConfiguration::default());
         app.add_systems(Startup, setup_scene.in_set(SceneSystemSet));
-        app.add_systems(Update,update_scene.in_set(SceneSystemSet));
+        app.add_systems(Update, update_scene.in_set(SceneSystemSet));
+        app.add_systems(EguiPrimaryContextPass, overlay_ui_system);
+        app.add_systems(Update, overlay_trigger_system);
     }
 }
 
@@ -144,23 +171,28 @@ impl SceneData {
    }
 }
 
-
-
-
+#[derive(Resource, Default)]
+pub struct OverlayVisible(pub bool);
+static OVERLAY_TRIGGER: Mutex<bool> = Mutex::new(false);
 
 fn setup_scene(
     mut commands: Commands, 
+    mut toolbar_registry: ResMut<ToolbarRegistry>,
     config: Res<ConfigState>,
-    window: Single<&Window>,  
-    mut instruction_state: ResMut<InstructionState>,) {
+    scene_configuration: Res<SceneConfiguration>,
+    window: Single<&Window>,
+    mut instruction_state: ResMut<InstructionState>,
+) {
 
         instruction_state.instructions.push(INSTRUCTION_TEXT_A.to_string());
         instruction_state.instructions.push(INSTRUCTION_TEXT_B.to_string());
+        toolbar_registry.register_icon_button("Target".to_string(), target_button_callback, "\u{f04fe}".to_string());
+     
 
         let scene_data = SceneData::new(
             window.physical_size(),
             config.camera_input_size,
-            config.target_projection_distance,
+            scene_configuration.target_projection_distance,
             config.scene_width,
             None,
             window.scale_factor()
@@ -169,7 +201,7 @@ fn setup_scene(
         commands.spawn((
             SceneTag,
             scene_data,
-            Transform::from_xyz(0.0, scene_data.dimensions.y / 2.0, -config.target_projection_distance),
+            Transform::from_xyz(0.0, scene_data.dimensions.y / 2.0, -scene_configuration.target_projection_distance),
             GlobalTransform::default(),
             Name::new("SceneTag"),
         ));
@@ -180,12 +212,13 @@ fn update_scene(
     window_query: Query<&Window, With<PrimaryWindow>>,
     mut scene_query: Query<(&GlobalTransform, &mut Transform,&mut SceneData), With<SceneTag>>,
     mut config: ResMut<ConfigState>,
+    mut scene_configuration: ResMut<SceneConfiguration>,
     keyboard: Res<ButtonInput<KeyCode>>,
     mut debug_info: ResMut<DebugInfoState>,
    // time: Res<Time>,
 ) {
 
-    configure_scene(&mut config, &keyboard);
+    configure_scene(&mut config, &mut scene_configuration,&keyboard);
 
     if let Ok(window) = window_query.single()  {
 
@@ -201,7 +234,7 @@ fn update_scene(
 
             for (scene_transform,mut transform,  mut scene_data) in scene_query.iter_mut() {
                 
-                transform.translation.z = -config.target_projection_distance;
+                transform.translation.z = -scene_configuration.target_projection_distance;
                 transform.translation.y = scene_data.dimensions.y / 2.0;
 
                 if let Some(ray) = cursor_ray {
@@ -229,13 +262,13 @@ fn update_scene(
                 *scene_data = SceneData::new(
                     window.physical_size(),
                     config.camera_input_size,
-                    config.target_projection_distance,
+                    scene_configuration.target_projection_distance,
                     config.scene_width,
                     mouse_pos,
                     window.scale_factor(),
                 );
 
-                update_debug_info(&mut debug_info, &window, &config, &scene_data); 
+                update_debug_info(&mut debug_info, &window, &config, &scene_data);
 
             }
         }
@@ -243,14 +276,14 @@ fn update_scene(
 }
 
 
-fn configure_scene(config: &mut ConfigState, keyboard: &Res<ButtonInput<KeyCode>>){
+fn configure_scene(config: &mut ConfigState, scene_configuration: &mut SceneConfiguration, keyboard: &Res<ButtonInput<KeyCode>>){
             
     if keyboard.just_pressed(KeyCode::ArrowUp) {
-        config.target_projection_distance = config.target_projection_distance + 1.0;
+        scene_configuration.target_projection_distance += 1.0;
     }
 
     if keyboard.just_pressed(KeyCode::ArrowDown) {
-        config.target_projection_distance = config.target_projection_distance - 1.0;
+        scene_configuration.target_projection_distance -= 1.0;
     }
 
     if keyboard.just_pressed(KeyCode::ArrowLeft) {
@@ -263,7 +296,7 @@ fn configure_scene(config: &mut ConfigState, keyboard: &Res<ButtonInput<KeyCode>
 
 }
 
-fn update_debug_info(debug_info: &mut DebugInfoState, window: &Window, config: &ConfigState, scene_data: &SceneData){
+fn update_debug_info(debug_info: &mut DebugInfoState, window: &Window, config: &ConfigState ,scene_data: &SceneData){
         
         let window_txt =  format!("Window size: {}x{} Camera input size: {}x{} Viewport size: {}x{} scale factor {}", 
             window.physical_size().x ,
@@ -305,4 +338,47 @@ fn update_debug_info(debug_info: &mut DebugInfoState, window: &Window, config: &
        // debug_info.messages.push(fps_txt);     
 
     
+}
+
+
+fn target_button_callback() {
+    info!("Target button pressed from toolbar!");
+    if let Ok(mut flag) = OVERLAY_TRIGGER.lock() {
+        *flag = true;
+    }
+}
+
+pub fn overlay_ui_system(
+    mut egui_context: EguiContexts,
+    mut overlay_visible: ResMut<OverlayVisible>,
+) {
+    if let Ok(ctx) = egui_context.ctx_mut() {
+        egui::Window::new("Main UI").show(ctx, |ui| {
+            if ui.button("Open Overlay").clicked() {
+                overlay_visible.0 = true;
+            }
+        });
+
+        if overlay_visible.0 {
+            egui::Window::new("Small Overlay")
+                .collapsible(false)
+                .resizable(false)
+                .fixed_size([100.0, 100.0])
+                .show(ctx, |ui| {
+                    ui.label("This is the overlay!");
+                    if ui.button("Close").clicked() {
+                        overlay_visible.0 = false;
+                    }
+                });
+        }
+    }
+}
+
+pub fn overlay_trigger_system(mut overlay_visible: ResMut<OverlayVisible>) {
+    if let Ok(mut flag) = OVERLAY_TRIGGER.lock() {
+        if *flag {
+            overlay_visible.0 = true;
+            *flag = false;
+        }
+    }
 }

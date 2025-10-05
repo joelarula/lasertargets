@@ -5,8 +5,7 @@ edition = "2024"
 
 [dependencies]
 bevy = { workspace = true, features = ["dynamic_linking"] }
+egui = { workspace = true }
+bevy_egui = { workspace = true }
 log = { workspace = true }
 pretty_env_logger = { workspace = true }
-tokio = { workspace = true }
-serde = { workspace = true }
-serde_json = { workspace = true }
