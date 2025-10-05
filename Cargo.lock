@@ -372,7 +372,6 @@ version = "0.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4b8369c16b7c017437021341521f8b4a0d98e1c70113fb358c3258ae7d661d79"
 dependencies = [
- "bevy_dylib",
  "bevy_internal",
 ]
 
@@ -589,15 +588,6 @@ dependencies = [
  "log",
  "serde",
  "sysinfo",
-]
-
-[[package]]
-name = "bevy_dylib"
-version = "0.16.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1dc3602098b2604941b2829a04ac316de1e36aad949cbffce8861896b9b32532"
-dependencies = [
- "bevy_internal",
 ]
 
 [[package]]
@@ -1668,6 +1658,7 @@ version = "0.1.0"
 dependencies = [
  "bevy",
  "log",
+ "model",
  "pretty_env_logger",
  "serde",
  "serde_json",
@@ -3166,6 +3157,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "model"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+]
+
+[[package]]
 name = "moxcms"
 version = "0.7.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4323,6 +4321,7 @@ dependencies = [
  "bevy_egui",
  "egui",
  "log",
+ "model",
  "pretty_env_logger",
 ]
 

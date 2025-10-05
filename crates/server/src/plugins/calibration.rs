@@ -1,10 +1,9 @@
 use bevy::prelude::*;
 use crate::plugins::camera::CameraSystemSet;
 use crate::plugins::config::ConfigState;
-use crate::plugins::config::DisplayMode;
-use crate::plugins::scene::SceneConfiguration;
 use crate::plugins::scene::SceneData;
 use crate::plugins::scene::SceneTag;
+use model::config::SceneConfiguration;
 use std::f32::consts::PI;
 use bevy::color::palettes::css::DARK_GREY;
 use bevy::color::palettes::css::SILVER;
@@ -15,8 +14,10 @@ use bevy::color::palettes::css::YELLOW;
 
 pub const DARK_GREY_THIRD: Srgba = Srgba::new(0.663, 0.663, 0.663, 0.3);
 
+pub const GRID_SPACING: f32 = 0.25;
 #[derive(SystemSet, Debug, Hash, PartialEq, Eq, Clone)]
 pub struct CalibrationSystemSet;
+
 
 pub struct CalibrationPlugin;
 
@@ -40,8 +41,8 @@ fn update_grid(mut gizmos: Gizmos, config: Res<ConfigState>, scene_configuration
    // if(config.display_mode == DisplayMode::Mode3D){
         gizmos.grid(
             Quat::from_rotation_x(PI / 2.),
-            UVec2::new((config.scene_width * 4.) as u32, (scene_configuration.target_projection_distance * 4.) as u32),
-            Vec2::new(config.grid_spacing, config.grid_spacing),
+            UVec2::new((scene_configuration.scene_width * 4.) as u32, (scene_configuration.target_projection_distance * 4.) as u32),
+            Vec2::new(GRID_SPACING, GRID_SPACING),
             DARK_GREY
         );  
    // }
@@ -63,7 +64,6 @@ fn draw_axes(mut gizmos: Gizmos) {
 
 fn draw_billboard_gizmos(
     config: Res<ConfigState>,
-    window: Single<&Window>, 
     mut gizmos: Gizmos,
     // Query for the 3D camera
     camera_query: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
@@ -89,7 +89,7 @@ fn draw_billboard_gizmos(
             // Define the dimensions of your billboard.
             let width = scene_data.dimensions.x;
             let height = scene_data.dimensions.y;
-            let grid_size = config.grid_spacing;
+            let grid_size = GRID_SPACING;
 
 
             // Draw the frame.
@@ -144,7 +144,7 @@ fn draw_crosshair(
                 let intersection_point = scene_data.mouse_world_pos.unwrap();
 
         // Draw a 3D crosshair at the intersection point.
-        let crosshair_size = config.grid_spacing * 0.5;
+        let crosshair_size = GRID_SPACING * 0.5;
         gizmos.line(
             intersection_point - billboard_right * crosshair_size,
             intersection_point + billboard_right * crosshair_size,

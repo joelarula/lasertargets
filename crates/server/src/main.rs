@@ -9,8 +9,9 @@ use crate::plugins::config::ConfigPlugin;
 use crate::plugins::camera::CameraPlugin;
 use crate::plugins::calibration::CalibrationPlugin;
 use crate::plugins::projector::ProjectorPlugin;
-use crate::plugins::scene::{ScenePlugin, OverlayVisible};
+use crate::plugins::scene::{ScenePlugin};
 use crate::plugins::toolbar::ToolbarPlugin;
+use crate::plugins::settings::SettingsPlugin;
 
 const FIXED_TIMESTEP: f64 = 1.0 / 50.0; 
 
@@ -36,13 +37,13 @@ fn main() {
     .add_plugins(bevy_egui::EguiPlugin::default())
     .insert_resource(ClearColor(Color::BLACK))
     .insert_resource(Time::<Fixed>::from_seconds(FIXED_TIMESTEP))
-    .insert_resource(OverlayVisible(false))
     .add_plugins(InstructionsPlugin)
     .add_plugins(ConfigPlugin)
     .add_plugins(ScenePlugin)
     .add_plugins(CameraPlugin)
     .add_plugins(CalibrationPlugin)
     .add_plugins(ProjectorPlugin)
-    .add_plugins(ToolbarPlugin);
+    .add_plugins(ToolbarPlugin)
+    .add_plugins(SettingsPlugin);
     app.run();
 }

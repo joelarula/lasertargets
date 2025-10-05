@@ -1,14 +1,13 @@
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 use crate::plugins::config::ConfigState;
+use model::config::SceneConfiguration;
 use crate::plugins::camera::CameraTag;
 use crate::plugins::instructions::DebugInfoState;
 use crate::plugins::instructions::InstructionState;
-use crate::plugins::toolbar::ToolbarRegistry;
 use bevy::prelude::UVec2;
 use bevy::prelude::Vec2;
-use bevy_egui::{EguiContexts, EguiPlugin, EguiPrimaryContextPass};
-use std::sync::Mutex;
+
 
 const INSTRUCTION_TEXT_A: &str = "Press [Up][Down] to adjust target distance";
 const INSTRUCTION_TEXT_B: &str = "Press [Left][Right] to adjust target width";
@@ -19,36 +18,13 @@ pub struct SceneTag;
 pub struct SceneSystemSet;
 pub struct ScenePlugin;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, States, Default)]
-pub enum DisplayMode{
-    #[default]
-    Mode2D,
-    Mode3D
-}
-
-/// Stores global configuration state for the application.
-#[derive(Resource)]
-pub struct SceneConfiguration {
-    // Defines the distance of a target detection plane in modeled physical world in meters.
-    pub target_projection_distance: f32,
-}
-
-impl Default for SceneConfiguration {
-    fn default() -> Self {
-        Self {
-            target_projection_distance: 25.0, // Default distance of 25 meters
-        }
-    }
-}
 
 impl Plugin for ScenePlugin {
     fn build(&self, app: &mut App) {
        
         app.insert_resource(SceneConfiguration::default());
         app.add_systems(Startup, setup_scene.in_set(SceneSystemSet));
-        app.add_systems(Update, update_scene.in_set(SceneSystemSet));
-        app.add_systems(EguiPrimaryContextPass, overlay_ui_system);
-        app.add_systems(Update, overlay_trigger_system);
+        app.add_systems(Update, update_scene.in_set(SceneSystemSet));  
     }
 }
 
@@ -121,10 +97,15 @@ impl SceneData {
 
    }
 
-   pub fn translate_viewport_coordinates_to_window_coordinates(&self, viewport_pos: Vec2) -> Vec2 {
-      let relative_pos = viewport_pos /  self.scale_factor;
-      return self.get_viewport_scaled_position() + relative_pos;
-   }
+    pub fn translate_viewport_coordinates_to_window_coordinates(&self, viewport_pos: Vec2) -> Vec2 {
+        let relative_pos = viewport_pos / self.scale_factor;
+        self.get_viewport_scaled_position() + relative_pos
+    }
+
+    /// Version without applying scale factor (assumes viewport_pos is already in window pixels)
+    pub fn translate_viewport_coordinates_to_window_coordinates_unscaled(&self, viewport_pos: Vec2) -> Vec2 {
+        self.get_viewport_scaled_position() + viewport_pos
+    }
 
      
    pub fn get_viewport_position(&self) -> UVec2 {              
@@ -171,13 +152,10 @@ impl SceneData {
    }
 }
 
-#[derive(Resource, Default)]
-pub struct OverlayVisible(pub bool);
-static OVERLAY_TRIGGER: Mutex<bool> = Mutex::new(false);
+
 
 fn setup_scene(
     mut commands: Commands, 
-    mut toolbar_registry: ResMut<ToolbarRegistry>,
     config: Res<ConfigState>,
     scene_configuration: Res<SceneConfiguration>,
     window: Single<&Window>,
@@ -186,14 +164,13 @@ fn setup_scene(
 
         instruction_state.instructions.push(INSTRUCTION_TEXT_A.to_string());
         instruction_state.instructions.push(INSTRUCTION_TEXT_B.to_string());
-        toolbar_registry.register_icon_button("Target".to_string(), target_button_callback, "\u{f04fe}".to_string());
-     
+    
 
         let scene_data = SceneData::new(
             window.physical_size(),
             config.camera_input_size,
             scene_configuration.target_projection_distance,
-            config.scene_width,
+            scene_configuration.scene_width,
             None,
             window.scale_factor()
         );
@@ -215,7 +192,7 @@ fn update_scene(
     mut scene_configuration: ResMut<SceneConfiguration>,
     keyboard: Res<ButtonInput<KeyCode>>,
     mut debug_info: ResMut<DebugInfoState>,
-   // time: Res<Time>,
+
 ) {
 
     configure_scene(&mut config, &mut scene_configuration,&keyboard);
@@ -263,7 +240,7 @@ fn update_scene(
                     window.physical_size(),
                     config.camera_input_size,
                     scene_configuration.target_projection_distance,
-                    config.scene_width,
+                    scene_configuration.scene_width,
                     mouse_pos,
                     window.scale_factor(),
                 );
@@ -287,11 +264,11 @@ fn configure_scene(config: &mut ConfigState, scene_configuration: &mut SceneConf
     }
 
     if keyboard.just_pressed(KeyCode::ArrowLeft) {
-        config.scene_width = config.scene_width - 1.;
+        scene_configuration.scene_width = scene_configuration.scene_width - 1.;
     }
 
     if keyboard.just_pressed(KeyCode::ArrowRight) {
-        config.scene_width =  config.scene_width+1.;
+        scene_configuration.scene_width =  scene_configuration.scene_width + 1.;
     }
 
 }
@@ -340,45 +317,3 @@ fn update_debug_info(debug_info: &mut DebugInfoState, window: &Window, config: &
     
 }
 
-
-fn target_button_callback() {
-    info!("Target button pressed from toolbar!");
-    if let Ok(mut flag) = OVERLAY_TRIGGER.lock() {
-        *flag = true;
-    }
-}
-
-pub fn overlay_ui_system(
-    mut egui_context: EguiContexts,
-    mut overlay_visible: ResMut<OverlayVisible>,
-) {
-    if let Ok(ctx) = egui_context.ctx_mut() {
-        egui::Window::new("Main UI").show(ctx, |ui| {
-            if ui.button("Open Overlay").clicked() {
-                overlay_visible.0 = true;
-            }
-        });
-
-        if overlay_visible.0 {
-            egui::Window::new("Small Overlay")
-                .collapsible(false)
-                .resizable(false)
-                .fixed_size([100.0, 100.0])
-                .show(ctx, |ui| {
-                    ui.label("This is the overlay!");
-                    if ui.button("Close").clicked() {
-                        overlay_visible.0 = false;
-                    }
-                });
-        }
-    }
-}
-
-pub fn overlay_trigger_system(mut overlay_visible: ResMut<OverlayVisible>) {
-    if let Ok(mut flag) = OVERLAY_TRIGGER.lock() {
-        if *flag {
-            overlay_visible.0 = true;
-            *flag = false;
-        }
-    }
-}

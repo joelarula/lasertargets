@@ -4,8 +4,9 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-bevy = { workspace = true, features = ["dynamic_linking"] }
+bevy = { workspace = true }
 egui = { workspace = true }
 bevy_egui = { workspace = true }
+model = { path = "../model" }
 log = { workspace = true }
 pretty_env_logger = { workspace = true }

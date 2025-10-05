@@ -4,12 +4,18 @@ use bevy::render::camera::Viewport;
 use bevy::window::WindowResized;
 use crate::plugins::instructions::{DebugInfoState, InstructionState};
 use crate::plugins::scene::{SceneData, SceneSystemSet, SceneTag};
-use crate::plugins::config::{ConfigState, DisplayMode};
-use crate::plugins::toolbar::ToolbarRegistry;
+use crate::plugins::config::{ConfigState};
 use bevy::render::camera::ScalingMode;
-use log::info;
 
 pub struct CameraPlugin;
+
+ /// Defines the display mode of the application (2D or 3D).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, States, Default, Resource)]
+pub enum DisplayMode {
+    #[default]
+    Mode2D,
+    Mode3D,
+}
 
 const INSTRUCTION_F2: &str = "Press [F2] to toggle between 2d and 3d display mode";
 
@@ -22,6 +28,7 @@ pub struct CameraTag;
 impl Plugin for CameraPlugin {
     fn build(&self, app: &mut App) {
         app
+        .insert_resource(DisplayMode::default())
         .add_systems(Startup, (setup_camera).chain().in_set(CameraSystemSet).after(SceneSystemSet))
         .add_systems(Update, update_camera.in_set(CameraSystemSet).after(SceneSystemSet));
     }
@@ -31,12 +38,11 @@ impl Plugin for CameraPlugin {
 fn setup_camera(
     mut commands: Commands, 
     mut instruction_state: ResMut<InstructionState>,
-    mut toolbar_registry: ResMut<ToolbarRegistry>,
     scene_query: Query<(&SceneData), With<SceneTag>>,
+    display_mode: Res<DisplayMode>,
     config: Res<ConfigState>) {
     
      instruction_state.instructions.push(INSTRUCTION_F2.to_string());
-     toolbar_registry.register_icon_button("Camera".to_string(), camera_button_callback, "\u{f030}".to_string());
      
      for (scene_data) in scene_query.iter() {
 
@@ -57,7 +63,7 @@ fn setup_camera(
             }),
             ..default()
         },
-        get_projection(config.display_mode, scene_data.dimensions.x, scene_data.dimensions.y),
+        get_projection(*display_mode, scene_data.dimensions.x, scene_data.dimensions.y),
         Transform::from_translation(config.termocamera_origin)
             .looking_at(config.termocamera_looking_at, Vec3::Y),
         ));
@@ -72,12 +78,13 @@ fn update_camera(
     mut config: ResMut<ConfigState>,
     keyboard: Res<ButtonInput<KeyCode>>,
     mut debug_info: ResMut<DebugInfoState>,
+    mut display_mode: ResMut<DisplayMode>,
 ) {
     if let Ok((mut camera, mut projection, mut transform)) = camera_query.single_mut() {
       for (scene_transform,scene_data) in scene_query.iter() {
 
-        configure_camera(&mut config, &keyboard);
-        if config.display_mode == DisplayMode::Mode2D {
+        configure_camera(&mut display_mode, &keyboard);
+        if *display_mode == DisplayMode::Mode2D {
             // For 2D mode, ensure the camera is looking straight down the Z-axis by aligning it with the scene center.
             // This resets the camera's orientation and X/Y position for a clean top-down view, while preserving Z-distance.
             let scene_center = scene_transform.translation();
@@ -104,8 +111,8 @@ fn update_camera(
             }
         }
 
-        if config.is_changed() { 
-            *projection = get_projection(config.display_mode,scene_data.dimensions.x, scene_data.dimensions.y);
+        if config.is_changed() {
+            *projection = get_projection(*display_mode, scene_data.dimensions.x, scene_data.dimensions.y);
         }
          
       }
@@ -131,17 +138,13 @@ fn get_projection(display_mode: DisplayMode,w:f32, h:f32) -> Projection {
     }
 }
 
-fn configure_camera(config: &mut ConfigState, keyboard: &Res<ButtonInput<KeyCode>>){
-
+fn configure_camera(display_mode: &mut ResMut<DisplayMode>, keyboard: &Res<ButtonInput<KeyCode>>) {
     if keyboard.just_pressed(KeyCode::F2) {
-        if config.display_mode == DisplayMode::Mode2D {
-            config.display_mode = DisplayMode::Mode3D;
+        if **display_mode == DisplayMode::Mode2D {
+            **display_mode = DisplayMode::Mode3D;
         } else {
-            config.display_mode = DisplayMode::Mode2D;
-        }    
+            **display_mode = DisplayMode::Mode2D;
+        }
     }
 }
 
-fn camera_button_callback() {
-    info!("Camera button pressed from toolbar!");
-}

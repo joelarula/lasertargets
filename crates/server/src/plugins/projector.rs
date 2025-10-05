@@ -1,7 +1,6 @@
 use bevy::prelude::*;
 use log::info;
 use crate::plugins::calibration::CalibrationSystemSet;
-use crate::plugins::toolbar::ToolbarRegistry;
 
 #[derive(SystemSet, Debug, Hash, PartialEq, Eq, Clone)]
 pub struct ProjectorSystemSet;
@@ -16,12 +15,8 @@ impl Plugin for ProjectorPlugin {
     }
 }
 
-fn register_projector(mut toolbar: ResMut<ToolbarRegistry>) {
-    toolbar.register_icon_button(
-        "Laser Projector".to_string(),
-        projector_callback,
-        "\u{f1484}".to_string(), // Nerd Font projector icon
-    );
+fn register_projector() {
+
 }
 
 fn projector_callback() {
