@@ -1,0 +1,50 @@
+use std::env;
+use bevy::prelude::*;
+use bevy_egui::EguiPlugin;
+use log::info;
+
+mod plugins;
+mod util;
+use crate::plugins::instructions::InstructionsPlugin;
+use crate::plugins::config::ConfigPlugin;
+use crate::plugins::camera::CameraPlugin;
+use crate::plugins::calibration::CalibrationPlugin;
+use crate::plugins::projector::ProjectorPlugin;
+use crate::plugins::scene::{ScenePlugin};
+use crate::plugins::toolbar::ToolbarPlugin;
+use crate::plugins::settings::SettingsPlugin;
+
+const FIXED_TIMESTEP: f64 = 1.0 / 50.0; 
+
+fn main() {
+
+    util::setup_logging();
+    unsafe {
+        env::set_var("RUST_LOG", "debug");
+    }
+
+    let mut app = App::new();
+
+    app.add_plugins(
+        DefaultPlugins.set(WindowPlugin {
+            primary_window: Some(Window {
+                title: "LaserTargets Server".to_string(),
+                present_mode: bevy::window::PresentMode::AutoNoVsync ,
+                ..Default::default()
+            }),
+            ..Default::default()
+        })
+    )
+    .add_plugins(EguiPlugin::default())
+    .insert_resource(ClearColor(Color::BLACK))
+    .insert_resource(Time::<Fixed>::from_seconds(FIXED_TIMESTEP))
+    .add_plugins(InstructionsPlugin)
+    .add_plugins(ConfigPlugin)
+    .add_plugins(ScenePlugin)
+    .add_plugins(CameraPlugin)
+    .add_plugins(CalibrationPlugin)
+    .add_plugins(ProjectorPlugin)
+    .add_plugins(ToolbarPlugin)
+    .add_plugins(SettingsPlugin);
+    app.run();
+}

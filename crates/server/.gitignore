@@ -1,8 +1,0 @@
-/examples
-.vscode/
-/target
-/debug
-debug
-target/.
-/assets/Firacode.zip
-**/*.rs.bk

@@ -17,30 +17,15 @@ LaserTargets is a Rust application built with the Bevy game engine for augmented
 - Use Bevy's ECS (Entity Component System) patterns
 
 
-## Project Structure
-```
-src/
-├── main.rs              # Application entry point
-├── plugins/             # Bevy plugins for different features
-│   ├── calibration.rs   # Calibration functionality
-│   ├── camera.rs        # Camera management
-│   ├── config.rs        # Configuration management
-│   ├── cursor.rs        # Cursor handling
-│   ├── instructions.rs  # UI instructions
-│   └── scene.rs         # Scene management
-└── util/
-    └── scale.rs         # Scaling calculations
-```
-
 ## Key Patterns
 - Each major feature should be implemented as a Bevy Plugin
 - Use Bevy's Resource system for shared state
 - Implement proper Component and System organization
-- Use SystemSets for organizing system execution order
+- Use SystemSets for organizing system execution order (Bevy 0.17: use *Systems suffix)
 
 ## Common Tasks
 - When adding new features, create appropriate Components, Systems, and Resources
-- Use Bevy's event system for communication between systems
+- Use Bevy's event/message system for communication between systems (Bevy 0.17 migration)
 - Follow the ECS pattern: avoid storing behavior in components
 - Use proper error handling with Result types
 
@@ -52,6 +37,14 @@ src/
 
 ## Testing
 - Write unit tests for utility functions
+
+## Migration Notes (Bevy 0.17)
+- Update all Bevy imports for types moved to new crates (camera, mesh, image, shader, light, sprite, ui_render, window, math, etc.).
+- Use *Systems suffix for SystemSets.
+- Refactor event/message usage (EventWriter → MessageWriter, etc.).
+- Update UI code to use UiTransform/UiGlobalTransform for UI nodes.
+- Refactor window setup to use split components (e.g., CursorOptions).
+- If a file listed in the structure (e.g., util/scale.rs) does not exist, no migration is needed for it.
 
 
 
