@@ -1,0 +1,50 @@
+# Rust/Cargo
+/target/
+**/target/
+Cargo.lock
+**/*.rs.bk
+*.pdb
+
+# Bevy dynamic linking artifacts
+*.dll
+*.so
+*.dylib
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Build artifacts
+/bin/
+/obj/
+/out/
+
+# Assets (if you want to exclude large files)
+# assets/**/*.blend1
+# assets/**/*.fbx
+
+# Logs
+*.log
+
+# OS files
+Thumbs.db
+.DS_Store
+
+# Editor backups
+*~
+*.orig
+*.rej
+
+# Temporary files
+*.tmp
+*.temp
+
+# Debug files
+*.dSYM/
+
+# Cache directories
+.cache/
