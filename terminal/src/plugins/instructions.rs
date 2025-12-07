@@ -6,7 +6,7 @@ struct InstructionTag;
 
 pub struct InstructionsPlugin;
 
-const INSTRUCTION_F1: &str = "Press [F1] to toggle instructions";
+const INSTRUCTION_I: &str = "Press [I] to toggle instructions";
 
 
 #[derive(Resource)]
@@ -22,6 +22,12 @@ impl Default for InstructionState {
             instructions: Vec::new(),
             instructions_visible: true,
         }
+    }
+}
+
+impl InstructionState {
+    pub fn add_instruction(&mut self, instruction: String) {
+        self.instructions.push(instruction);
     }
 }
 
@@ -49,7 +55,7 @@ fn setup_instructions(
     mut instruction_state: ResMut<InstructionState>,
 ) {
     
-    instruction_state.instructions.insert(0, INSTRUCTION_F1.to_string());
+    instruction_state.instructions.insert(0, INSTRUCTION_I.to_string());
 
     commands.spawn((
         InstructionTag,
@@ -77,7 +83,7 @@ fn update_instructions(
     mut instruction_state: ResMut<InstructionState>,
     keyboard: Res<ButtonInput<KeyCode>>) {
 
-    if keyboard.just_pressed(KeyCode::F1) {
+    if keyboard.just_pressed(KeyCode::KeyI) {
         instruction_state.instructions_visible = !instruction_state.instructions_visible;
     }
 

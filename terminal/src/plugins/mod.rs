@@ -6,3 +6,4 @@ pub mod scene;
 pub mod toolbar;
 pub mod projector;
 pub mod settings;
+pub mod target;

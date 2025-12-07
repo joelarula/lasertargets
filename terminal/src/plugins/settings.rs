@@ -38,6 +38,8 @@ fn register_settings_button(mut toolbar: ResMut<ToolbarRegistry>) {
         "Settings".to_string(),
         settings_button_callback,
         "\u{f04fe}".to_string(),
+        crate::plugins::toolbar::Docking::Left,
+        36.0,
     );
 }
 
@@ -145,10 +147,14 @@ pub fn overlay_ui_system(
     }
 }
 
-pub fn overlay_trigger_system(mut overlay_visible: ResMut<OverlayVisible>) {
+pub fn overlay_trigger_system(
+    mut overlay_visible: ResMut<OverlayVisible>,
+    mut toolbar_registry: ResMut<ToolbarRegistry>,
+) {
     if let Ok(mut show) = TOGGLE_OVERLAY.lock() {
         if overlay_visible.0 != *show {
             overlay_visible.0 = *show;
+            toolbar_registry.update_button_state("Settings", *show);
         }
     }
 }
