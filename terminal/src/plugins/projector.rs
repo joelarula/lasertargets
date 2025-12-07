@@ -1,5 +1,6 @@
 use bevy::prelude::*;
 use log::info;
+use std::sync::Mutex;
 use crate::plugins::calibration::CalibrationSystemSet;
 use crate::plugins::scene::{SceneData, SceneTag};
 use crate::plugins::toolbar::ToolbarRegistry;
@@ -10,6 +11,8 @@ pub struct ProjectorSystemSet;
 
 #[derive(Resource, Default)]
 pub struct ProjectorLockToScene(pub bool);
+
+static TOGGLE_PROJECTOR_REQUESTED: Mutex<bool> = Mutex::new(false);
 
 pub struct ProjectorPlugin;
 
@@ -24,22 +27,17 @@ impl Plugin for ProjectorPlugin {
 }
 
 fn register_projector(mut toolbar: ResMut<ToolbarRegistry>) {
-    toolbar.register_stateful_icon_button(
+    toolbar.register_icon_button(
         "Projector".to_string(),
         projector_callback,
         "\u{f0eb}".to_string(), // Laser icon
-        projector_state_query,
     );
 }
 
-fn projector_state_query(world: &World) -> bool {
-    world.get_resource::<ProjectorConfiguration>()
-        .map(|config| config.enabled)
-        .unwrap_or(false)
-}
-
 fn projector_callback() {
-    info!("Projector button pressed - toggle handled in update system");
+    if let Ok(mut toggle) = TOGGLE_PROJECTOR_REQUESTED.lock() {
+        *toggle = true;
+    }
 }
 
 fn update_projector_system(
@@ -48,6 +46,15 @@ fn update_projector_system(
     scene_query: Query<&SceneData, With<SceneTag>>,
     keyboard: Res<ButtonInput<KeyCode>>,
 ) {
+    // Check if toggle was requested from button
+    if let Ok(mut toggle) = TOGGLE_PROJECTOR_REQUESTED.lock() {
+        if *toggle {
+            projector_config.enabled = !projector_config.enabled;
+            info!("Projector toggled via button: {}", projector_config.enabled);
+            *toggle = false;
+        }
+    }
+    
     configure_projector(&mut projector_config, &mut lock_to_scene, &keyboard);
     
     // If locked to scene, calculate and set angle from scene data
@@ -78,11 +85,11 @@ fn configure_projector(
     // Only allow manual angle adjustment when not locked to scene
     if !lock_to_scene.0 {
         if keyboard.just_pressed(KeyCode::ArrowLeft) {
-            projector_config.angle = (projector_config.angle - 1.0).clamp(10.0, 60.0);
+         //   projector_config.angle = (projector_config.angle - 1.0).clamp(10.0, 60.0);
         }
 
         if keyboard.just_pressed(KeyCode::ArrowRight) {
-            projector_config.angle = (projector_config.angle + 1.0).clamp(10.0, 60.0);
+        //    projector_config.angle = (projector_config.angle + 1.0).clamp(10.0, 60.0);
         }
     }
 }

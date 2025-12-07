@@ -2,6 +2,7 @@ use bevy::prelude::*;
 use log::info;
 use std::collections::HashMap;
 use bevy::color::palettes::css::LIGHT_SKY_BLUE;
+use common::config::ProjectorConfiguration;
 pub struct ToolbarPlugin;
 
 #[derive(Component)]
@@ -12,20 +13,11 @@ struct DynamicButton {
     pub id: String,
 }
 
-pub trait ButtonStateQuery: Send + Sync {
-    fn is_active(&self, world: &World) -> bool;
-}
-
-struct NoStateQuery;
-impl ButtonStateQuery for NoStateQuery {
-    fn is_active(&self, _world: &World) -> bool { false }
-}
-
 #[derive(Clone)]
 pub struct ButtonHandler {
     pub callback: fn(),
     pub icon: Option<String>,
-    pub state_query: Option<fn(&World) -> bool>,
+    pub is_active: bool,
 }
 
 #[derive(Resource)]
@@ -42,24 +34,7 @@ impl ToolbarRegistry {
         self.buttons.insert(name.clone(), ButtonHandler { 
             callback,
             icon: Some(icon),
-            state_query: None,
-        });
-        if !self.registered_buttons.contains(&name) {
-            self.registered_buttons.push(name);
-        }
-    }
-
-    pub fn register_stateful_icon_button(
-        &mut self, 
-        name: String, 
-        callback: fn(), 
-        icon: String,
-        state_query: fn(&World) -> bool,
-    ) {
-        self.buttons.insert(name.clone(), ButtonHandler { 
-            callback,
-            icon: Some(icon),
-            state_query: Some(state_query),
+            is_active: false,
         });
         if !self.registered_buttons.contains(&name) {
             self.registered_buttons.push(name);
@@ -73,7 +48,7 @@ impl Plugin for ToolbarPlugin {
             .insert_resource(ToolbarRegistry::default())
             .add_systems(Startup, load_nerd_font)
             .add_systems(PostStartup, setup_toolbar)
-            .add_systems(Update, (handle_dynamic_buttons, update_toolbar));
+            .add_systems(Update, (handle_dynamic_buttons, update_button_states, update_toolbar));
     }
 }
 
@@ -174,24 +149,36 @@ fn create_toolbar_ui(commands: &mut Commands, registry: &ToolbarRegistry, nerd_f
 
 fn handle_dynamic_buttons(
     mut interaction_query: Query<
-        (&Interaction, &DynamicButton, &mut BackgroundColor),
+        (&Interaction, &DynamicButton),
         Changed<Interaction>,
     >,
     registry: Res<ToolbarRegistry>,
-    world: &World,
 ) {
-    for (interaction, button, mut background_color) in &mut interaction_query {
+    for (interaction, button) in &mut interaction_query {
+        match *interaction {
+            Interaction::Pressed => {
+                if let Some(handler) = registry.buttons.get(&button.id) {
+                    (handler.callback)();
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn update_button_states(
+    mut button_query: Query<(&DynamicButton, &Interaction, &mut BackgroundColor)>,
+    mut registry: ResMut<ToolbarRegistry>,
+) {
+    // Update button colors based on handler state
+    for (button, interaction, mut background_color) in &mut button_query {
         let is_active = registry.buttons.get(&button.id)
-            .and_then(|h| h.state_query)
-            .map(|query| query(world))
+            .map(|h| h.is_active)
             .unwrap_or(false);
 
         match *interaction {
             Interaction::Pressed => {
                 *background_color = BackgroundColor(Color::srgba(0.2, 0.4, 0.6, 0.7));
-                if let Some(handler) = registry.buttons.get(&button.id) {
-                    (handler.callback)();
-                }
             }
             Interaction::Hovered => {
                 if is_active {
