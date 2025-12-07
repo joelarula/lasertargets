@@ -1,29 +1,88 @@
 use bevy::prelude::*;
 use log::info;
 use crate::plugins::calibration::CalibrationSystemSet;
+use crate::plugins::scene::{SceneData, SceneTag};
+use crate::plugins::toolbar::ToolbarRegistry;
+use common::config::ProjectorConfiguration;
 
 #[derive(SystemSet, Debug, Hash, PartialEq, Eq, Clone)]
 pub struct ProjectorSystemSet;
+
+#[derive(Resource, Default)]
+pub struct ProjectorLockToScene(pub bool);
 
 pub struct ProjectorPlugin;
 
 impl Plugin for ProjectorPlugin {
     fn build(&self, app: &mut App) {
         app
+            .insert_resource(ProjectorConfiguration::default())
+            .insert_resource(ProjectorLockToScene(true))
             .add_systems(Startup, register_projector.in_set(ProjectorSystemSet).after(CalibrationSystemSet))
             .add_systems(Update,  update_projector_system.in_set(ProjectorSystemSet).after(CalibrationSystemSet));
     }
 }
 
-fn register_projector() {
+fn register_projector(mut toolbar: ResMut<ToolbarRegistry>) {
+    toolbar.register_stateful_icon_button(
+        "Projector".to_string(),
+        projector_callback,
+        "\u{f0eb}".to_string(), // Laser icon
+        projector_state_query,
+    );
+}
 
+fn projector_state_query(world: &World) -> bool {
+    world.get_resource::<ProjectorConfiguration>()
+        .map(|config| config.enabled)
+        .unwrap_or(false)
 }
 
 fn projector_callback() {
-    info!("Projector button pressed!");
-    // Add projector-specific functionality here
+    info!("Projector button pressed - toggle handled in update system");
 }
 
-fn update_projector_system() {
-    // Main projector system logic will go here
+fn update_projector_system(
+    mut projector_config: ResMut<ProjectorConfiguration>,
+    mut lock_to_scene: ResMut<ProjectorLockToScene>,
+    scene_query: Query<&SceneData, With<SceneTag>>,
+    keyboard: Res<ButtonInput<KeyCode>>,
+) {
+    configure_projector(&mut projector_config, &mut lock_to_scene, &keyboard);
+    
+    // If locked to scene, calculate and set angle from scene data
+    if lock_to_scene.0 {
+        if let Ok(scene_data) = scene_query.single() {
+            projector_config.angle = scene_data.calculate_projector_angle_for_scene_width();
+        }
+    }
+}
+
+fn configure_projector(
+    projector_config: &mut ResMut<ProjectorConfiguration>,
+    lock_to_scene: &mut ResMut<ProjectorLockToScene>,
+    keyboard: &Res<ButtonInput<KeyCode>>,
+) {
+    // Toggle projector enabled state with P key
+    if keyboard.just_pressed(KeyCode::KeyP) {
+        projector_config.enabled = !projector_config.enabled;
+        info!("Projector enabled: {}", projector_config.enabled);
+    }
+    
+    // Toggle lock to scene with a key (e.g., L key)
+    if keyboard.just_pressed(KeyCode::KeyL) {
+        lock_to_scene.0 = !lock_to_scene.0;
+        info!("Projector lock to scene: {}", lock_to_scene.0);
+    }
+    
+    // Only allow manual angle adjustment when not locked to scene
+    if !lock_to_scene.0 {
+        if keyboard.just_pressed(KeyCode::ArrowLeft) {
+            projector_config.angle = (projector_config.angle - 1.0).clamp(10.0, 60.0);
+        }
+
+        if keyboard.just_pressed(KeyCode::ArrowRight) {
+            projector_config.angle = (projector_config.angle + 1.0).clamp(10.0, 60.0);
+        }
+    }
 }

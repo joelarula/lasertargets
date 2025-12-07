@@ -48,3 +48,8 @@ Thumbs.db
 
 # Cache directories
 .cache/
+
+# MCP Server (Node.js)
+mcp-server/node_modules/
+mcp-server/dist/
+mcp-server/*.log

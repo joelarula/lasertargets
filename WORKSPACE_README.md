@@ -18,7 +18,7 @@ lasertargets/
 
 ## Workspace Members
 
-### Client (`crates/client`)
+### Terminal (`terminal`)
 - **Purpose**: Client-side application for LaserTargets
 - **Framework**: Bevy 0.16.1 game engine
 - **Features**: 
@@ -26,7 +26,7 @@ lasertargets/
   - Client-side rendering
   - User input handling
 
-### Server (`crates/server`)
+### Server (`server`)
 - **Purpose**: Server application for LaserTargets augmented reality system
 - **Framework**: Bevy 0.16.1 game engine
 - **Features**: 

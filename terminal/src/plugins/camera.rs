@@ -4,8 +4,8 @@ use bevy::camera::Viewport;
 use bevy::window::WindowResized;
 use crate::plugins::instructions::{DebugInfoState, InstructionState};
 use crate::plugins::scene::{SceneData, SceneSystemSet, SceneTag};
-use crate::plugins::config::{ConfigState};
 use bevy_camera::ScalingMode;
+use common::config::CameraConfiguration;
 
 pub struct CameraPlugin;
 
@@ -29,6 +29,7 @@ impl Plugin for CameraPlugin {
     fn build(&self, app: &mut App) {
         app
         .insert_resource(DisplayMode::default())
+        .insert_resource(CameraConfiguration::default())
         .add_systems(Startup, (setup_camera).chain().in_set(CameraSystemSet).after(SceneSystemSet))
         .add_systems(Update, update_camera.in_set(CameraSystemSet).after(SceneSystemSet));
     }
@@ -40,7 +41,7 @@ fn setup_camera(
     mut instruction_state: ResMut<InstructionState>,
     scene_query: Query<(&SceneData), With<SceneTag>>,
     display_mode: Res<DisplayMode>,
-    config: Res<ConfigState>) {
+    config: Res<CameraConfiguration>) {
     
      instruction_state.instructions.push(INSTRUCTION_F2.to_string());
      
@@ -64,8 +65,8 @@ fn setup_camera(
             ..default()
         },
         get_projection(*display_mode, scene_data.dimensions.x, scene_data.dimensions.y),
-        Transform::from_translation(config.termocamera_origin)
-            .looking_at(config.termocamera_looking_at, Vec3::Y),
+        Transform::from_translation(config.transform.translation)
+            .looking_at(config.transform.translation, Vec3::Y),
         ));
     }
 
@@ -75,7 +76,7 @@ fn update_camera(
     mut resize_events: EventReader<WindowResized>,
     mut camera_query: Query<(&mut Camera, &mut Projection, &mut Transform), With<CameraTag>>,
     scene_query: Query<(&GlobalTransform, &SceneData), With<SceneTag>>,
-    mut config: ResMut<ConfigState>,
+    mut config: ResMut<CameraConfiguration>,
     keyboard: Res<ButtonInput<KeyCode>>,
     mut debug_info: ResMut<DebugInfoState>,
     mut display_mode: ResMut<DisplayMode>,
@@ -91,7 +92,7 @@ fn update_camera(
             *transform = Transform::from_xyz(scene_center.x, scene_center.y, transform.translation.z)
                 .looking_at(scene_center, Vec3::Y);
         } else {
-            *transform = Transform::from_translation(config.termocamera_origin)
+            *transform = Transform::from_translation(config.transform.translation)
                 .looking_at(scene_transform.translation(), Vec3::Y);
         }
 
@@ -124,10 +125,15 @@ fn update_camera(
 fn get_projection(display_mode: DisplayMode,w:f32, h:f32) -> Projection {
     match display_mode {
         
-        DisplayMode::Mode2D => Projection::from(OrthographicProjection {
-            scaling_mode: ScalingMode::WindowSize,
-            ..OrthographicProjection::default_2d()
-        }),
+        DisplayMode::Mode2D => {
+            // Scale to fit the largest dimension proportionally
+            // This ensures the entire scene fits in the viewport
+            let scale = w.max(h);
+            Projection::from(OrthographicProjection {
+                scaling_mode: ScalingMode::FixedVertical { viewport_height: scale },
+                ..OrthographicProjection::default_2d()
+            })
+        },
         
         DisplayMode::Mode3D => Projection::from(PerspectiveProjection {
             fov: std::f32::consts::PI / 4.0,

@@ -12,10 +12,20 @@ struct DynamicButton {
     pub id: String,
 }
 
+pub trait ButtonStateQuery: Send + Sync {
+    fn is_active(&self, world: &World) -> bool;
+}
+
+struct NoStateQuery;
+impl ButtonStateQuery for NoStateQuery {
+    fn is_active(&self, _world: &World) -> bool { false }
+}
+
 #[derive(Clone)]
 pub struct ButtonHandler {
     pub callback: fn(),
     pub icon: Option<String>,
+    pub state_query: Option<fn(&World) -> bool>,
 }
 
 #[derive(Resource)]
@@ -28,12 +38,28 @@ pub struct ToolbarRegistry {
 }
 
 impl ToolbarRegistry {
-
-    
     pub fn register_icon_button(&mut self, name: String, callback: fn(), icon: String) {
         self.buttons.insert(name.clone(), ButtonHandler { 
             callback,
             icon: Some(icon),
+            state_query: None,
+        });
+        if !self.registered_buttons.contains(&name) {
+            self.registered_buttons.push(name);
+        }
+    }
+
+    pub fn register_stateful_icon_button(
+        &mut self, 
+        name: String, 
+        callback: fn(), 
+        icon: String,
+        state_query: fn(&World) -> bool,
+    ) {
+        self.buttons.insert(name.clone(), ButtonHandler { 
+            callback,
+            icon: Some(icon),
+            state_query: Some(state_query),
         });
         if !self.registered_buttons.contains(&name) {
             self.registered_buttons.push(name);
@@ -152,8 +178,14 @@ fn handle_dynamic_buttons(
         Changed<Interaction>,
     >,
     registry: Res<ToolbarRegistry>,
+    world: &World,
 ) {
     for (interaction, button, mut background_color) in &mut interaction_query {
+        let is_active = registry.buttons.get(&button.id)
+            .and_then(|h| h.state_query)
+            .map(|query| query(world))
+            .unwrap_or(false);
+
         match *interaction {
             Interaction::Pressed => {
                 *background_color = BackgroundColor(Color::srgba(0.2, 0.4, 0.6, 0.7));
@@ -162,10 +194,18 @@ fn handle_dynamic_buttons(
                 }
             }
             Interaction::Hovered => {
-                *background_color = BackgroundColor(Color::srgba(0.5, 0.7, 0.9, 0.6));
+                if is_active {
+                    *background_color = BackgroundColor(Color::srgba(0.3, 0.8, 0.5, 0.8));
+                } else {
+                    *background_color = BackgroundColor(Color::srgba(0.5, 0.7, 0.9, 0.6));
+                }
             }
             Interaction::None => {
-                *background_color = BackgroundColor(Color::srgba(0.4, 0.6, 0.8, 0.5));
+                if is_active {
+                    *background_color = BackgroundColor(Color::srgba(0.2, 0.7, 0.4, 0.7));
+                } else {
+                    *background_color = BackgroundColor(Color::srgba(0.4, 0.6, 0.8, 0.5));
+                }
             }
         }
     }

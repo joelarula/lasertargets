@@ -1,5 +1,4 @@
 use bevy::prelude::*;
-use crate::plugins::config::ConfigState;
 use crate::plugins::scene::SceneSystemSet;
 
 #[derive(Component)]
@@ -10,9 +9,20 @@ pub struct InstructionsPlugin;
 const INSTRUCTION_F1: &str = "Press [F1] to toggle instructions";
 
 
-#[derive(Resource, Default)]
+#[derive(Resource)]
 pub struct InstructionState {
     pub instructions: Vec<String>,
+    /// Controls whether the on-screen instructions are visible.
+    pub instructions_visible: bool,
+}
+
+impl Default for InstructionState {
+    fn default() -> Self {
+        Self {
+            instructions: Vec::new(),
+            instructions_visible: true,
+        }
+    }
 }
 
 #[derive(Resource, Default)]
@@ -64,23 +74,22 @@ fn update_instructions(
     mut text: Query<&mut Text, With<InstructionTag>>,
     mut visbility: Query<&mut Visibility, With<InstructionTag>>,
     debug_info: Res<DebugInfoState>,
-    instruction_state: Res<InstructionState>,
-    keyboard: Res<ButtonInput<KeyCode>>,
-    mut config: ResMut<ConfigState>) {
+    mut instruction_state: ResMut<InstructionState>,
+    keyboard: Res<ButtonInput<KeyCode>>) {
 
     if keyboard.just_pressed(KeyCode::F1) {
-        config.as_mut().instructions_visible = !config.instructions_visible;
+        instruction_state.instructions_visible = !instruction_state.instructions_visible;
     }
 
     for mut visibility in visbility.iter_mut() {
-        *visibility = if config.instructions_visible {
+        *visibility = if instruction_state.instructions_visible {
             Visibility::Inherited
         } else {
             Visibility::Hidden
         };
     }
     
-    if !config.instructions_visible {
+    if !instruction_state.instructions_visible {
         return;
     }
 

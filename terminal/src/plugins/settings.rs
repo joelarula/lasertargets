@@ -1,10 +1,11 @@
 
 use bevy_egui::EguiContexts;
 use bevy_egui::egui;
-use model::config::SceneConfiguration;
+use common::config::{SceneConfiguration, ProjectorConfiguration};
 use std::sync::Mutex;
 
 use crate::plugins::camera::DisplayMode;
+use crate::plugins::projector::ProjectorLockToScene;
 use crate::plugins::{
     calibration::CalibrationSystemSet, scene::SceneSystemSet, toolbar::ToolbarRegistry,
 };
@@ -52,6 +53,8 @@ pub fn overlay_ui_system(
     overlay_visible: Res<OverlayVisible>,
     mut scene_configuration: ResMut<SceneConfiguration>,
     mut display_mode: ResMut<DisplayMode>,
+    mut projector_config: ResMut<ProjectorConfiguration>,
+    mut lock_to_scene: ResMut<ProjectorLockToScene>,
 ) {
     for scene_data in scene_query.iter() {
         if let Ok(ctx) = egui_context.ctx_mut() {
@@ -111,7 +114,30 @@ pub fn overlay_ui_system(
                         });
                         ui.separator();
                         
-                        ui.label("Projector Settings"); 
+                        ui.label("Projector Settings");
+                        ui.horizontal(|ui| {
+                            ui.add_sized([150.0, 0.0], egui::Label::new("Lock projector to scene:"));
+                            let mut locked = lock_to_scene.0;
+                            if ui.checkbox(&mut locked, "").changed() {
+                                lock_to_scene.0 = locked;
+                            }
+                        });
+                        ui.horizontal(|ui| {
+                            ui.add_sized([100.0, 0.0], egui::Label::new("Projection angle:"));
+                            let mut angle = projector_config.angle;
+                            ui.add_enabled_ui(!lock_to_scene.0, |ui| {
+                                if ui
+                                    .add(
+                                        egui::DragValue::new(&mut angle)
+                                            .range(10.0..=60.0)
+                                            .speed(0.5)
+                                            .suffix("°"),
+                                    )
+                                    .changed() {
+                                        projector_config.angle = angle;
+                                }
+                            });
+                        });
                         ui.separator();
                     });
             }
