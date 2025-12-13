@@ -22,14 +22,22 @@ bevy_prototype_lyon = "0.15.0"
 
 
 [profile.dev]
-opt-level = 0
-debug = 2
+opt-level = 1
+debug = 1
 debug-assertions = true
 overflow-checks = true
+incremental = true
 
 # Enable optimizations for dependencies in dev profile
 [profile.dev.package."*"]
 opt-level = 3
+
+# Fast compile profile for development
+[profile.dev-fast]
+inherits = "dev"
+opt-level = 0
+debug = 0
+incremental = true
 
 [profile.release]
 opt-level = 3

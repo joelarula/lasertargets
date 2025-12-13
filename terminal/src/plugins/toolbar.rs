@@ -9,7 +9,7 @@ pub struct ToolbarPlugin;
 struct ToolbarContainer;
 
 #[derive(Component)]
-struct DynamicButton {
+pub struct DynamicButton {
     pub id: String,
 }
 

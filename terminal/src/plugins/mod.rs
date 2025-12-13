@@ -7,3 +7,4 @@ pub mod toolbar;
 pub mod projector;
 pub mod settings;
 pub mod target;
+pub mod basictarget;
