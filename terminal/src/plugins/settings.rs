@@ -2,12 +2,12 @@
 use bevy_egui::EguiContexts;
 use bevy_egui::egui;
 use common::config::{SceneConfiguration, ProjectorConfiguration};
-use std::sync::Mutex;
 
 use crate::plugins::camera::DisplayMode;
 use crate::plugins::projector::ProjectorLockToScene;
 use crate::plugins::{
-    calibration::CalibrationSystemSet, scene::SceneSystemSet, toolbar::ToolbarRegistry,
+    calibration::CalibrationSystemSet, 
+    toolbar::{ToolbarRegistry, ToolbarItem, Docking, ToolabarButton},
 };
 use bevy::prelude::*;
 use bevy_egui::{ EguiPrimaryContextPass};
@@ -15,15 +15,16 @@ pub struct SettingsPlugin;
 use crate::plugins::scene::SceneData;
 use crate::plugins::scene::SceneTag;
 
+const BTN_NAME: &str = "settings";
+
 #[derive(Resource, Default)]
 pub struct OverlayVisible(pub bool);
 
-static TOGGLE_OVERLAY: Mutex<bool> = Mutex::new(false);
 
 impl Plugin for SettingsPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, register_settings_button);
-        app.add_systems(Update, overlay_trigger_system);
+        app.add_systems(Update, (handle_settings_button));
         app.insert_resource(OverlayVisible(false));
         app.add_systems(
             EguiPrimaryContextPass,
@@ -34,20 +35,29 @@ impl Plugin for SettingsPlugin {
 }
 
 fn register_settings_button(mut toolbar: ResMut<ToolbarRegistry>) {
-    toolbar.register_icon_button(
-        "Settings".to_string(),
-        settings_button_callback,
-        "\u{f04fe}".to_string(),
-        crate::plugins::toolbar::Docking::Left,
-        36.0,
-    );
+    toolbar.register_button(ToolbarItem {
+        name: BTN_NAME.to_string(),
+        label: "Settings".to_string(),
+        icon: Some("\u{f04fe}".to_string()),
+        is_active: false,
+        docking: Docking::Left,
+        button_size: 36.0,
+    });
 }
 
-fn settings_button_callback() {
-    if let Ok(mut show) = TOGGLE_OVERLAY.lock() {
-        *show = !*show;
+fn handle_settings_button(
+    button_query: Query<(&Interaction, &ToolabarButton), Changed<Interaction>>,
+    mut overlay_visible: ResMut<OverlayVisible>,
+    mut toolbar_registry: ResMut<ToolbarRegistry>,
+) {
+    for (interaction, button) in &button_query {
+        if button.name == BTN_NAME && *interaction == Interaction::Pressed {
+            overlay_visible.0 = !overlay_visible.0;
+            toolbar_registry.update_button_state(BTN_NAME, overlay_visible.0);
+        }
     }
 }
+
 
 pub fn overlay_ui_system(
     mut egui_context: EguiContexts,
@@ -143,18 +153,6 @@ pub fn overlay_ui_system(
                         ui.separator();
                     });
             }
-        }
-    }
-}
-
-pub fn overlay_trigger_system(
-    mut overlay_visible: ResMut<OverlayVisible>,
-    mut toolbar_registry: ResMut<ToolbarRegistry>,
-) {
-    if let Ok(mut show) = TOGGLE_OVERLAY.lock() {
-        if overlay_visible.0 != *show {
-            overlay_visible.0 = *show;
-            toolbar_registry.update_button_state("Settings", *show);
         }
     }
 }

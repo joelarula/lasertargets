@@ -20,7 +20,7 @@ impl Default for InstructionState {
     fn default() -> Self {
         Self {
             instructions: Vec::new(),
-            instructions_visible: true,
+            instructions_visible: false,
         }
     }
 }

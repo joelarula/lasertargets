@@ -14,6 +14,7 @@ use crate::plugins::scene::{ScenePlugin};
 use crate::plugins::toolbar::ToolbarPlugin;
 use crate::plugins::settings::SettingsPlugin;
 use crate::plugins::target::TargetPlugin;
+use crate::plugins::basictarget::BasicTargetPlugin;
 
 const FIXED_TIMESTEP: f64 = 1.0 / 50.0; 
 
@@ -47,6 +48,7 @@ fn main() {
     .add_plugins(ProjectorPlugin)
     .add_plugins(ToolbarPlugin)
     .add_plugins(SettingsPlugin)
+    .add_plugins(BasicTargetPlugin)
     .add_plugins(TargetPlugin);
     app.run();
 }

@@ -1,5 +1,7 @@
 use bevy::prelude::*;
+use bevy_prototype_lyon::prelude::*;
 use log::info;
+use common::path::{UniversalPath, PathProvider, PathRenderable};
 
 #[derive(SystemSet, Debug, Hash, PartialEq, Eq, Clone)]
 pub struct BasicTargetSystemSet;
@@ -21,6 +23,12 @@ impl Default for BasicTarget {
     }
 }
 
+impl PathProvider for BasicTarget {
+    fn to_universal_path(&self) -> UniversalPath {
+        UniversalPath::circle(Vec2::ZERO, self.radius, self.color)
+    }
+}
+
 pub struct BasicTargetPlugin;
 
 impl Plugin for BasicTargetPlugin {
@@ -34,31 +42,11 @@ impl Plugin for BasicTargetPlugin {
 
 fn draw_basic_targets(
     mut gizmos: Gizmos,
-    query: Query<(&Transform, &BasicTarget)>,
+    query: Query<(&GlobalTransform, &BasicTarget), With<PathRenderable>>,
 ) {
-    for (transform, target) in &query {
-        let pos = transform.translation;
-        let segments = target.segments;
-        let radius = target.radius;
-        
-        // Draw circle as line loop
-        for i in 0..segments {
-            let angle1 = (i as f32 / segments as f32) * 2.0 * std::f32::consts::PI;
-            let angle2 = ((i + 1) as f32 / segments as f32) * 2.0 * std::f32::consts::PI;
-            
-            let p1 = pos + Vec3::new(
-                angle1.cos() * radius,
-                angle1.sin() * radius,
-                0.0
-            );
-            let p2 = pos + Vec3::new(
-                angle2.cos() * radius,
-                angle2.sin() * radius,
-                0.0
-            );
-            
-            gizmos.line(p1, p2, target.color);
-        }
+    for (global_transform, target) in &query {
+        let path = target.to_universal_path();
+        path.draw_with_gizmos(&mut gizmos, global_transform, 0.1);
     }
 }
 
@@ -67,7 +55,7 @@ fn handle_basic_target_click(
     mouse_button: Res<ButtonInput<MouseButton>>,
     camera_query: Query<(&Camera, &GlobalTransform)>,
     window_query: Query<&Window>,
-    target_query: Query<(Entity, &Transform, &BasicTarget)>,
+    target_query: Query<(Entity, &GlobalTransform, &BasicTarget)>,
 ) {
     // Only check on mouse click
     if !mouse_button.just_pressed(MouseButton::Left) {
@@ -92,8 +80,8 @@ fn handle_basic_target_click(
     };
 
     // Check each target circle
-    for (entity, transform, target) in &target_query {
-        let circle_pos = transform.translation;
+    for (entity, global_transform, target) in &target_query {
+        let circle_pos = global_transform.translation();
         
         // Project cursor ray onto the billboard plane (Z = circle_pos.z)
         let t = (circle_pos.z - ray.origin.z) / ray.direction.z;
