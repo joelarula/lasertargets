@@ -3,7 +3,7 @@ use bevy::window::PrimaryWindow;
 use common::config::CameraConfiguration;
 use common::config::ProjectorConfiguration;
 use common::config::SceneConfiguration;
-use crate::plugins::camera::CameraTag;
+use crate::plugins::camera::{CameraTag, ViewportMode};
 use crate::plugins::instructions::DebugInfoState;
 use crate::plugins::instructions::InstructionState;
 use bevy::prelude::UVec2;
@@ -58,7 +58,8 @@ impl SceneData {
         distance: f32,
         scene_width: f32,
         mouse_pos: Option<Vec3>, 
-        scale_factor:f32
+        scale_factor:f32,
+        viewport_mode: ViewportMode,
         ) -> Self {
       
         SceneData{
@@ -66,7 +67,7 @@ impl SceneData {
             distance,
             window_size,
             scale_factor,
-            viewport_size: Self::calculate_viewport_size(window_size, camera_resolution),
+            viewport_size: Self::calculate_viewport_size(window_size, camera_resolution, viewport_mode),
             camera_resolution: camera_resolution,
             mouse_world_pos: mouse_pos,
             projection_resolution: projection_resolution,
@@ -129,11 +130,16 @@ impl SceneData {
       Vec2::new(scene_width, scene_width * aspect_ratio)
    }
 
-   fn calculate_viewport_size(window_size: UVec2, camera_input_size: UVec2) -> UVec2 { 
+   fn calculate_viewport_size(window_size: UVec2, camera_input_size: UVec2, viewport_mode: ViewportMode) -> UVec2 { 
       
       let hscale = window_size.x as f32 / camera_input_size.x as f32;
       let vscale = window_size.y as f32 / camera_input_size.y as f32;
-      let scale = hscale.min(vscale);   
+      
+      let scale = match viewport_mode {
+          ViewportMode::AspectFit => hscale.min(vscale),
+          ViewportMode::FillWidth => hscale,
+      };
+      
       return  UVec2::new(
       (camera_input_size.x as f32 * scale).round() as u32, 
       (camera_input_size.y as f32 * scale).round() as u32
@@ -175,6 +181,7 @@ fn setup_scene(
     scene_configuration: Res<SceneConfiguration>,
     window: Single<&Window>,
     mut instruction_state: ResMut<InstructionState>,
+    viewport_mode: Res<ViewportMode>,
 ) {
 
         instruction_state.instructions.push(INSTRUCTION_TEXT_A.to_string());
@@ -188,7 +195,8 @@ fn setup_scene(
             scene_configuration.target_projection_distance,
             scene_configuration.scene_width,
             None,
-            window.scale_factor()
+            window.scale_factor(),
+            *viewport_mode,
         );
 
         commands.spawn((
@@ -209,7 +217,7 @@ fn update_scene(
     projection_config: Res<ProjectorConfiguration>,
     keyboard: Res<ButtonInput<KeyCode>>,
     mut debug_info: ResMut<DebugInfoState>,
-
+    viewport_mode: Res<ViewportMode>,
 ) {
 
     configure_scene(&mut config, &mut scene_configuration,&keyboard);
@@ -261,6 +269,7 @@ fn update_scene(
                     scene_configuration.scene_width,
                     mouse_pos,
                     window.scale_factor(),
+                    *viewport_mode,
                 );
 
                 update_debug_info(&mut debug_info, &window, &config, &projection_config, &scene_data);

@@ -12,12 +12,23 @@ pub struct CameraPlugin;
  /// Defines the display mode of the application (2D or 3D).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, States, Default, Resource)]
 pub enum DisplayMode {
-    #[default]
     Mode2D,
+    #[default]
     Mode3D,
 }
 
+/// Defines how the viewport scales to fit the window
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Resource)]
+pub enum ViewportMode {
+    /// Maintain aspect ratio, fit within window (letterbox/pillarbox)
+    AspectFit,
+    /// Fill horizontal space, may crop vertically
+    #[default]
+    FillWidth,
+}
+
 const INSTRUCTION_F2: &str = "Press [F2] to toggle between 2d and 3d display mode";
+const INSTRUCTION_F3: &str = "Press [F3] to toggle viewport scaling mode";
 
 #[derive(SystemSet, Debug, Hash, PartialEq, Eq, Clone)]
 pub struct CameraSystemSet;
@@ -29,6 +40,7 @@ impl Plugin for CameraPlugin {
     fn build(&self, app: &mut App) {
         app
         .insert_resource(DisplayMode::default())
+        .insert_resource(ViewportMode::default())
         .insert_resource(CameraConfiguration::default())
         .add_systems(Startup, (setup_camera).chain().in_set(CameraSystemSet).after(SceneSystemSet))
         .add_systems(Update, update_camera.in_set(CameraSystemSet).after(SceneSystemSet));
@@ -44,6 +56,7 @@ fn setup_camera(
     config: Res<CameraConfiguration>) {
     
      instruction_state.instructions.push(INSTRUCTION_F2.to_string());
+     instruction_state.instructions.push(INSTRUCTION_F3.to_string());
      
      for (scene_data) in scene_query.iter() {
 
@@ -80,11 +93,12 @@ fn update_camera(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut debug_info: ResMut<DebugInfoState>,
     mut display_mode: ResMut<DisplayMode>,
+    mut viewport_mode: ResMut<ViewportMode>,
 ) {
     if let Ok((mut camera, mut projection, mut transform)) = camera_query.single_mut() {
       for (scene_transform,scene_data) in scene_query.iter() {
 
-        configure_camera(&mut display_mode, &keyboard);
+        configure_camera(&mut display_mode, &mut viewport_mode, &keyboard);
         if *display_mode == DisplayMode::Mode2D {
             // For 2D mode, ensure the camera is looking straight down the Z-axis by aligning it with the scene center.
             // This resets the camera's orientation and X/Y position for a clean top-down view, while preserving Z-distance.
@@ -109,6 +123,14 @@ fn update_camera(
                 viewport.physical_position = scene_data.get_viewport_position();
                 viewport.physical_size = scene_data.get_viewport_size();
 
+            }
+        }
+
+        // Also update viewport if ViewportMode changes
+        if viewport_mode.is_changed() {
+            if let Some(viewport) = camera.viewport.as_mut() {
+                viewport.physical_position = scene_data.get_viewport_position();
+                viewport.physical_size = scene_data.get_viewport_size();
             }
         }
 
@@ -144,13 +166,24 @@ fn get_projection(display_mode: DisplayMode,w:f32, h:f32) -> Projection {
     }
 }
 
-fn configure_camera(display_mode: &mut ResMut<DisplayMode>, keyboard: &Res<ButtonInput<KeyCode>>) {
+fn configure_camera(
+    display_mode: &mut ResMut<DisplayMode>, 
+    viewport_mode: &mut ResMut<ViewportMode>,
+    keyboard: &Res<ButtonInput<KeyCode>>
+) {
     if keyboard.just_pressed(KeyCode::F2) {
         if **display_mode == DisplayMode::Mode2D {
             **display_mode = DisplayMode::Mode3D;
         } else {
             **display_mode = DisplayMode::Mode2D;
         }
+    }
+    
+    if keyboard.just_pressed(KeyCode::F3) {
+        **viewport_mode = match **viewport_mode {
+            ViewportMode::AspectFit => ViewportMode::FillWidth,
+            ViewportMode::FillWidth => ViewportMode::AspectFit,
+        };
     }
 }
 
