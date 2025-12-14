@@ -2,6 +2,7 @@ use bevy::prelude::*;
 use bevy_prototype_lyon::prelude::*;
 use log::info;
 use common::path::{UniversalPath, PathProvider, PathRenderable};
+use crate::plugins::scene::{SceneData, SceneTag};
 
 #[derive(SystemSet, Debug, Hash, PartialEq, Eq, Clone)]
 pub struct BasicTargetSystemSet;
@@ -9,7 +10,6 @@ pub struct BasicTargetSystemSet;
 #[derive(Component)]
 pub struct BasicTarget {
     pub radius: f32,
-    pub segments: usize,
     pub color: Color,
 }
 
@@ -17,7 +17,6 @@ impl Default for BasicTarget {
     fn default() -> Self {
         Self {
             radius: 0.5,
-            segments: 32,
             color: Color::srgb(0.0, 0.5, 1.0),
         }
     }
@@ -53,8 +52,7 @@ fn draw_basic_targets(
 fn handle_basic_target_click(
     mut commands: Commands,
     mouse_button: Res<ButtonInput<MouseButton>>,
-    camera_query: Query<(&Camera, &GlobalTransform)>,
-    window_query: Query<&Window>,
+    scene_query: Query<&SceneData, With<SceneTag>>,
     target_query: Query<(Entity, &GlobalTransform, &BasicTarget)>,
 ) {
     // Only check on mouse click
@@ -62,20 +60,12 @@ fn handle_basic_target_click(
         return;
     }
 
-    let Ok((camera, camera_transform)) = camera_query.single() else {
+    let Ok(scene_data) = scene_query.single() else {
         return;
     };
 
-    let Ok(window) = window_query.single() else {
-        return;
-    };
-
-    let Some(cursor_position) = window.cursor_position() else {
-        return;
-    };
-
-    // Get ray from camera through cursor
-    let Ok(ray) = camera.viewport_to_world(camera_transform, cursor_position) else {
+    // Use prepared mouse world position from scene data
+    let Some(mouse_world_pos) = scene_data.mouse_world_pos else {
         return;
     };
 
@@ -83,12 +73,8 @@ fn handle_basic_target_click(
     for (entity, global_transform, target) in &target_query {
         let circle_pos = global_transform.translation();
         
-        // Project cursor ray onto the billboard plane (Z = circle_pos.z)
-        let t = (circle_pos.z - ray.origin.z) / ray.direction.z;
-        let intersection = ray.origin + ray.direction * t;
-        
-        // Check if click is within circle radius
-        let distance_to_center = intersection.distance(circle_pos);
+        // Check if click is within circle radius (already in world space)
+        let distance_to_center = mouse_world_pos.distance(circle_pos);
         
         if distance_to_center < target.radius {
             info!("Clicked on basic target at {:?}, despawning", circle_pos);

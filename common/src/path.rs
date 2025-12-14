@@ -52,16 +52,25 @@ impl UniversalPath {
 
     /// Create a circle path
     pub fn circle(center: Vec2, radius: f32, color: Color) -> Self {
-        use lyon_tessellation::math::{point, Angle};
-        let mut builder = Path::builder().with_svg();
-        builder.move_to(point(center.x + radius, center.y));
-        builder.arc(
-            point(center.x, center.y),
-            lyon_tessellation::math::vector(radius, radius),
-            Angle::radians(0.0),
-            Angle::radians(2.0 * std::f32::consts::PI),
-        );
-        builder.close();
+        use lyon_tessellation::math::point;
+        let mut builder = Path::builder();
+        
+        // Create circle with line segments
+        let segments = 64;
+        let mut started = false;
+        for i in 0..=segments {
+            let angle = (i as f32 / segments as f32) * 2.0 * std::f32::consts::PI;
+            let x = center.x + radius * angle.cos();
+            let y = center.y + radius * angle.sin();
+            
+            if !started {
+                builder.begin(point(x, y));
+                started = true;
+            } else {
+                builder.line_to(point(x, y));
+            }
+        }
+        builder.end(true);
 
         Self {
             segments: vec![

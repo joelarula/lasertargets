@@ -97,7 +97,6 @@ fn spawn_target_circle(
         parent.spawn((
             BasicTarget {
                 radius: 0.5,
-                segments: 32,
                 color: Color::srgb(0.0, 0.5, 1.0),
             },
             PathRenderable { visible: true },
