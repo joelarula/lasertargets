@@ -1,7 +1,6 @@
 use bevy::prelude::*;
 use log::info;
 use crate::plugins::toolbar::ToolbarRegistry;
-use crate::plugins::instructions::InstructionState;
 use crate::plugins::scene::{SceneData, SceneTag};
 use crate::plugins::basictarget::{BasicTarget, BasicTargetPlugin};
 
@@ -13,6 +12,7 @@ pub struct TargetSystemSet;
 struct DragState {
     is_dragging: bool,
     start_button_id: Option<String>,
+    target_button_entity: Option<Entity>,
 }
 
 pub struct TargetPlugin;
@@ -22,8 +22,9 @@ impl Plugin for TargetPlugin {
         app
             .add_plugins(BasicTargetPlugin)
             .insert_resource(DragState::default())
-            .add_systems(Startup, (register_target, register_target_instructions))
+            .add_systems(Startup, register_target)
             .add_systems(Update, (
+                initialize_target_button_entity.run_if(resource_exists::<ToolbarRegistry>),
                 handle_target_drag.in_set(TargetSystemSet),
                 update_target_system.in_set(TargetSystemSet),
             ));
@@ -40,9 +41,19 @@ fn register_target(mut toolbar: ResMut<ToolbarRegistry>) {
     );
 }
 
-fn register_target_instructions(mut instructions: ResMut<InstructionState>) {
-    instructions.add_instruction("Press [T] to toggle target".to_string());
+fn initialize_target_button_entity(
+    mut drag_state: ResMut<DragState>,
+    toolbar: Res<ToolbarRegistry>,
+) {
+    // Only run once when we don't have the entity yet
+    if drag_state.target_button_entity.is_none() {
+        if let Some(entity) = toolbar.get_button_entity("Target") {
+            drag_state.target_button_entity = Some(entity);
+            info!("Initialized target button entity: {:?}", entity);
+        }
+    }
 }
+
 
 fn target_callback() {
     // Callback is handled by drag system
@@ -51,22 +62,25 @@ fn target_callback() {
 fn handle_target_drag(
     mut commands: Commands,
     mut drag_state: ResMut<DragState>,
-    button_query: Query<(&Interaction, &crate::plugins::toolbar::DynamicButton)>,
+    button_query: Query<(Entity, &Interaction), With<crate::plugins::toolbar::DynamicButton>>,
     scene_query: Query<&SceneData, With<SceneTag>>,
     mouse_button: Res<ButtonInput<MouseButton>>,
 ) {
-
+    // Early return if we don't have the button entity yet
+    let Some(target_button_entity) = drag_state.target_button_entity else {
+        return;
+    };
 
     // Check for drag start from Target button
-    for (interaction, button) in &button_query {
-        if button.id == "Target" {
+    for (entity, interaction) in &button_query {
+        if entity == target_button_entity {
             if *interaction == Interaction::Pressed && mouse_button.pressed(MouseButton::Left) {
-            info!("Target button interaction: {:?}, mouse pressed: {}", interaction, mouse_button.pressed(MouseButton::Left));
+                info!("Target button interaction: {:?}, mouse pressed: {}", interaction, mouse_button.pressed(MouseButton::Left));
             
                 if !drag_state.is_dragging {
                     drag_state.is_dragging = true;
-                    drag_state.start_button_id = Some(button.id.clone());
-                    info!("Started dragging from Target button");
+                    drag_state.start_button_id = Some("Target".to_string());
+                    info!("Started dragging from Target button entity {:?}", entity);
                 }
             }
         }

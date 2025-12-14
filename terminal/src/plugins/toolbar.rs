@@ -37,10 +37,11 @@ struct NerdFont(Handle<Font>);
 pub struct ToolbarRegistry {
     buttons: HashMap<String, ButtonHandler>,
     registered_buttons: Vec<String>,
+    button_entities: HashMap<String, Entity>,
 }
 
 impl ToolbarRegistry {
-    pub fn register_icon_button(&mut self, name: String, callback: fn(), icon: String, docking: Docking, button_size: f32) {
+    pub fn register_button(&mut self, name: String, callback: fn(), icon: String, docking: Docking, button_size: f32) -> String {
         self.buttons.insert(name.clone(), ButtonHandler { 
             callback,
             icon: Some(icon),
@@ -49,14 +50,28 @@ impl ToolbarRegistry {
             button_size,
         });
         if !self.registered_buttons.contains(&name) {
-            self.registered_buttons.push(name);
+            self.registered_buttons.push(name.clone());
         }
+        // Return the name so it can be used to get the entity later
+        name
+    }
+    
+    pub fn register_icon_button(&mut self, name: String, callback: fn(), icon: String, docking: Docking, button_size: f32) {
+        self.register_button(name, callback, icon, docking, button_size);
     }
 
     pub fn update_button_state(&mut self, name: &str, is_active: bool) {
         if let Some(handler) = self.buttons.get_mut(name) {
             handler.is_active = is_active;
         }
+    }
+
+    pub fn get_button_entity(&self, name: &str) -> Option<Entity> {
+        self.button_entities.get(name).copied()
+    }
+
+    pub fn set_button_entity(&mut self, name: &str, entity: Entity) {
+        self.button_entities.insert(name.to_string(), entity);
     }
 }
 
@@ -69,7 +84,8 @@ impl Plugin for ToolbarPlugin {
             .add_systems(Update, (
                 handle_dynamic_buttons,
                 update_button_states,
-                update_toolbar
+                update_toolbar,
+                register_button_entities,
             ).chain());
     }
 }
@@ -240,12 +256,25 @@ fn create_docked_toolbar(
                             },
                             TextColor(Color::WHITE)
                         ));
+                    
+                    // Store the button entity in the registry - need to get parent's entity
+                    // We'll store it after the spawn completes
                 }
             }
         });
 }
 
 
+
+fn register_button_entities(
+    mut registry: ResMut<ToolbarRegistry>,
+    button_query: Query<(Entity, &DynamicButton), Added<DynamicButton>>,
+) {
+    for (entity, button) in &button_query {
+        registry.set_button_entity(&button.id, entity);
+        info!("Registered button entity {:?} for button '{}'", entity, button.id);
+    }
+}
 
 fn handle_dynamic_buttons(
     mut interaction_query: Query<
