@@ -11,7 +11,7 @@ Cargo.lock
 *.dylib
 
 # IDE
-.vscode/
+.vscode/É4E6 
 .idea/
 *.swp
 *.swo
