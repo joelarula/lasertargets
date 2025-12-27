@@ -5,15 +5,15 @@ use bevy::{
 
 #[derive(Resource, Debug, Clone, Serialize, Deserialize)]
 pub struct ActorMetaData {
-    actors: Vec<Actor>,
+    pub actors: Vec<Actor>,
 }
 
 
 #[derive(Resource, Debug, Clone, Serialize, Deserialize)]
 pub struct Actor {
-    name: String,
-    uuid: Uuid,
-    roles: Vec<Role>,
+    pub name: String,
+    pub uuid: Uuid,
+    pub roles: Vec<Role>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

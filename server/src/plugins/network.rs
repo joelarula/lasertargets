@@ -4,9 +4,12 @@ use bevy_quinnet::server::{
     certificate::CertificateRetrievalMode,
 };
 use bevy_quinnet::shared::ClientId;
+use common::actor::ActorMetaData;
 use common::config::{CameraConfiguration, ProjectorConfiguration, SceneConfiguration};
 use common::network::{NetworkMessage, SERVER_HOST, SERVER_PORT};
 use std::net::{IpAddr, Ipv6Addr};
+
+use crate::plugins::actor::ActorRegistry;
 
 #[derive(Resource, Debug, Clone)]
 pub struct NetworkingConfiguration {
@@ -70,6 +73,7 @@ fn handle_server_events(
     mut projector_config: ResMut<ProjectorConfiguration>,
     mut camera_config: ResMut<CameraConfiguration>,
     mut scene_config: ResMut<SceneConfiguration>,
+    mut registry: ResMut<ActorRegistry>,
 ) {
     let Some(endpoint) = server.get_endpoint_mut() else {
         return;
@@ -130,7 +134,7 @@ fn handle_server_events(
                                     );
                                 }
                             }
-                            // Update handlers
+                        
                             NetworkMessage::UpdateProjectorConfig(new_config) => {
                                 *projector_config = new_config.clone();
                                 info!("Projector configuration updated by client {}", client_id);
@@ -159,6 +163,29 @@ fn handle_server_events(
                                     .expect("Serialize");
                                 if let Err(e) = endpoint.broadcast_payload(payload) {
                                     error!("Failed to broadcast message: {}", e);
+                                }
+                            }
+                            NetworkMessage::QueryActor => {
+                  
+                                let actors = registry.get_actors(client_id).to_vec();
+                                let meta = ActorMetaData { actors };
+                                let payload = NetworkMessage::ActorResponse(meta)
+                                    .to_bytes()
+                                    .expect("Serialize");
+                                if let Err(e) = endpoint.send_payload(client_id, payload) {
+                                    error!("Failed to send ActorResponse to client {}: {}", client_id, e);
+                                }
+                            }
+
+                            NetworkMessage::RegisterActor(meta) => {
+                                for actor in meta.actors {
+                                    registry.register_actor(client_id, actor);
+                                }
+                            }
+
+                            NetworkMessage::UnregisterActor(meta) => {
+                                for actor in meta.actors {
+                                    registry.unregister_actor(client_id, actor.uuid);
                                 }
                             }
                             _ => {}
