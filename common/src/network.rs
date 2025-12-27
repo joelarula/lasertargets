@@ -1,13 +1,34 @@
-use serde::{Deserialize, Serialize};
 use bincode;
+use serde::{Deserialize, Serialize};
+
+use crate::config::{CameraConfiguration, ProjectorConfiguration, SceneConfiguration};
 
 /// Network messages exchanged between server and terminal
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum NetworkMessage {
     /// Simple ping message from server
-    Ping { timestamp: u64 },
+    Ping {
+        timestamp: u64,
+    },
     /// Pong response from client
-    Pong { timestamp: u64 },
+    Pong {
+        timestamp: u64,
+    },
+
+    // Projector Configuration
+    QueryProjectorConfig,
+    ProjectorConfigResponse(ProjectorConfiguration),
+    UpdateProjectorConfig(ProjectorConfiguration),
+
+    // Camera Configuration
+    QueryCameraConfig,
+    CameraConfigResponse(CameraConfiguration),
+    UpdateCameraConfig(CameraConfiguration),
+
+    // Scene Configuration
+    QuerySceneConfig,
+    SceneConfigResponse(SceneConfiguration),
+    UpdateSceneConfig(SceneConfiguration),
 }
 
 impl NetworkMessage {

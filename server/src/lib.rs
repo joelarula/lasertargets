@@ -1,7 +1,8 @@
 use crate::plugins::network::NetworkingPlugin;
 use crate::plugins::scene::ScenePlugin;
+use crate::plugins::projector::ProjectorPlugin;
+use crate::plugins::camera::CameraPlugin;
 use bevy::app::ScheduleRunnerPlugin;
-use bevy::log::LogPlugin;
 use bevy::prelude::*;
 use bevy_quinnet::server::QuinnetServerPlugin;
 
@@ -15,8 +16,9 @@ pub fn create_server_app(schedule_runner: ScheduleRunnerPlugin) -> App {
 }
 
 pub fn add_common_server_plugins(app: &mut App) {
-    app.add_plugins(LogPlugin::default())
-        .add_plugins(ScenePlugin)
-        .add_plugins(QuinnetServerPlugin::default())
-        .add_plugins(NetworkingPlugin);
+    app.add_plugins(ScenePlugin)
+    .add_plugins(ProjectorPlugin)
+    .add_plugins(CameraPlugin)
+    .add_plugins(QuinnetServerPlugin::default())
+    .add_plugins(NetworkingPlugin);
 }

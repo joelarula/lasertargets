@@ -4,9 +4,9 @@ use bevy_quinnet::server::{
     certificate::CertificateRetrievalMode,
 };
 use bevy_quinnet::shared::ClientId;
+use common::config::{CameraConfiguration, ProjectorConfiguration, SceneConfiguration};
 use common::network::{NetworkMessage, SERVER_HOST, SERVER_PORT};
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
-use std::time::Duration;
+use std::net::{IpAddr, Ipv6Addr};
 
 #[derive(Resource, Debug, Clone)]
 pub struct NetworkingConfiguration {
@@ -17,7 +17,7 @@ pub struct NetworkingConfiguration {
 impl Default for NetworkingConfiguration {
     fn default() -> Self {
         Self {
-            ip: IpAddr::V6(Ipv6Addr::UNSPECIFIED),
+            ip: IpAddr::V6(Ipv6Addr::LOCALHOST),
             port: SERVER_PORT,
         }
     }
@@ -67,12 +67,16 @@ fn start_server(mut server: ResMut<QuinnetServer>, config: Res<NetworkingConfigu
 fn handle_server_events(
     mut server: ResMut<QuinnetServer>,
     mut message_writer: MessageWriter<FromClientMessage>,
+    mut projector_config: ResMut<ProjectorConfiguration>,
+    mut camera_config: ResMut<CameraConfiguration>,
+    mut scene_config: ResMut<SceneConfiguration>,
 ) {
     let Some(endpoint) = server.get_endpoint_mut() else {
         return;
     };
     if let Some(channel_id) = endpoint.default_channel() {
-        for client_id in endpoint.clients() {
+        let clients = endpoint.clients();
+        for client_id in clients {
             while let Some(bytes) = endpoint.try_receive_payload(client_id, channel_id) {
                 match NetworkMessage::from_bytes(&bytes) {
                     Ok(message) => {
@@ -87,6 +91,75 @@ fn handle_server_events(
                                     "Received pong from client {} at timestamp {}",
                                     client_id, timestamp
                                 );
+                            }
+                            // Query handlers
+                            NetworkMessage::QueryProjectorConfig => {
+                                let payload = NetworkMessage::ProjectorConfigResponse(
+                                    projector_config.clone(),
+                                )
+                                .to_bytes()
+                                .expect("Serialize");
+                                if let Err(e) = endpoint.send_payload(client_id, payload) {
+                                    error!(
+                                        "Failed to send response to client {}: {}",
+                                        client_id, e
+                                    );
+                                }
+                            }
+                            NetworkMessage::QueryCameraConfig => {
+                                let payload =
+                                    NetworkMessage::CameraConfigResponse(camera_config.clone())
+                                        .to_bytes()
+                                        .expect("Serialize");
+                                if let Err(e) = endpoint.send_payload(client_id, payload) {
+                                    error!(
+                                        "Failed to send response to client {}: {}",
+                                        client_id, e
+                                    );
+                                }
+                            }
+                            NetworkMessage::QuerySceneConfig => {
+                                let payload =
+                                    NetworkMessage::SceneConfigResponse(scene_config.clone())
+                                        .to_bytes()
+                                        .expect("Serialize");
+                                if let Err(e) = endpoint.send_payload(client_id, payload) {
+                                    error!(
+                                        "Failed to send response to client {}: {}",
+                                        client_id, e
+                                    );
+                                }
+                            }
+                            // Update handlers
+                            NetworkMessage::UpdateProjectorConfig(new_config) => {
+                                *projector_config = new_config.clone();
+                                info!("Projector configuration updated by client {}", client_id);
+                                let payload = NetworkMessage::UpdateProjectorConfig(new_config)
+                                    .to_bytes()
+                                    .expect("Serialize");
+                                if let Err(e) = endpoint.broadcast_payload(payload) {
+                                    error!("Failed to broadcast message: {}", e);
+                                }
+                            }
+                            NetworkMessage::UpdateCameraConfig(new_config) => {
+                                *camera_config = new_config.clone();
+                                info!("Camera configuration updated by client {}", client_id);
+                                let payload = NetworkMessage::UpdateCameraConfig(new_config)
+                                    .to_bytes()
+                                    .expect("Serialize");
+                                if let Err(e) = endpoint.broadcast_payload(payload) {
+                                    error!("Failed to broadcast message: {}", e);
+                                }
+                            }
+                            NetworkMessage::UpdateSceneConfig(new_config) => {
+                                *scene_config = new_config.clone();
+                                info!("Scene configuration updated by client {}", client_id);
+                                let payload = NetworkMessage::UpdateSceneConfig(new_config)
+                                    .to_bytes()
+                                    .expect("Serialize");
+                                if let Err(e) = endpoint.broadcast_payload(payload) {
+                                    error!("Failed to broadcast message: {}", e);
+                                }
                             }
                             _ => {}
                         }
@@ -133,7 +206,7 @@ fn send_ping_periodically(
 
     let message = NetworkMessage::Ping { timestamp };
 
-    // Serialize the message to bytes using serde_json
+    // Serialize the message to bytes using bincode
     let payload = match message.to_bytes() {
         Ok(bytes) => bytes,
         Err(e) => {

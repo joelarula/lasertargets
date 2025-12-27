@@ -1,7 +1,5 @@
 use bevy::prelude::*;
-use lyon_tessellation::{
-    path::{Path, PathEvent, builder::{Build, PathBuilder}},
-};
+use lyon_tessellation::path::{Path, PathEvent};
 
 /// A segment of a path with its own rendering properties
 #[derive(Clone, Debug)]
@@ -13,7 +11,11 @@ pub struct PathSegment {
 
 impl PathSegment {
     pub fn new(path: Path, color: Color, line_width: f32) -> Self {
-        Self { path, color, line_width }
+        Self {
+            path,
+            color,
+            line_width,
+        }
     }
 }
 
@@ -47,14 +49,15 @@ impl UniversalPath {
     }
 
     pub fn add_path(&mut self, path: Path, color: Color, line_width: f32) {
-        self.segments.push(PathSegment::new(path, color, line_width));
+        self.segments
+            .push(PathSegment::new(path, color, line_width));
     }
 
     /// Create a circle path
     pub fn circle(center: Vec2, radius: f32, color: Color) -> Self {
         use lyon_tessellation::math::point;
         let mut builder = Path::builder();
-        
+
         // Create circle with line segments
         let segments = 64;
         let mut started = false;
@@ -62,7 +65,7 @@ impl UniversalPath {
             let angle = (i as f32 / segments as f32) * 2.0 * std::f32::consts::PI;
             let x = center.x + radius * angle.cos();
             let y = center.y + radius * angle.sin();
-            
+
             if !started {
                 builder.begin(point(x, y));
                 started = true;
@@ -73,9 +76,7 @@ impl UniversalPath {
         builder.end(true);
 
         Self {
-            segments: vec![
-                PathSegment::new(builder.build(), color, 1.0)
-            ],
+            segments: vec![PathSegment::new(builder.build(), color, 1.0)],
         }
     }
 
@@ -88,18 +89,16 @@ impl UniversalPath {
         builder.line_to(point(top_left.x + size.x, top_left.y + size.y));
         builder.line_to(point(top_left.x, top_left.y + size.y));
         builder.close();
-        
-       Self {
-            segments: vec![
-                PathSegment::new(builder.build(), color, 1.0)
-            ],
+
+        Self {
+            segments: vec![PathSegment::new(builder.build(), color, 1.0)],
         }
     }
 
     /// Flatten path to line segments for gizmo rendering
     pub fn flatten(&self, tolerance: f32) -> Vec<Vec2> {
         let mut points = Vec::new();
-        
+
         for segment in &self.segments {
             for event in segment.path.iter() {
                 match event {
@@ -117,7 +116,9 @@ impl UniversalPath {
                         let samples = Self::sample_quadratic(from, control, end, tolerance);
                         points.extend(samples);
                     }
-                    PathEvent::Cubic { ctrl1, ctrl2, to, .. } => {
+                    PathEvent::Cubic {
+                        ctrl1, ctrl2, to, ..
+                    } => {
                         // Sample cubic curve
                         let from = points.last().copied().unwrap_or(Vec2::ZERO);
                         let c1 = Vec2::new(ctrl1.x, ctrl1.y);
@@ -134,14 +135,16 @@ impl UniversalPath {
                 }
             }
         }
-        
+
         points
     }
 
     fn sample_quadratic(start: Vec2, control: Vec2, end: Vec2, tolerance: f32) -> Vec<Vec2> {
         let mut points = Vec::new();
-        let steps = ((start.distance(control) + control.distance(end)) / tolerance).ceil().max(2.0) as usize;
-        
+        let steps = ((start.distance(control) + control.distance(end)) / tolerance)
+            .ceil()
+            .max(2.0) as usize;
+
         for i in 1..=steps {
             let t = i as f32 / steps as f32;
             let mt = 1.0 - t;
@@ -153,8 +156,10 @@ impl UniversalPath {
 
     fn sample_cubic(start: Vec2, c1: Vec2, c2: Vec2, end: Vec2, tolerance: f32) -> Vec<Vec2> {
         let mut points = Vec::new();
-        let steps = ((start.distance(c1) + c1.distance(c2) + c2.distance(end)) / tolerance).ceil().max(2.0) as usize;
-        
+        let steps = ((start.distance(c1) + c1.distance(c2) + c2.distance(end)) / tolerance)
+            .ceil()
+            .max(2.0) as usize;
+
         for i in 1..=steps {
             let t = i as f32 / steps as f32;
             let t2 = t * t;
@@ -162,7 +167,7 @@ impl UniversalPath {
             let mt = 1.0 - t;
             let mt2 = mt * mt;
             let mt3 = mt2 * mt;
-            
+
             let point = start * mt3 + c1 * 3.0 * mt2 * t + c2 * 3.0 * mt * t2 + end * t3;
             points.push(point);
         }
@@ -170,7 +175,12 @@ impl UniversalPath {
     }
 
     /// Draw path using gizmos
-    pub fn draw_with_gizmos(&self, gizmos: &mut Gizmos, transform: &GlobalTransform, tolerance: f32) {
+    pub fn draw_with_gizmos(
+        &self,
+        gizmos: &mut Gizmos,
+        transform: &GlobalTransform,
+        tolerance: f32,
+    ) {
         for segment in &self.segments {
             let mut points = Vec::new();
             for event in segment.path.iter() {
@@ -188,7 +198,9 @@ impl UniversalPath {
                         let samples = Self::sample_quadratic(from, control, end, tolerance);
                         points.extend(samples);
                     }
-                    PathEvent::Cubic { ctrl1, ctrl2, to, .. } => {
+                    PathEvent::Cubic {
+                        ctrl1, ctrl2, to, ..
+                    } => {
                         let from = points.last().copied().unwrap_or(Vec2::ZERO);
                         let c1 = Vec2::new(ctrl1.x, ctrl1.y);
                         let c2 = Vec2::new(ctrl2.x, ctrl2.y);
@@ -221,13 +233,10 @@ pub trait PathProvider {
 #[derive(Component)]
 pub struct PathRenderable {
     pub visible: bool,
-
 }
 
 impl Default for PathRenderable {
     fn default() -> Self {
-        Self {
-            visible: true,
-        }
+        Self { visible: true }
     }
 }

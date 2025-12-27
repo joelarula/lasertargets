@@ -1,19 +1,8 @@
-use bevy::{ecs::resource::Resource, math::{Quat, Vec3}};
+use bevy::{
+    ecs::resource::Resource,
+    math::{Quat, Vec3},
+};
 use serde::{Deserialize, Serialize};
-
-
-
-
-pub trait ConfigSerialization: Sized + Serialize + for<'de> Deserialize<'de> + Resource {
-    fn to_bytes(&self) -> Result<Vec<u8>, bincode::Error> {
-        bincode::serialize(self)
-    }
-
-    fn from_bytes(bytes: &[u8]) -> Result<Self, bincode::Error> {
-        bincode::deserialize(bytes)
-    }
-}
-
 
 #[derive(Resource, Debug, Clone, Serialize, Deserialize)]
 pub struct ConfigTransform {
@@ -22,7 +11,7 @@ pub struct ConfigTransform {
     pub scale: Vec3,
 }
 
-#[derive(Resource,Debug, Clone, Serialize, Deserialize)]
+#[derive(Resource, Debug, Clone, Serialize, Deserialize)]
 pub struct SceneConfiguration {
     /// Defines the distance of a target detection plane in modeled physical world in meters.
     pub target_projection_distance: f32,
@@ -39,9 +28,7 @@ impl Default for SceneConfiguration {
     }
 }
 
-impl ConfigSerialization for SceneConfiguration {}
-
-#[derive(Resource,Debug, Clone, Serialize, Deserialize)]
+#[derive(Resource, Debug, Clone, Serialize, Deserialize)]
 pub struct ProjectorConfiguration {
     pub output_resolution: bevy::prelude::UVec2,
     // projection angle in degrees
@@ -58,9 +45,14 @@ impl Default for ProjectorConfiguration {
             angle: 25.0,
             transform: ConfigTransform {
                 translation: bevy::prelude::Vec3::new(0.0, 1.5, 5.0),
-                rotation: bevy::prelude::Transform::from_translation(bevy::prelude::Vec3::new(0.0, 1.5, 5.0))
-                    .looking_at(bevy::prelude::Vec3::new(0.0, 1.5, 0.0), bevy::prelude::Vec3::Y)
-                    .rotation,
+                rotation: bevy::prelude::Transform::from_translation(bevy::prelude::Vec3::new(
+                    0.0, 1.5, 5.0,
+                ))
+                .looking_at(
+                    bevy::prelude::Vec3::new(0.0, 1.5, 0.0),
+                    bevy::prelude::Vec3::Y,
+                )
+                .rotation,
                 scale: bevy::prelude::Vec3::ONE,
             },
             enabled: false,
@@ -69,11 +61,7 @@ impl Default for ProjectorConfiguration {
     }
 }
 
-
-impl ConfigSerialization for ProjectorConfiguration {}
-
-
-#[derive(Resource,Debug, Clone, Serialize, Deserialize)]
+#[derive(Resource, Debug, Clone, Serialize, Deserialize)]
 pub struct CameraConfiguration {
     /// Defines the size of the thermal camera viewport in pixels.
     pub input_resolution: bevy::prelude::UVec2,
@@ -87,16 +75,16 @@ impl Default for CameraConfiguration {
             input_resolution: bevy::prelude::UVec2::new(256, 192),
             transform: ConfigTransform {
                 translation: bevy::prelude::Vec3::new(0.0, 1.5, 5.0),
-                rotation: bevy::prelude::Transform::from_translation(bevy::prelude::Vec3::new(0.0, 1.5, 5.0))
-                    .looking_at(bevy::prelude::Vec3::new(0.0, 1.5, 0.0), bevy::prelude::Vec3::Y)
-                    .rotation,
+                rotation: bevy::prelude::Transform::from_translation(bevy::prelude::Vec3::new(
+                    0.0, 1.5, 5.0,
+                ))
+                .looking_at(
+                    bevy::prelude::Vec3::new(0.0, 1.5, 0.0),
+                    bevy::prelude::Vec3::Y,
+                )
+                .rotation,
                 scale: bevy::prelude::Vec3::ONE,
             },
         }
     }
 }
-
-impl ConfigSerialization for CameraConfiguration {}
-
-
-

@@ -1,9 +1,9 @@
 ﻿cargo :     Checking server v0.1.0 
 (C:\Users\joela\dev\lasertargets\server)
 At line:1 char:1
-+ cargo check -p server 2>&1 | Out-File -FilePath 
-last_errors.txt -Enco ...
-+ ~~~~~~~~~~~~~~~~~~~~~~~~~~
++ cargo check -p server --test integrationtest 2>&1 | Out-File 
+-FilePat ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     + CategoryInfo          : NotSpecified: (    Checking se... 
    targets\server):String) [], RemoteException
     + FullyQualifiedErrorId : NativeCommandError
