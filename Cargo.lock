@@ -1898,6 +1898,8 @@ dependencies = [
  "bevy",
  "lyon_geom",
  "lyon_tessellation",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -4952,6 +4954,7 @@ dependencies = [
  "common",
  "log",
  "serde",
+ "serde_json",
 ]
 
 [[package]]
