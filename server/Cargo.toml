@@ -10,3 +10,7 @@ common = { path = "../common" }
 bevy_quinnet = { workspace = true }
 serde = { workspace = true }
 bincode = { workspace = true }
+
+[[test]]
+name = "integrationtest"
+path = "test/integrationtest.rs"

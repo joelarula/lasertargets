@@ -1,0 +1,369 @@
+mod util;
+use util::{
+    ReceivedMessages, TEST_PORT_BASE, connect_client, create_test_client, create_test_server,
+    flush_server_messages,
+};
+
+use bevy::prelude::*;
+use bevy_quinnet::client::*;
+use bevy_quinnet::server::*;
+use common::network::NetworkMessage;
+use std::time::Duration;
+
+#[test]
+fn test_client_sends_message_server_receives() {
+    let test_port = TEST_PORT_BASE;
+    let mut server_app = create_test_server(test_port);
+    let mut client_app = create_test_client();
+
+    std::thread::sleep(Duration::from_millis(100));
+
+    // Connect client
+    connect_client(&mut client_app, test_port);
+    std::thread::sleep(Duration::from_millis(200));
+
+    // Update apps to process connection
+    for _ in 0..10 {
+        server_app.update();
+        client_app.update();
+        std::thread::sleep(Duration::from_millis(20));
+    }
+
+    // Client sends a Pong message
+    let test_timestamp = 42424242u64;
+    {
+        let mut client = client_app.world_mut().resource_mut::<QuinnetClient>();
+        let connection = client
+            .get_connection_mut()
+            .expect("Client should be connected");
+        let payload = NetworkMessage::Pong {
+            timestamp: test_timestamp,
+        }
+        .to_bytes()
+        .expect("Should serialize");
+        connection.send_payload(payload).unwrap();
+    }
+
+    // Update to process message
+    client_app.update();
+    std::thread::sleep(Duration::from_millis(100));
+    flush_server_messages(&mut server_app);
+
+    // Server receives and verifies the message
+    {
+        let received_messages = server_app.world().resource::<ReceivedMessages>();
+        assert_eq!(
+            received_messages.0.len(),
+            1,
+            "Server should receive exactly one message"
+        );
+        let message = received_messages.0[0].clone();
+
+        match message {
+            NetworkMessage::Pong { timestamp } => {
+                assert_eq!(timestamp, test_timestamp, "Timestamp should match");
+            }
+            _ => panic!("Expected Pong message, got {:?}", message),
+        }
+    }
+}
+
+#[test]
+fn test_server_sends_message_client_receives() {
+    let test_port = TEST_PORT_BASE + 1;
+    let mut server_app = create_test_server(test_port);
+    let mut client_app = create_test_client();
+
+    std::thread::sleep(Duration::from_millis(100));
+
+    // Connect client
+    connect_client(&mut client_app, test_port);
+    std::thread::sleep(Duration::from_millis(200));
+
+    // Update apps
+    for _ in 0..10 {
+        server_app.update();
+        client_app.update();
+        std::thread::sleep(Duration::from_millis(20));
+    }
+
+    // Server sends a Ping message
+    let test_timestamp = 99999999u64;
+    {
+        let mut server = server_app.world_mut().resource_mut::<QuinnetServer>();
+        let endpoint = server
+            .get_endpoint_mut()
+            .expect("Server should have endpoint");
+
+        let clients = endpoint.clients();
+        assert!(!clients.is_empty(), "Should have connected clients");
+
+        let payload = NetworkMessage::Ping {
+            timestamp: test_timestamp,
+        }
+        .to_bytes()
+        .expect("Should serialize");
+        for client_id in clients {
+            endpoint.send_payload(client_id, payload.clone()).unwrap();
+        }
+    }
+
+    // Update to process message
+    server_app.update();
+    std::thread::sleep(Duration::from_millis(100));
+    client_app.update();
+
+    // Client receives and verifies the message
+    {
+        let received_messages = client_app.world().resource::<ReceivedMessages>();
+        assert!(
+            !received_messages.0.is_empty(),
+            "Client should have received a message"
+        );
+        let message = received_messages.0[0].clone();
+
+        match message {
+            NetworkMessage::Ping { timestamp } => {
+                assert_eq!(timestamp, test_timestamp, "Timestamp should match");
+            }
+            _ => panic!("Expected Ping message, got {:?}", message),
+        }
+    }
+}
+
+#[test]
+fn test_bidirectional_message_exchange() {
+    let test_port = TEST_PORT_BASE + 2;
+    let mut server_app = create_test_server(test_port);
+    let mut client_app = create_test_client();
+
+    // Setup
+    std::thread::sleep(Duration::from_millis(100));
+    connect_client(&mut client_app, test_port);
+    std::thread::sleep(Duration::from_millis(200));
+    for _ in 0..10 {
+        server_app.update();
+        client_app.update();
+        std::thread::sleep(Duration::from_millis(20));
+    }
+
+    // Step 1: Server sends Ping
+    let ping_timestamp = 111111u64;
+    {
+        let mut server = server_app.world_mut().resource_mut::<QuinnetServer>();
+        let endpoint = server.get_endpoint_mut().unwrap();
+        let client_id = endpoint.clients()[0];
+        let payload = NetworkMessage::Ping {
+            timestamp: ping_timestamp,
+        }
+        .to_bytes()
+        .expect("Should serialize");
+        endpoint.send_payload(client_id, payload).unwrap();
+    }
+
+    server_app.update();
+    std::thread::sleep(Duration::from_millis(50));
+    client_app.update();
+
+    // Step 2: Client receives Ping and sends Pong
+    {
+        let client_received = {
+            let received_messages = client_app.world().resource::<ReceivedMessages>();
+            received_messages
+                .0
+                .get(0)
+                .expect("Client should have received Ping")
+                .clone()
+        };
+
+        match client_received {
+            NetworkMessage::Ping { timestamp } => {
+                assert_eq!(timestamp, ping_timestamp);
+                // Send Pong back
+                let mut client = client_app.world_mut().resource_mut::<QuinnetClient>();
+                let connection = client.get_connection_mut().unwrap();
+                let payload = NetworkMessage::Pong { timestamp }
+                    .to_bytes()
+                    .expect("Should serialize");
+                connection.send_payload(payload).unwrap();
+            }
+            _ => panic!("Expected Ping"),
+        }
+    }
+
+    client_app.update();
+    std::thread::sleep(Duration::from_millis(50));
+    flush_server_messages(&mut server_app);
+
+    // Step 3: Server receives Pong
+    {
+        let received_messages = server_app.world().resource::<ReceivedMessages>();
+        let message = received_messages
+            .0
+            .get(0)
+            .expect("Server should have received Pong")
+            .clone();
+
+        match message {
+            NetworkMessage::Pong { timestamp } => {
+                assert_eq!(timestamp, ping_timestamp, "Pong should echo Ping timestamp");
+            }
+            _ => panic!("Expected Pong"),
+        }
+    }
+}
+
+#[test]
+fn test_multiple_messages_in_sequence() {
+    let test_port = TEST_PORT_BASE + 3;
+    let mut server_app = create_test_server(test_port);
+    let mut client_app = create_test_client();
+
+    std::thread::sleep(Duration::from_millis(100));
+    connect_client(&mut client_app, test_port);
+    std::thread::sleep(Duration::from_millis(200));
+    for _ in 0..10 {
+        server_app.update();
+        client_app.update();
+        std::thread::sleep(Duration::from_millis(20));
+    }
+
+    // Client sends multiple messages
+    let timestamps = vec![1000u64, 2000u64, 3000u64, 4000u64];
+    {
+        let mut client = client_app.world_mut().resource_mut::<QuinnetClient>();
+        let connection = client.get_connection_mut().unwrap();
+
+        for &timestamp in &timestamps {
+            let payload = NetworkMessage::Pong { timestamp }
+                .to_bytes()
+                .expect("Should serialize");
+            connection.send_payload(payload).unwrap();
+        }
+    }
+
+    client_app.update();
+    std::thread::sleep(Duration::from_millis(150));
+    flush_server_messages(&mut server_app);
+
+    // Server receives all messages in order
+    {
+        let received_messages = server_app.world().resource::<ReceivedMessages>();
+        assert_eq!(
+            received_messages.0.len(),
+            timestamps.len(),
+            "Should receive all messages"
+        );
+
+        for (i, &timestamp) in timestamps.iter().enumerate() {
+            match received_messages.0[i] {
+                NetworkMessage::Pong {
+                    timestamp: received_ts,
+                } => {
+                    assert_eq!(received_ts, timestamp);
+                }
+                _ => panic!("Expected Pong messages"),
+            }
+        }
+    }
+}
+
+#[test]
+fn test_server_broadcasts_to_multiple_clients() {
+    let test_port = TEST_PORT_BASE + 4;
+    let mut server_app = create_test_server(test_port);
+    let mut client1 = create_test_client();
+    let mut client2 = create_test_client();
+
+    // Setup server
+    std::thread::sleep(Duration::from_millis(100));
+
+    // Connect both clients
+    connect_client(&mut client1, test_port);
+    connect_client(&mut client2, test_port);
+    std::thread::sleep(Duration::from_millis(300));
+
+    for _ in 0..15 {
+        server_app.update();
+        client1.update();
+        client2.update();
+        std::thread::sleep(Duration::from_millis(30));
+    }
+
+    // Server broadcasts to all clients
+    let broadcast_timestamp = 777777u64;
+    {
+        let mut server = server_app.world_mut().resource_mut::<QuinnetServer>();
+        let endpoint = server.get_endpoint_mut().unwrap();
+        let clients = endpoint.clients();
+
+        assert_eq!(clients.len(), 2, "Should have 2 connected clients");
+
+        let payload = NetworkMessage::Ping {
+            timestamp: broadcast_timestamp,
+        }
+        .to_bytes()
+        .expect("Should serialize");
+        for client_id in clients {
+            endpoint.send_payload(client_id, payload.clone()).unwrap();
+        }
+    }
+
+    server_app.update();
+    std::thread::sleep(Duration::from_millis(100));
+    client1.update();
+    client2.update();
+
+    // Both clients receive the message
+    {
+        let received_messages = client1.world().resource::<ReceivedMessages>();
+        assert!(!received_messages.0.is_empty());
+        match received_messages.0[0] {
+            NetworkMessage::Ping { timestamp } => assert_eq!(timestamp, broadcast_timestamp),
+            _ => panic!("Expected Ping"),
+        }
+    }
+
+    {
+        let received_messages = client2.world().resource::<ReceivedMessages>();
+        assert!(!received_messages.0.is_empty());
+        match received_messages.0[0] {
+            NetworkMessage::Ping { timestamp } => assert_eq!(timestamp, broadcast_timestamp),
+            _ => panic!("Expected Ping"),
+        }
+    }
+}
+
+#[test]
+fn test_message_serialization() {
+    // Test Ping message
+    let ping = NetworkMessage::Ping { timestamp: 12345 };
+    let serialized = ping.to_bytes().expect("Should serialize");
+    let deserialized: NetworkMessage =
+        NetworkMessage::from_bytes(&serialized).expect("Should deserialize");
+
+    match deserialized {
+        NetworkMessage::Ping { timestamp } => assert_eq!(timestamp, 12345),
+        _ => panic!("Wrong message type"),
+    }
+
+    // Test Pong message
+    let pong = NetworkMessage::Pong { timestamp: 67890 };
+    let serialized = pong.to_bytes().expect("Should serialize");
+    let deserialized: NetworkMessage =
+        NetworkMessage::from_bytes(&serialized).expect("Should deserialize");
+
+    match deserialized {
+        NetworkMessage::Pong { timestamp } => assert_eq!(timestamp, 67890),
+        _ => panic!("Wrong message type"),
+    }
+}
+
+#[test]
+fn test_server_starts_successfully() {
+    let test_port = TEST_PORT_BASE + 5;
+    let server_app = create_test_server(test_port);
+
+    let server = server_app.world().resource::<QuinnetServer>();
+    assert!(server.is_listening(), "Server should be listening");
+}

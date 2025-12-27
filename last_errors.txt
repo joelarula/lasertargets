@@ -1,0 +1,77 @@
+﻿cargo : warning: unused import: `PathBuilder`
+At line:1 char:1
++ cargo check -p server --test integrationtest 2>&1 | Out-File 
+-FilePat ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (warning: unused im    
+port: `PathBuilder`:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+ --> common\src\path.rs:3:46
+  |
+3 |     path::{Path, PathEvent, builder::{Build, PathBuilder}},
+  |                                              ^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on 
+by default
+
+warning: unused import: `Build`
+ --> common\src\path.rs:3:39
+  |
+3 |     path::{Path, PathEvent, builder::{Build, PathBuilder}},
+  |                                       ^^^^^
+
+warning: `common` (lib) generated 2 warnings
+warning: unused import: `Ipv4Addr`
+ --> server\src\plugins\network.rs:8:24
+  |
+8 | use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+  |                        ^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on 
+by default
+
+warning: unused import: `std::time::Duration`
+ --> server\src\plugins\network.rs:9:5
+  |
+9 | use std::time::Duration;
+  |     ^^^^^^^^^^^^^^^^^^^
+
+warning: `server` (lib) generated 2 warnings (run `cargo fix --lib 
+-p server` to apply 2 suggestions)
+    Checking server v0.1.0 (C:\Users\joela\dev\lasertargets\server)
+warning: unused import: `bevy_quinnet::server::certificate::*`
+ --> server\test\util.rs:6:5
+  |
+6 | use bevy_quinnet::server::certificate::*;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on 
+by default
+
+warning: unused import: `bevy_quinnet::server::*`
+ --> server\test\util.rs:7:5
+  |
+7 | use bevy_quinnet::server::*;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::net::Ipv6Addr`
+  --> server\test\integrationtest.rs:10:5
+   |
+10 | use std::net::Ipv6Addr;
+   |     ^^^^^^^^^^^^^^^^^^
+
+error[E0277]: the trait bound 
+`bevy_quinnet::client::ClientConnectionConfiguration: 
+std::default::Default` is not satisfied
+  --> server\test\util.rs:84:15
+   |
+84 |             ..Default::default()
+   |               ^^^^^^^^^^^^^^^^^^ the trait 
+`std::default::Default` is not implemented for 
+`bevy_quinnet::client::ClientConnectionConfiguration`
+
+For more information about this error, try `rustc --explain E0277`.
+warning: `server` (test "integrationtest") generated 3 warnings
+error: could not compile `server` (test "integrationtest") due to 1 
+previous error; 3 warnings emitted

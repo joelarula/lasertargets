@@ -1,0 +1,19 @@
+﻿
+running 7 tests
+test test_message_serialization ... ok
+test test_server_starts_successfully ... ok
+test test_server_sends_message_client_receives ... ok
+test test_client_sends_message_server_receives ... FAILED
+test test_bidirectional_message_exchange ... FAILED
+test test_multiple_messages_in_sequence ... FAILED
+test test_server_broadcasts_to_multiple_clients ... ok
+
+failures:
+
+failures:
+    test_bidirectional_message_exchange
+    test_client_sends_message_server_receives
+    test_multiple_messages_in_sequence
+
+test result: FAILED. 4 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.04s
+
