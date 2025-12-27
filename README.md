@@ -1,6 +1,7 @@
 # lasertargets
-Augmented reality game 
+Augmented reality laser game platform 
 
 
 # Building 
-cargo run --features bevy/dynamic_linking
+cargo run --package  server  --features bevy/dynamic_linking
+cargo run --package  terminal  --features bevy/dynamic_linking

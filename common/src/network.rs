@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use bincode;
 
 /// Network messages exchanged between server and terminal
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -10,14 +11,14 @@ pub enum NetworkMessage {
 }
 
 impl NetworkMessage {
-    /// Serialize the message to bytes
-    pub fn to_bytes(&self) -> Result<Vec<u8>, serde_json::Error> {
-        serde_json::to_vec(self)
+    /// Serialize the message to bytes using bincode
+    pub fn to_bytes(&self) -> Result<Vec<u8>, bincode::Error> {
+        bincode::serialize(self)
     }
 
-    /// Deserialize bytes to a NetworkMessage
-    pub fn from_bytes(bytes: &[u8]) -> Result<Self, serde_json::Error> {
-        serde_json::from_slice(bytes)
+    /// Deserialize bytes to a NetworkMessage using bincode
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, bincode::Error> {
+        bincode::deserialize(bytes)
     }
 }
 

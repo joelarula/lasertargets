@@ -1896,10 +1896,10 @@ name = "common"
 version = "0.1.0"
 dependencies = [
  "bevy",
+ "bincode",
  "lyon_geom",
  "lyon_tessellation",
  "serde",
- "serde_json",
 ]
 
 [[package]]
@@ -4954,7 +4954,6 @@ dependencies = [
  "common",
  "log",
  "serde",
- "serde_json",
 ]
 
 [[package]]
