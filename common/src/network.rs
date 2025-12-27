@@ -1,7 +1,10 @@
 use bincode;
 use serde::{Deserialize, Serialize};
 
-use crate::config::{CameraConfiguration, ProjectorConfiguration, SceneConfiguration};
+use crate::{
+    actor::ActorMetaData,
+    config::{CameraConfiguration, ProjectorConfiguration, SceneConfiguration},
+};
 
 /// Network messages exchanged between server and terminal
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -29,6 +32,12 @@ pub enum NetworkMessage {
     QuerySceneConfig,
     SceneConfigResponse(SceneConfiguration),
     UpdateSceneConfig(SceneConfiguration),
+
+    // Actor Configuration
+    QueryActor,
+    ActorResponse(ActorMetaData),
+    RegisterActor(ActorMetaData),
+    UnregisterActor(ActorMetaData),
 }
 
 impl NetworkMessage {

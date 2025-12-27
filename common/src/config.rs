@@ -1,6 +1,5 @@
 use bevy::{
-    ecs::resource::Resource,
-    math::{Quat, Vec3},
+    asset::uuid::Uuid, ecs::resource::Resource, math::{Quat, Vec3}
 };
 use serde::{Deserialize, Serialize};
 
