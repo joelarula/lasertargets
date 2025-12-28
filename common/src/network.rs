@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     actor::ActorMetaData,
-    config::{CameraConfiguration, ProjectorConfiguration, SceneConfiguration},
+    config::{CameraConfiguration, ProjectorConfiguration, SceneConfiguration}, game::Game,
 };
 
 /// Network messages exchanged between server and terminal
@@ -38,6 +38,10 @@ pub enum NetworkMessage {
     ActorResponse(ActorMetaData),
     RegisterActor(ActorMetaData),
     UnregisterActor(ActorMetaData),
+
+    // Game Configuration
+    QueryGameTag,
+    GameTagResponse(Game),
 }
 
 impl NetworkMessage {

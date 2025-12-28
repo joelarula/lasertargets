@@ -11,6 +11,15 @@ pub struct ActorRegistry {
     actors: HashMap<ClientId, Vec<Actor>>,
 }
 
+pub struct ActorPlugin;
+
+impl Plugin for ActorPlugin {
+    fn build(&self, app: &mut App) {
+        app.insert_resource(ActorRegistry {
+            actors: HashMap::new(),
+        });
+    }
+}
 impl ActorRegistry {
         /// Get a reference to the actors for a client. Returns an empty slice if none exist.
         pub fn get_actors(&self, client_id: ClientId) -> &[Actor] {
@@ -32,12 +41,3 @@ impl ActorRegistry {
     }
 }
 
-pub struct ActorPlugin;
-
-impl Plugin for ActorPlugin {
-    fn build(&self, app: &mut App) {
-        app.insert_resource(ActorRegistry {
-            actors: HashMap::new(),
-        });
-    }
-}

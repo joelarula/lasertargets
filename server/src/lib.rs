@@ -1,6 +1,7 @@
 use crate::plugins::network::NetworkingPlugin;
 use crate::plugins::scene::ScenePlugin;
 use crate::plugins::actor::ActorPlugin;
+use crate::plugins::game::GamePlugin;
 use crate::plugins::projector::ProjectorPlugin;
 use crate::plugins::camera::CameraPlugin;
 use bevy::app::ScheduleRunnerPlugin;
@@ -22,6 +23,7 @@ pub fn add_common_server_plugins(app: &mut App) {
     .add_plugins(ProjectorPlugin)
     .add_plugins(CameraPlugin)
     .add_plugins(ActorPlugin)
+    .add_event(GamePlugin)
     .add_plugins(QuinnetServerPlugin::default())
     .add_plugins(NetworkingPlugin);
 }
