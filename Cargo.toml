@@ -4,6 +4,7 @@ members = [
     "server",
     "common",
     "terminal",
+    "minigames/snake", "minigames/hunter",
 ]
 
 [workspace.dependencies]

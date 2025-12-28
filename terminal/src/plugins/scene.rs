@@ -190,8 +190,8 @@ fn setup_scene(
 
         let scene_data = SceneData::new(
             window.physical_size(),
-            config.input_resolution,
-            projection_config.output_resolution,
+            config.resolution,
+            projection_config.resolution,
             scene_configuration.target_projection_distance,
             scene_configuration.scene_width,
             None,
@@ -263,8 +263,8 @@ fn update_scene(
 
                 *scene_data = SceneData::new(
                     window.physical_size(),
-                    config.input_resolution,
-                    projection_config.output_resolution,    
+                    config.resolution,
+                    projection_config.resolution,    
                     scene_configuration.target_projection_distance,
                     scene_configuration.scene_width,
                     mouse_pos,
@@ -305,8 +305,8 @@ fn update_debug_info(debug_info: &mut DebugInfoState, window: &Window, config: &
         let window_txt =  format!("Window size: {}x{} Camera input size: {}x{} Viewport size: {}x{} scale factor {}", 
             window.physical_size().x ,
             window.physical_size().y, 
-            config.input_resolution.x,
-            config.input_resolution.y,
+            config.resolution.x,
+            config.resolution.y,
             scene_data.get_viewport_size().x,
             scene_data.get_viewport_size().y,
             window.scale_factor());
@@ -335,12 +335,12 @@ fn update_debug_info(debug_info: &mut DebugInfoState, window: &Window, config: &
         let angle_rad = projector_config.angle.to_radians();
         let half_angle = angle_rad / 2.0;
         let projected_width = 2.0 * scene_data.distance * half_angle.tan();
-        let projector_pixel_to_world = projected_width / projector_config.output_resolution.x as f32;
+        let projector_pixel_to_world = projected_width / projector_config.resolution.x as f32;
         
         let projector_txt = format!("Projector angle: {:.2}° Resolution: {}x{} Pixel to world: {:.4}", 
             projector_config.angle,
-            projector_config.output_resolution.x,
-            projector_config.output_resolution.y,
+            projector_config.resolution.x,
+            projector_config.resolution.y,
             projector_pixel_to_world);
         
         debug_info.messages.push(projector_txt);
