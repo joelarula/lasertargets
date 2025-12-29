@@ -10,5 +10,6 @@ path = "src/lib.rs"
 bevy = { workspace = true }
 serde = { workspace = true }
 lyon_geom = "1.0.18"
-lyon_tessellation = "1.0.16"
+lyon_tessellation = { version = "1.0.16", features = ["serde"] }
 bincode = { workspace = true }
+lyon_path = { workspace = true, features = ["serialization"] }

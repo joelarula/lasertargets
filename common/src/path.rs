@@ -1,8 +1,9 @@
 use bevy::prelude::*;
 use lyon_tessellation::path::{Path, PathEvent};
+use serde::{Deserialize, Serialize};
 
 /// A segment of a path with its own rendering properties
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug,Serialize, Deserialize)]
 pub struct PathSegment {
     pub path: Path,
     pub color: Color,
@@ -20,7 +21,7 @@ impl PathSegment {
 }
 
 /// Universal path representation containing multiple segments
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug,Serialize, Deserialize)]
 pub struct UniversalPath {
     pub segments: Vec<PathSegment>,
 }

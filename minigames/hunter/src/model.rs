@@ -1,11 +1,12 @@
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum ActorSlots {
-    RED,
-    GREEN,
-    BLUE,
+use uuid::Uuid;
+
+struct Hunter {
+    uuid: Uuid,
+    actor: Uuid,   
+    score: u32,
+    hits: u32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Snake {
     uuid: Uuid,
     actor: Uuid,
@@ -15,20 +16,31 @@ pub struct Snake {
     score: u32,
 }
 
+struct Prey {
+    actor: Uuid,
+    lives: u8,   
+    reward: u32,
+}
+
+struct HunterGame {
+    game: Uuid,
+    controller: Uuid,
+    hunters: Vec<Hunter>,   
+    prey: Vec<Prey>,  
+}
+
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Snak {
     uuid: Uuid,
     name: String,
     actor: Uuid,
     path: UniversalPath,
-    slot: ActorSlots,
-    value: u32,
+    reward: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SnakeGame {
-    game: Game,
     snakes: Vec<Snake>,   
     snaks: Vec<Snak>,
-    points_to_win: u32,
 }

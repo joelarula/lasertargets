@@ -1,12 +1,14 @@
 use bevy::prelude::*;
 use bevy_quinnet::server::{
-    EndpointAddrConfiguration, QuinnetServer, ServerEndpointConfiguration,
-    certificate::CertificateRetrievalMode,
+    certificate::CertificateRetrievalMode, EndpointAddrConfiguration, QuinnetServer,
+    ServerEndpointConfiguration,
 };
+use bevy_quinnet::server::endpoint::Endpoint;
 use bevy_quinnet::shared::ClientId;
 use common::actor::ActorMetaData;
 use common::config::{CameraConfiguration, ProjectorConfiguration, SceneConfiguration};
 use common::network::{NetworkMessage, SERVER_HOST, SERVER_PORT};
+use common::scene::SceneSetup;
 use std::net::{IpAddr, Ipv6Addr};
 
 use crate::plugins::actor::ActorRegistry;
@@ -39,7 +41,8 @@ impl Plugin for NetworkingPlugin {
         app.add_message::<FromClientMessage>()
             .init_resource::<NetworkingConfiguration>()
             .add_systems(Startup, start_server)
-            .add_systems(Update, (handle_server_events, send_ping_periodically));
+            .add_systems(Update, (handle_server_events, send_ping_periodically))
+            .add_systems(Update, broadcast_scene_setup_on_change);
     }
 }
 
@@ -73,6 +76,7 @@ fn handle_server_events(
     mut projector_config: ResMut<ProjectorConfiguration>,
     mut camera_config: ResMut<CameraConfiguration>,
     mut scene_config: ResMut<SceneConfiguration>,
+    mut scene_setup: ResMut<SceneSetup>,
     mut registry: ResMut<ActorRegistry>,
 ) {
     let Some(endpoint) = server.get_endpoint_mut() else {
@@ -98,41 +102,45 @@ fn handle_server_events(
                             }
                             // Query handlers
                             NetworkMessage::QueryProjectorConfig => {
-                                let payload = NetworkMessage::ProjectorConfigResponse(
-                                    projector_config.clone(),
-                                )
-                                .to_bytes()
-                                .expect("Serialize");
-                                if let Err(e) = endpoint.send_payload(client_id, payload) {
-                                    error!(
-                                        "Failed to send response to client {}: {}",
-                                        client_id, e
-                                    );
-                                }
+                                let message = NetworkMessage::ProjectorConfigResponse(projector_config.clone());
+                                let payload = message.to_bytes().expect("Serialize ProjectorConfigResponse");
+                                send_payload_and_log_error(
+                                    endpoint,
+                                    client_id,
+                                    payload,
+                                    "ProjectorConfigResponse",
+                                );
                             }
                             NetworkMessage::QueryCameraConfig => {
-                                let payload =
-                                    NetworkMessage::CameraConfigResponse(camera_config.clone())
-                                        .to_bytes()
-                                        .expect("Serialize");
-                                if let Err(e) = endpoint.send_payload(client_id, payload) {
-                                    error!(
-                                        "Failed to send response to client {}: {}",
-                                        client_id, e
-                                    );
-                                }
+                                let message = NetworkMessage::CameraConfigResponse(camera_config.clone());
+                                let payload = message.to_bytes().expect("Serialize CameraConfigResponse");
+                                send_payload_and_log_error(
+                                    endpoint,
+                                    client_id,
+                                    payload,
+                                    "CameraConfigResponse",
+                                );
                             }
                             NetworkMessage::QuerySceneConfig => {
-                                let payload =
-                                    NetworkMessage::SceneConfigResponse(scene_config.clone())
-                                        .to_bytes()
-                                        .expect("Serialize");
-                                if let Err(e) = endpoint.send_payload(client_id, payload) {
-                                    error!(
-                                        "Failed to send response to client {}: {}",
-                                        client_id, e
-                                    );
-                                }
+                                let message = NetworkMessage::SceneConfigResponse(scene_config.clone());
+                                let payload = message.to_bytes().expect("Serialize SceneConfigResponse");
+                                send_payload_and_log_error(
+                                    endpoint,
+                                    client_id,
+                                    payload,
+                                    "SceneConfigResponse",
+                                );
+                            }
+
+                            NetworkMessage::QuerySceneSetup => {
+                                let message = NetworkMessage::SceneSetupResponse(scene_setup.clone());
+                                let payload = message.to_bytes().expect("Serialize SceneSetupResponse");
+                                send_payload_and_log_error(
+                                    endpoint,
+                                    client_id,
+                                    payload,
+                                    "SceneSetupResponse",
+                                );
                             }
                         
                             NetworkMessage::UpdateProjectorConfig(new_config) => {
@@ -141,9 +149,11 @@ fn handle_server_events(
                                 let payload = NetworkMessage::UpdateProjectorConfig(new_config)
                                     .to_bytes()
                                     .expect("Serialize");
-                                if let Err(e) = endpoint.broadcast_payload(payload) {
-                                    error!("Failed to broadcast message: {}", e);
-                                }
+                                broadcast_payload_and_log_error(
+                                    endpoint,
+                                    payload,
+                                    "UpdateProjectorConfig",
+                                );
                             }
                             NetworkMessage::UpdateCameraConfig(new_config) => {
                                 *camera_config = new_config.clone();
@@ -151,9 +161,11 @@ fn handle_server_events(
                                 let payload = NetworkMessage::UpdateCameraConfig(new_config)
                                     .to_bytes()
                                     .expect("Serialize");
-                                if let Err(e) = endpoint.broadcast_payload(payload) {
-                                    error!("Failed to broadcast message: {}", e);
-                                }
+                                broadcast_payload_and_log_error(
+                                    endpoint,
+                                    payload,
+                                    "UpdateCameraConfig",
+                                );
                             }
                             NetworkMessage::UpdateSceneConfig(new_config) => {
                                 *scene_config = new_config.clone();
@@ -161,9 +173,11 @@ fn handle_server_events(
                                 let payload = NetworkMessage::UpdateSceneConfig(new_config)
                                     .to_bytes()
                                     .expect("Serialize");
-                                if let Err(e) = endpoint.broadcast_payload(payload) {
-                                    error!("Failed to broadcast message: {}", e);
-                                }
+                                broadcast_payload_and_log_error(
+                                    endpoint,
+                                    payload,
+                                    "UpdateSceneConfig",
+                                );
                             }
                             NetworkMessage::QueryActor => {
                   
@@ -172,9 +186,12 @@ fn handle_server_events(
                                 let payload = NetworkMessage::ActorResponse(meta)
                                     .to_bytes()
                                     .expect("Serialize");
-                                if let Err(e) = endpoint.send_payload(client_id, payload) {
-                                    error!("Failed to send ActorResponse to client {}: {}", client_id, e);
-                                }
+                                send_payload_and_log_error(
+                                    endpoint,
+                                    client_id,
+                                    payload,
+                                    "ActorResponse",
+                                );
                             }
 
                             NetworkMessage::RegisterActor(meta) => {
@@ -250,5 +267,83 @@ fn send_ping_periodically(
         Err(e) => {
             error!("Failed to broadcast ping: {}", e);
         }
+    }
+}
+
+/// Broadcasts SceneSetup and individual configurations to all connected clients when they change.
+fn broadcast_scene_setup_on_change(
+    mut server: ResMut<QuinnetServer>,
+    scene_setup: Res<SceneSetup>,
+    camera_config: Res<CameraConfiguration>,
+    projector_config: Res<ProjectorConfiguration>,
+    scene_configuration: Res<SceneConfiguration>,
+) {
+    let Some(endpoint) = server.get_endpoint_mut() else {
+        return;
+    };
+
+    // Check and broadcast CameraConfiguration changes
+    if camera_config.is_changed() {
+        info!("CameraConfiguration changed, broadcasting update.");
+        let message = NetworkMessage::UpdateCameraConfig(camera_config.clone());
+        let payload = message.to_bytes().expect("Serialize CameraConfig");
+        if let Err(e) = endpoint.broadcast_payload(payload) {
+            error!("Failed to broadcast CameraConfiguration update: {}", e);
+        }
+    }
+
+    // Check and broadcast ProjectorConfiguration changes
+    if projector_config.is_changed() {
+        info!("ProjectorConfiguration changed, broadcasting update.");
+        let message = NetworkMessage::UpdateProjectorConfig(projector_config.clone());
+        let payload = message.to_bytes().expect("Serialize ProjectorConfig");
+        if let Err(e) = endpoint.broadcast_payload(payload) {
+            error!("Failed to broadcast ProjectorConfiguration update: {}", e);
+        }
+    }
+
+    // Check and broadcast SceneConfiguration changes
+    if scene_configuration.is_changed() {
+        info!("SceneConfiguration changed, broadcasting update.");
+        let message = NetworkMessage::UpdateSceneConfig(scene_configuration.clone());
+        let payload = message.to_bytes().expect("Serialize SceneConfig");
+        if let Err(e) = endpoint.broadcast_payload(payload) {
+            error!("Failed to broadcast SceneConfiguration update: {}", e);
+        }
+    }
+
+    // Check and broadcast SceneSetup changes (if still desired, as it aggregates the above)
+    if scene_setup.is_changed() {
+        info!("SceneSetup changed, broadcasting update.");
+        let message = NetworkMessage::SceneSetupResponse(scene_setup.clone());
+        let payload = message.to_bytes().expect("Serialize SceneSetupResponse");
+        if let Err(e) = endpoint.broadcast_payload(payload) {
+            error!("Failed to broadcast SceneSetup: {}", e);
+        }
+    }
+}
+
+
+
+/// Helper function to send a payload and log an error if it fails.
+fn send_payload_and_log_error(
+    endpoint: &mut Endpoint,
+    client_id: ClientId,
+    payload: Vec<u8>,
+    error_context: &str,
+) {
+    if let Err(e) = endpoint.send_payload(client_id, payload) {
+        error!("Failed to send {} to client {}: {}", error_context, client_id, e);
+    }
+}
+
+/// Helper function to broadcast a payload and log an error if it fails.
+fn broadcast_payload_and_log_error(
+    endpoint: &mut Endpoint,
+    payload: Vec<u8>,
+    error_context: &str,
+) {
+    if let Err(e) = endpoint.broadcast_payload(payload) {
+        error!("Failed to broadcast {}: {}", error_context, e);
     }
 }

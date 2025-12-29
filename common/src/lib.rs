@@ -4,6 +4,7 @@ pub mod game;
 pub mod network;
 pub mod path;
 pub mod scene;
+pub mod currency;   
 
 #[cfg(test)]
 #[path = "../test/scenetest.rs"]

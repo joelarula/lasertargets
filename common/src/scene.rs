@@ -2,22 +2,49 @@ use crate::config::{
     CameraConfiguration, ConfigTransform, ProjectorConfiguration, SceneConfiguration,
 };
 use bevy::prelude::*;
+use serde::{Deserialize, Serialize};
 pub struct SceneSetupPlugin;
-
-#[derive(Component)]
-pub struct SceneSetupTag;
-#[derive(SystemSet, Debug, Hash, PartialEq, Eq, Clone)]
-pub struct SceneSetupSystemSet;
 
 impl Plugin for SceneSetupPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(SceneConfiguration::default());
-        app.add_systems(Startup, setup_scene.in_set(SceneSetupSystemSet));
-        app.add_systems(Update, update_scene.in_set(SceneSetupSystemSet));
+        app.init_resource::<SceneSetup>(); // Initialize SceneSetup as a resource
+        app.add_systems(Startup, initialize_scene_setup_resource);
+        app.add_systems(Update, update_scene_setup_resource);
     }
 }
 
-#[derive(Component, Debug, Default, Clone)]
+
+fn initialize_scene_setup_resource(
+    mut scene_setup: ResMut<SceneSetup>,
+    config: Res<CameraConfiguration>,
+    projection_config: Res<ProjectorConfiguration>,
+    scene_configuration: Res<SceneConfiguration>,
+) {
+    *scene_setup = SceneSetup::new(
+        scene_configuration.transform.clone(),
+        config.clone(),
+        projection_config.clone(),
+    );
+}
+
+fn update_scene_setup_resource(
+    mut scene_setup: ResMut<SceneSetup>,
+    config: Res<CameraConfiguration>,
+    scene_configuration: Res<SceneConfiguration>,
+    projection_config: Res<ProjectorConfiguration>,
+) {
+    if config.is_changed() || scene_configuration.is_changed() || projection_config.is_changed() {
+        *scene_setup = SceneSetup::new(
+            scene_configuration.transform.clone(),
+            config.clone(),
+            projection_config.clone(),
+        );
+    }
+}
+
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, Resource)]
 pub struct SceneSetup {
     /// Transform of the scene in world space.
     pub transform: ConfigTransform,
@@ -217,43 +244,3 @@ impl SceneSetup {
     }
 }
 
-fn setup_scene(
-    mut commands: Commands,
-    config: Res<CameraConfiguration>,
-    projection_config: Res<ProjectorConfiguration>,
-    scene_configuration: Res<SceneConfiguration>,
-) {
-    let scene_data = SceneSetup::new(
-        scene_configuration.transform.clone(),
-        config.clone(),
-        projection_config.clone(),
-    );
-
-    commands.spawn((
-        SceneSetupTag,
-        scene_data,
-        Transform::from_translation(scene_configuration.transform.translation),
-        GlobalTransform::default(),
-        Name::new("SceneSetupTag"),
-    ));
-}
-
-fn update_scene(
-    mut scene_query: Query<
-        (&GlobalTransform, &mut Transform, &mut SceneSetup),
-        With<SceneSetupTag>,
-    >,
-    config: Res<CameraConfiguration>,
-    scene_configuration: Res<SceneConfiguration>,
-    projection_config: Res<ProjectorConfiguration>,
-) {
-    if config.is_changed() || scene_configuration.is_changed() || projection_config.is_changed() {
-        for (_scene_transform, _transform, mut scene_data) in scene_query.iter_mut() {
-            *scene_data = SceneSetup::new(
-                scene_configuration.transform.clone(),
-                config.clone(),
-                projection_config.clone(),
-            );
-        }
-    }
-}

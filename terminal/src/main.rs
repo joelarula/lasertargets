@@ -42,6 +42,7 @@ fn main() {
     .insert_resource(Time::<Fixed>::from_seconds(FIXED_TIMESTEP))
     .add_plugins(InstructionsPlugin)
     .add_plugins(ConfigPlugin)
+    .add_plugins(SceneSetupPlugin)
     .add_plugins(ScenePlugin)
     .add_plugins(CameraPlugin)
     .add_plugins(CalibrationPlugin)

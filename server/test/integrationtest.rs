@@ -1,3 +1,155 @@
+#[test]
+fn test_query_scene_setup() {
+    let test_port = TEST_PORT_BASE + 12;
+    let mut server_app = create_test_server(test_port);
+    let mut client_app = create_test_client();
+
+    connect_client(&mut client_app, test_port);
+    std::thread::sleep(Duration::from_millis(200));
+
+    // Client sends QuerySceneSetup
+    {
+        let mut client = client_app.world_mut().resource_mut::<QuinnetClient>();
+        let connection = client.get_connection_mut().unwrap();
+        let payload = NetworkMessage::QuerySceneSetup
+            .to_bytes()
+            .expect("Serialize");
+        connection.send_payload(payload).unwrap();
+    }
+
+    client_app.update();
+    std::thread::sleep(Duration::from_millis(150));
+    flush_server_messages(&mut server_app);
+    std::thread::sleep(Duration::from_millis(150));
+    client_app.update();
+
+    // Verify response
+    {
+        let received = client_app.world().resource::<ReceivedMessages>();
+        assert!(!received.0.is_empty(), "Client should receive response");
+        let found = received
+            .0
+            .iter()
+            .any(|m| matches!(m, NetworkMessage::SceneSetupResponse(_)));
+        assert!(
+            found,
+            "Expected SceneSetupResponse in {:?}",
+            received.0
+        );
+    }
+}
+
+#[test]
+fn test_update_camera_config_broadcast() {
+    let test_port = TEST_PORT_BASE + 13;
+    let mut server_app = create_test_server(test_port);
+    let mut client1_app = create_test_client();
+    let mut client2_app = create_test_client();
+
+    connect_client(&mut client1_app, test_port);
+    connect_client(&mut client2_app, test_port);
+    std::thread::sleep(Duration::from_millis(300));
+
+    // Client 1 sends Update
+    let mut new_config = CameraConfiguration::default();
+    new_config.locked_to_scene = true;
+    new_config.angle = 123.0;
+
+    {
+        let mut client = client1_app.world_mut().resource_mut::<QuinnetClient>();
+        let connection = client.get_connection_mut().unwrap();
+        let payload = NetworkMessage::UpdateCameraConfig(new_config.clone())
+            .to_bytes()
+            .expect("Serialize");
+        connection.send_payload(payload).unwrap();
+    }
+
+    client1_app.update();
+    std::thread::sleep(Duration::from_millis(150));
+    flush_server_messages(&mut server_app);
+    std::thread::sleep(Duration::from_millis(150));
+    client2_app.update();
+
+    // Verify server update
+    {
+        let server_config = server_app.world().resource::<CameraConfiguration>();
+        assert_eq!(server_config.locked_to_scene, true);
+        assert_eq!(server_config.angle, 123.0);
+    }
+
+    // Verify client 2 received broadcast
+    {
+        let received = client2_app.world().resource::<ReceivedMessages>();
+        assert!(!received.0.is_empty(), "Client 2 should receive broadcast");
+        let found = received.0.iter().any(|m| {
+            if let NetworkMessage::UpdateCameraConfig(received_config) = m {
+                received_config.locked_to_scene == true && received_config.angle == 123.0
+            } else {
+                false
+            }
+        });
+        assert!(
+            found,
+            "Expected UpdateCameraConfig broadcast in {:?}",
+            received.0
+        );
+    }
+}
+
+#[test]
+fn test_update_scene_config_broadcast() {
+    let test_port = TEST_PORT_BASE + 14;
+    let mut server_app = create_test_server(test_port);
+    let mut client1_app = create_test_client();
+    let mut client2_app = create_test_client();
+
+    connect_client(&mut client1_app, test_port);
+    connect_client(&mut client2_app, test_port);
+    std::thread::sleep(Duration::from_millis(300));
+
+    // Client 1 sends Update
+    let mut new_config = SceneConfiguration::default();
+    new_config.scene_width = 42.0;
+
+    {
+        let mut client = client1_app.world_mut().resource_mut::<QuinnetClient>();
+        let connection = client.get_connection_mut().unwrap();
+        let payload = NetworkMessage::UpdateSceneConfig(new_config.clone())
+            .to_bytes()
+            .expect("Serialize");
+        connection.send_payload(payload).unwrap();
+    }
+
+    client1_app.update();
+    std::thread::sleep(Duration::from_millis(150));
+    flush_server_messages(&mut server_app);
+    std::thread::sleep(Duration::from_millis(150));
+    client2_app.update();
+
+    // Verify server update
+    {
+        let server_config = server_app.world().resource::<SceneConfiguration>();
+        assert_eq!(server_config.scene_width, 42.0);
+    }
+
+    // Verify client 2 received broadcast
+    {
+        let received = client2_app.world().resource::<ReceivedMessages>();
+        assert!(!received.0.is_empty(), "Client 2 should receive broadcast");
+        let found = received.0.iter().any(|m| {
+            if let NetworkMessage::UpdateSceneConfig(received_config) = m {
+                received_config.scene_width == 42.0
+            } else {
+                false
+            }
+        });
+        assert!(
+            found,
+            "Expected UpdateSceneConfig broadcast in {:?}",
+            received.0
+        );
+    }
+}
 mod util;
 use util::{
     ReceivedMessages, TEST_PORT_BASE, connect_client, create_test_client, create_test_server,
