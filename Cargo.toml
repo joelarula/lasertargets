@@ -5,6 +5,7 @@ members = [
     "common",
     "terminal",
     "minigames/hunter",
+    "minigames/snake",
 ]
 
 [workspace.dependencies]

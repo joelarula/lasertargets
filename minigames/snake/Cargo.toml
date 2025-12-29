@@ -1,0 +1,14 @@
+[package]
+name = "snake"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+bevy = { workspace = true }
+log = { workspace = true }
+common = { path = "../../common" }
+serde = { workspace = true }
+seldom_state = { workspace = true }

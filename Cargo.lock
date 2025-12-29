@@ -5063,6 +5063,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "snake"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "common",
+ "log",
+ "seldom_state",
+ "serde",
+]
+
+[[package]]
 name = "socket2"
 version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
