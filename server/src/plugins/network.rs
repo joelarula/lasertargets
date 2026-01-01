@@ -207,7 +207,7 @@ fn handle_server_events(
 
                             NetworkMessage::RegisterActor(meta) => {
                                 for actor in meta.actors {
-                                    register_actor_events.send(RegisterActorEvent {
+                                    register_actor_events.write(RegisterActorEvent {
                                         client_id,
                                         actor,
                                     });
@@ -216,7 +216,7 @@ fn handle_server_events(
 
                             NetworkMessage::UnregisterActor(meta) => {
                                 for actor in meta.actors {
-                                    unregister_actor_events.send(UnregisterActorEvent {
+                                    unregister_actor_events.write(UnregisterActorEvent {
                                         client_id,
                                         actor_uuid: actor.uuid,
                                     });
@@ -232,21 +232,21 @@ fn handle_server_events(
                             }
                             NetworkMessage::PauseGame(uuid) => {
                                 info!("Received PauseGame for: {}", uuid);
-                                pause_game_events.send(PauseGameEvent {
+                                pause_game_events.write(PauseGameEvent {
                                     game_session_uuid: uuid,
                                     client_id,
                                 });
                             }
                             NetworkMessage::ResumeGame(uuid) => {
                                 info!("Received ResumeGame for: {}", uuid);
-                                resume_game_events.send(ResumeGameEvent {
+                                resume_game_events.write(ResumeGameEvent {
                                     game_session_uuid: uuid,
                                     client_id,
                                 });
                             }
                             NetworkMessage::StopGame(uuid) => {
                                 info!("Received StopGame for: {}", uuid);
-                                stop_game_events.send(StopGameEvent {
+                                stop_game_events.write(StopGameEvent {
                                     game_session_uuid: uuid,
                                     client_id,
                                 });
