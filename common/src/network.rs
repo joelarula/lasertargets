@@ -1,9 +1,10 @@
+use bevy::asset::uuid::Uuid;
 use bincode;
 use serde::{Deserialize, Serialize};
 
 use crate::{
     actor::ActorMetaData,
-    config::{CameraConfiguration, ProjectorConfiguration, SceneConfiguration}, game::Game, scene::SceneSetup,
+    config::{CameraConfiguration, ProjectorConfiguration, SceneConfiguration}, game::GameSession, scene::SceneSetup,
 };
 
 /// Network messages exchanged between server and terminal
@@ -44,8 +45,13 @@ pub enum NetworkMessage {
     UnregisterActor(ActorMetaData),
 
     // Game Configuration
-    QueryGameTag,
-    GameTagResponse(Game),
+    QueryGameSession,
+    GameSessionResponse(GameSession),
+
+    StartGame(String),
+    PauseGame(Uuid),
+    ResumeGame(Uuid),
+    StopGame(Uuid),
 }
 
 impl NetworkMessage {

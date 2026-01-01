@@ -8,6 +8,8 @@ bevy = { workspace = true }
 egui = { workspace = true }
 bevy_egui = { workspace = true }
 common = { path = "../common" }
+hunter = { path = "../minigames/hunter" }
+snake = { path = "../minigames/snake" }
 log = { workspace = true }
 pretty_env_logger = { workspace = true }
 bevy_quinnet = { workspace = true }

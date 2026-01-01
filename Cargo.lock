@@ -4966,8 +4966,10 @@ dependencies = [
  "bevy_quinnet",
  "bincode",
  "common",
+ "hunter",
  "log",
  "serde",
+ "snake",
 ]
 
 [[package]]
@@ -5238,8 +5240,10 @@ dependencies = [
  "bevy_quinnet",
  "common",
  "egui",
+ "hunter",
  "log",
  "pretty_env_logger",
+ "snake",
 ]
 
 [[package]]

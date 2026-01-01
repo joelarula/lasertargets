@@ -1,17 +1,17 @@
 use bevy::prelude::*;
-use bevy_quinnet::server::{
-    certificate::CertificateRetrievalMode, EndpointAddrConfiguration, QuinnetServer,
-    ServerEndpointConfiguration,
-};
+use bevy_quinnet::server::{certificate::CertificateRetrievalMode, EndpointAddrConfiguration, QuinnetServer, ServerEndpointConfiguration};
 use bevy_quinnet::server::endpoint::Endpoint;
 use bevy_quinnet::shared::ClientId;
-use common::actor::ActorMetaData;
+use common::actor::{Actor, ActorMetaData};
 use common::config::{CameraConfiguration, ProjectorConfiguration, SceneConfiguration};
 use common::network::{NetworkMessage, SERVER_HOST, SERVER_PORT};
 use common::scene::SceneSetup;
+use common::game::{GameSession};
 use std::net::{IpAddr, Ipv6Addr};
 
-use crate::plugins::actor::ActorRegistry;
+use crate::plugins::actor::{ActorClientId, RegisterActorEvent, UnregisterActorEvent};
+use crate::plugins::game::{PauseGameEvent, ResumeGameEvent, StartGameEvent, StopGameEvent};
+
 
 #[derive(Resource, Debug, Clone)]
 pub struct NetworkingConfiguration {
@@ -41,7 +41,7 @@ impl Plugin for NetworkingPlugin {
         app.add_message::<FromClientMessage>()
             .init_resource::<NetworkingConfiguration>()
             .add_systems(Startup, start_server)
-            .add_systems(Update, (handle_server_events, send_ping_periodically))
+            .add_systems(Update, (handle_server_events, send_ping_periodically, send_game_session_updates))
             .add_systems(Update, broadcast_scene_setup_on_change);
     }
 }
@@ -71,13 +71,21 @@ fn start_server(mut server: ResMut<QuinnetServer>, config: Res<NetworkingConfigu
 
 /// Handle incoming client connections and messages
 fn handle_server_events(
+    mut commands: Commands,
     mut server: ResMut<QuinnetServer>,
     mut message_writer: MessageWriter<FromClientMessage>,
     mut projector_config: ResMut<ProjectorConfiguration>,
     mut camera_config: ResMut<CameraConfiguration>,
     mut scene_config: ResMut<SceneConfiguration>,
     mut scene_setup: ResMut<SceneSetup>,
-    mut registry: ResMut<ActorRegistry>,
+    mut start_game_events: MessageWriter<StartGameEvent>,
+    mut pause_game_events: MessageWriter<PauseGameEvent>,
+    mut resume_game_events: MessageWriter<ResumeGameEvent>,
+    mut stop_game_events: MessageWriter<StopGameEvent>,
+    mut register_actor_events: MessageWriter<RegisterActorEvent>,
+    mut unregister_actor_events: MessageWriter<UnregisterActorEvent>,
+    actor_query: Query<(Entity, &Actor, &ActorClientId)>,
+
 ) {
     let Some(endpoint) = server.get_endpoint_mut() else {
         return;
@@ -180,8 +188,11 @@ fn handle_server_events(
                                 );
                             }
                             NetworkMessage::QueryActor => {
-                  
-                                let actors = registry.get_actors(client_id).to_vec();
+                                let actors: Vec<common::actor::Actor> = actor_query
+                                    .iter()
+                                    .filter(|(_, _, actor_client_id)| actor_client_id.0 == client_id)
+                                    .map(|(_, actor, _)| actor.clone())
+                                    .collect();
                                 let meta = ActorMetaData { actors };
                                 let payload = NetworkMessage::ActorResponse(meta)
                                     .to_bytes()
@@ -196,17 +207,54 @@ fn handle_server_events(
 
                             NetworkMessage::RegisterActor(meta) => {
                                 for actor in meta.actors {
-                                    registry.register_actor(client_id, actor);
+                                    register_actor_events.send(RegisterActorEvent {
+                                        client_id,
+                                        actor,
+                                    });
                                 }
                             }
 
                             NetworkMessage::UnregisterActor(meta) => {
                                 for actor in meta.actors {
-                                    registry.unregister_actor(client_id, actor.uuid);
+                                    unregister_actor_events.send(UnregisterActorEvent {
+                                        client_id,
+                                        actor_uuid: actor.uuid,
+                                    });
                                 }
                             }
+
+                        NetworkMessage::StartGame(game_name) => {
+                                info!("Received StartGame for: {}", game_name);
+                                start_game_events.write(StartGameEvent {
+                                    game_name: game_name.clone(),
+                                    client_id,
+                                });
+                            }
+                            NetworkMessage::PauseGame(uuid) => {
+                                info!("Received PauseGame for: {}", uuid);
+                                pause_game_events.send(PauseGameEvent {
+                                    game_session_uuid: uuid,
+                                    client_id,
+                                });
+                            }
+                            NetworkMessage::ResumeGame(uuid) => {
+                                info!("Received ResumeGame for: {}", uuid);
+                                resume_game_events.send(ResumeGameEvent {
+                                    game_session_uuid: uuid,
+                                    client_id,
+                                });
+                            }
+                            NetworkMessage::StopGame(uuid) => {
+                                info!("Received StopGame for: {}", uuid);
+                                stop_game_events.send(StopGameEvent {
+                                    game_session_uuid: uuid,
+                                    client_id,
+                                });
+                            }
+
                             _ => {}
                         }
+
                     }
                     Err(e) => {
                         error!(
@@ -345,5 +393,27 @@ fn broadcast_payload_and_log_error(
 ) {
     if let Err(e) = endpoint.broadcast_payload(payload) {
         error!("Failed to broadcast {}: {}", error_context, e);
+    }
+}
+
+fn send_game_session_updates(
+    mut server: ResMut<QuinnetServer>,
+    game_sessions: Query<(&GameSession), Changed<GameSession>>,
+) {
+    let Some(endpoint) = server.get_endpoint_mut() else {
+        return;
+    };
+
+    for game_session in game_sessions.iter() {
+        info!("GameSession changed: {:?}", game_session);
+        let message = NetworkMessage::GameSessionResponse(game_session.clone());
+        let payload = message.to_bytes().expect("Serialize GameSessionResponse");
+
+        // Broadcast to all clients for simplicity, or target specific clients if needed
+        broadcast_payload_and_log_error(
+            endpoint,
+            payload,
+            "GameSessionResponse update",
+        );
     }
 }

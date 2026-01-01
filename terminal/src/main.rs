@@ -1,6 +1,9 @@
 use std::env;
 use bevy::prelude::*;
 use bevy_egui::EguiPlugin;
+use common::game::GameRegistryPlugin;
+use common::scene::SceneSetupPlugin;
+use common::state::TerminalState;
 use log::info;
 
 mod plugins;
@@ -15,8 +18,9 @@ use crate::plugins::toolbar::ToolbarPlugin;
 use crate::plugins::settings::SettingsPlugin;
 use crate::plugins::target::TargetPlugin;
 use crate::plugins::basictarget::BasicTargetPlugin;
+use hunter::plugin::HunterGamePlugin;
+use snake::plugin::SnakeGamePlugin;
 
-const FIXED_TIMESTEP: f64 = 1.0 / 50.0; 
 
 fn main() {
 
@@ -37,9 +41,9 @@ fn main() {
             ..Default::default()
         })
     )
+    .init_state::<TerminalState>()
     .add_plugins(EguiPlugin::default())
     .insert_resource(ClearColor(Color::BLACK))
-    .insert_resource(Time::<Fixed>::from_seconds(FIXED_TIMESTEP))
     .add_plugins(InstructionsPlugin)
     .add_plugins(ConfigPlugin)
     .add_plugins(SceneSetupPlugin)
@@ -50,6 +54,10 @@ fn main() {
     .add_plugins(ToolbarPlugin)
     .add_plugins(SettingsPlugin)
     .add_plugins(BasicTargetPlugin)
-    .add_plugins(TargetPlugin);
+    .add_plugins(TargetPlugin)
+    .add_plugins(GameRegistryPlugin)
+    .add_plugins(HunterGamePlugin)
+    .add_plugins(SnakeGamePlugin);
+
     app.run();
 }

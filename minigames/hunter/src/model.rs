@@ -8,12 +8,13 @@ struct Hunter {
     uuid: Uuid,
     actor: Uuid,   
     score: u32,
-    hits: u32,
+    hits: Vec<Uuid>,
 }
 
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct Target {
+    name: String,
     uuid: Uuid,
     actor: Uuid,
     lives: u8,   
@@ -26,7 +27,5 @@ struct HunterGame {
     game: Uuid,
     controller: Uuid,
     hunters: Vec<Hunter>,   
-    snakes: Vec<Snake>,
-    snaks: Vec<Snak>,
     targets: Vec<Target>,  
 }

@@ -204,7 +204,6 @@ fn setup_scene(
             scene_data,
             Transform::from_xyz(0.0, scene_data.dimensions.y / 2.0, -scene_configuration.target_projection_distance),
             GlobalTransform::default(),
-            Name::new("SceneTag"),
         ));
 }
 

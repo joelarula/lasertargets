@@ -1,42 +1,63 @@
 
 
-use bevy::{platform::collections::HashMap, prelude::*};
+use bevy::{prelude::*};
 use bevy_quinnet::shared::ClientId;
-use common::actor::Actor;
+use common::actor::{Actor };
+use bevy::asset::uuid::Uuid;
 use serde::{Deserialize, Serialize};
 
 
-#[derive(Resource, Debug, Clone, Serialize, Deserialize)]
-pub struct ActorRegistry {
-    actors: HashMap<ClientId, Vec<Actor>>,
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct ActorClientId(pub ClientId);
+
+
+// Events for actor management
+#[derive(Message)]
+pub struct RegisterActorEvent {
+    pub client_id: ClientId,
+    pub actor: Actor,
 }
+
+#[derive(Message)]
+pub struct UnregisterActorEvent {
+    pub client_id: ClientId,
+    pub actor_uuid: Uuid,
+}
+
 
 pub struct ActorPlugin;
 
 impl Plugin for ActorPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(ActorRegistry {
-            actors: HashMap::new(),
-        });
+        app.add_message::<RegisterActorEvent>();
+        app.add_message::<UnregisterActorEvent>();
+        app.add_systems(Update, handle_register_actor_event);
+        app.add_systems(Update, handle_unregister_actor_event);
     }
 }
-impl ActorRegistry {
-        /// Get a reference to the actors for a client. Returns an empty slice if none exist.
-        pub fn get_actors(&self, client_id: ClientId) -> &[Actor] {
-            self.actors.get(&client_id).map(|v| v.as_slice()).unwrap_or(&[])
-        }
-    /// Register an actor for a client. If the actor with the same uuid exists, it is replaced.
-    pub fn register_actor(&mut self, client_id: ClientId, actor: Actor) {
-        let entry = self.actors.entry(client_id).or_default();
-        // Remove any actor with the same uuid
-        entry.retain(|a| a.uuid != actor.uuid);
-        entry.push(actor);
-    }
 
-    /// Unregister an actor for a client by uuid.
-    pub fn unregister_actor(&mut self, client_id: ClientId, uuid: bevy::asset::uuid::Uuid) {
-        if let Some(entry) = self.actors.get_mut(&client_id) {
-            entry.retain(|a| a.uuid != uuid);
+fn handle_register_actor_event(
+    mut commands: Commands,
+    mut register_actor_events: MessageReader<RegisterActorEvent>,
+) {
+    for event in register_actor_events.read() {
+        info!("Registering actor: {:?}", event.actor);
+        commands.spawn((event.actor.clone(), ActorClientId(event.client_id)));
+    }
+}
+
+fn handle_unregister_actor_event(
+    mut commands: Commands,
+    mut unregister_actor_events: MessageReader<UnregisterActorEvent>,
+    actor_query: Query<(Entity, &Actor, &ActorClientId)>,
+) {
+    for event in unregister_actor_events.read() {
+        info!("Unregistering actor with UUID: {:?}", event.actor_uuid);
+        for (entity, actor_component, actor_client_id) in actor_query.iter() {
+            if actor_client_id.0 == event.client_id && actor_component.uuid == event.actor_uuid {
+                commands.entity(entity).despawn();
+                return;
+            }
         }
     }
 }
