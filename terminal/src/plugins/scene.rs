@@ -279,7 +279,7 @@ fn update_scene(
 }
 
 
-fn configure_scene(config: &mut CameraConfiguration, scene_configuration: &mut SceneConfiguration, keyboard: &Res<ButtonInput<KeyCode>>){
+fn configure_scene(_config: &mut CameraConfiguration, scene_configuration: &mut SceneConfiguration, keyboard: &Res<ButtonInput<KeyCode>>){ // Prefixed with underscore to ignore unused config variable
             
     if keyboard.just_pressed(KeyCode::ArrowUp) {
         scene_configuration.target_projection_distance += 1.0;
@@ -344,7 +344,7 @@ fn update_debug_info(debug_info: &mut DebugInfoState, window: &Window, config: &
         
         debug_info.messages.push(projector_txt);
 
-        if(scene_data.mouse_world_pos.is_some()){
+        if scene_data.mouse_world_pos.is_some() {
             let raypos = scene_data.mouse_world_pos.unwrap();
             let world_txt =  format!("Scene cursor pos: x:{:.2} y{:.2} z{:.2}", raypos.x ,raypos.y,raypos.z);
             debug_info.messages.push(world_txt);

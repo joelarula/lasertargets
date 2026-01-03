@@ -55,7 +55,7 @@ impl Plugin for GamePlugin {
 fn handle_init_game(
     mut commands: Commands,
     mut next_state: ResMut<NextState<GameState>>,
-    current_state: Res<State<GameState>>,
+    _current_state: Res<State<GameState>>,
     mut init_game_events: MessageReader<InitGameSessionEvent>,
     mut game_session_created: MessageWriter<GameSessionCreated>,
 ) {

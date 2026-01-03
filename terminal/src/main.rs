@@ -4,7 +4,7 @@ use bevy_egui::EguiPlugin;
 use common::game::GameRegistryPlugin;
 use common::scene::SceneSetupPlugin;
 use common::state::TerminalState;
-use log::info;
+// Removed unused import: use log::info;
 
 mod plugins;
 mod util;
@@ -18,6 +18,7 @@ use crate::plugins::toolbar::ToolbarPlugin;
 use crate::plugins::settings::SettingsPlugin;
 use crate::plugins::target::TargetPlugin;
 use crate::plugins::basictarget::BasicTargetPlugin;
+use crate::plugins::network::NetworkPlugin; // Added NetworkPlugin
 use hunter::plugin::HunterGamePlugin;
 use snake::plugin::SnakeGamePlugin;
 
@@ -42,6 +43,7 @@ fn main() {
         })
     )
     .init_state::<TerminalState>()
+    .add_plugins(NetworkPlugin) // Add our new network plugin
     .add_plugins(EguiPlugin::default())
     .insert_resource(ClearColor(Color::BLACK))
     .add_plugins(InstructionsPlugin)

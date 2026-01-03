@@ -24,7 +24,7 @@ pub struct OverlayVisible(pub bool);
 impl Plugin for SettingsPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, register_settings_button);
-        app.add_systems(Update, (handle_settings_button));
+        app.add_systems(Update, handle_settings_button);
         app.insert_resource(OverlayVisible(false));
         app.add_systems(
             EguiPrimaryContextPass,
@@ -61,7 +61,7 @@ fn handle_settings_button(
 
 pub fn overlay_ui_system(
     mut egui_context: EguiContexts,
-    scene_query: Query<(&SceneData), With<SceneTag>>,
+    scene_query: Query<&SceneData, With<SceneTag>>,
     overlay_visible: Res<OverlayVisible>,
     mut scene_configuration: ResMut<SceneConfiguration>,
     mut display_mode: ResMut<DisplayMode>,

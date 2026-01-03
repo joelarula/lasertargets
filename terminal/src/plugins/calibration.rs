@@ -7,9 +7,7 @@ use common::config::{SceneConfiguration, ProjectorConfiguration};
 use std::f32::consts::PI;
 use bevy::color::palettes::css::DARK_GREY;
 use bevy::color::palettes::css::SILVER;
-use bevy::color::palettes::css::GREEN;
-use bevy::color::palettes::css::RED;
-use bevy::color::palettes::css::BLUE;
+// Removed unused imports: GREEN, RED, BLUE
 use bevy::color::palettes::css::YELLOW;
 use bevy::color::palettes::css::ORANGE;
 
@@ -47,31 +45,12 @@ fn update_grid(mut gizmos: Gizmos, scene_configuration: Res<SceneConfiguration>,
 }
 
 
-fn draw_axes(
-    mut gizmos: Gizmos,
-    scene_query: Query<&GlobalTransform, With<SceneTag>>,
-) {
-    // Draw axes at the scene center, not world origin
-    for scene_transform in scene_query.iter() {
-        let center = scene_transform.translation();
-        
-        // Draw the X-axis (Red)
-        gizmos.arrow(center, center + Vec3::X * 5.0, RED);
-
-        // Draw the Y-axis (Green)
-        gizmos.arrow(center, center + Vec3::Y * 5.0, GREEN);
-
-        // Draw the Z-axis (Blue)
-        gizmos.arrow(center, center + Vec3::Z * 5.0, BLUE);
-    }
-}
-
 fn draw_billboard_gizmos(
     mut gizmos: Gizmos,
     camera_query: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
     scene_query: Query<(&GlobalTransform, &SceneData), With<SceneTag>>,
 ) {
-    for(camera, camera_transform) in camera_query.iter(){
+    for(_camera, camera_transform) in camera_query.iter(){ // Prefixed with underscore to ignore unused camera variable
         for (scene_transform, scene_data) in scene_query.iter() {
             let billboard_position = scene_transform.translation();
             let width = scene_data.dimensions.x;
@@ -108,7 +87,7 @@ fn draw_crosshair(
     billboard_right: &Vec3,
     billboard_up: &Vec3,
 ) {
-      if(scene_data.mouse_world_pos.is_some()){
+      if scene_data.mouse_world_pos.is_some() {
                 let intersection_point = scene_data.mouse_world_pos.unwrap();
 
         // Draw a 3D crosshair at the intersection point.
@@ -134,8 +113,8 @@ fn draw_projector_billboard(
     projector_config: Res<ProjectorConfiguration>,
     scene_config: Res<SceneConfiguration>,
 ) {
-    for (camera, camera_transform) in camera_query.iter() {
-        for (scene_transform, scene_data) in scene_query.iter() {
+    for (_camera, camera_transform) in camera_query.iter() { // Prefixed with underscore to ignore unused camera variable
+        for (scene_transform, _scene_data) in scene_query.iter() {
             let billboard_position = scene_transform.translation();
             
             // Calculate projected size based on angle and distance

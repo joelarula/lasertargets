@@ -1,17 +1,16 @@
 use bevy::prelude::*;
-use bevy::color::palettes::css::{ STEEL_BLUE, LIGHT_SEA_GREEN};
+// Removed unused imports: use bevy::color::palettes::css::{ STEEL_BLUE, LIGHT_SEA_GREEN};
 use std::collections::HashMap;
 
-// Button color palette using Bevy CSS color palettes
+// Button color palette - traditional mild scheme for black background
 mod button_colors {
     use bevy::prelude::Color;
-    use bevy::color::palettes::css::{DODGER_BLUE, ORANGE_RED, DIM_GRAY, LIME};
     
-    pub const PRESSED: Color = Color::srgba(0.1, 0.3, 0.8, 0.9);
-    pub const ACTIVE_HOVERED: Color = Color::srgba(LIME.red, LIME.green, LIME.blue, 1.0);
-    pub const INACTIVE_HOVERED: Color = Color::srgba(DODGER_BLUE.red, DODGER_BLUE.green, DODGER_BLUE.blue, 0.9);
-    pub const ACTIVE: Color = Color::srgba(ORANGE_RED.red, ORANGE_RED.green, ORANGE_RED.blue, 0.95);
-    pub const INACTIVE: Color = Color::srgba(DIM_GRAY.red, DIM_GRAY.green, DIM_GRAY.blue, 0.7);
+    pub const PRESSED: Color = Color::srgba(0.25, 0.35, 0.45, 0.95);
+    pub const ACTIVE_HOVERED: Color = Color::srgba(0.35, 0.55, 0.65, 0.9);
+    pub const INACTIVE_HOVERED: Color = Color::srgba(0.45, 0.50, 0.55, 0.85);
+    pub const ACTIVE: Color = Color::srgba(0.30, 0.48, 0.58, 0.85);
+    pub const INACTIVE: Color = Color::srgba(0.35, 0.40, 0.45, 0.7);
 }
 
 pub struct ToolbarPlugin;
@@ -62,7 +61,15 @@ impl ToolbarRegistry {
         }
     }
 
-
+    pub fn update_button_icon(&mut self, name: &str, icon: Option<String>) {
+        if let Some(handler) = self.buttons.get_mut(name) {
+            handler.icon = icon;
+        }
+    }
+    
+    pub fn get_buttons(&self) -> &HashMap<String, ToolbarItem> {
+        &self.buttons
+    }
 }
 
 impl Plugin for ToolbarPlugin {
@@ -73,6 +80,7 @@ impl Plugin for ToolbarPlugin {
             .add_systems(PostStartup, setup_toolbar)
             .add_systems(Update, (
                 update_button_states,
+                update_button_text,
                 update_toolbar,
             ).chain());
     }
@@ -98,13 +106,14 @@ fn update_toolbar(
     nerd_font: Option<Res<NerdFont>>,
 ) {
     if registry.is_changed() {
-        if let Ok(toolbar_entity) = toolbar_query.single() {
+        // Despawn all toolbar containers (one for each docking position)
+        for toolbar_entity in toolbar_query.iter() {
             commands.entity(toolbar_entity).despawn();
-            if let Some(font) = nerd_font {
-                create_toolbar_ui(&mut commands, &registry, Some(&font.0));
-            } else {
-                create_toolbar_ui(&mut commands, &registry, None);
-            }
+        }
+        if let Some(font) = nerd_font {
+            create_toolbar_ui(&mut commands, &registry, Some(&font.0));
+        } else {
+            create_toolbar_ui(&mut commands, &registry, None);
         }
     }
 }
@@ -144,7 +153,7 @@ fn create_docked_toolbar(
         return;
     }
     
-    let (position_style, flex_direction) = match docking {
+    let (position_style, _flex_direction) = match docking { // Prefixed with underscore to ignore unused flex_direction variable
         Docking::Left => (
             Node {
                 position_type: PositionType::Absolute,
@@ -234,7 +243,7 @@ fn create_docked_toolbar(
                                 } else { 
                                     default() 
                                 },
-                                font_size: 12.0 ,
+                                font_size: 24.0 ,
                                 ..default()
                             },
                             TextColor(Color::WHITE)
@@ -276,6 +285,29 @@ fn update_button_states(
                     *background_color = BackgroundColor(button_colors::ACTIVE);
                 } else {
                     *background_color = BackgroundColor(button_colors::INACTIVE);
+                }
+            }
+        }
+    }
+}
+
+fn update_button_text(
+    registry: Res<ToolbarRegistry>,
+    button_query: Query<(&ToolabarButton, &Children)>,
+    mut text_query: Query<&mut Text>,
+) {
+    if !registry.is_changed() {
+        return;
+    }
+    
+    for (button, children) in &button_query {
+        if let Some(button_data) = registry.buttons.get(&button.name) {
+            for child_entity in children.iter() {
+                if let Ok(mut text) = text_query.get_mut(child_entity) {
+                    let new_text = button_data.icon.as_ref()
+                        .unwrap_or(&button.name)
+                        .clone();
+                    **text = new_text;
                 }
             }
         }

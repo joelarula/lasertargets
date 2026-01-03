@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use bevy_prototype_lyon::prelude::*;
+// Removed unused import: use bevy_prototype_lyon::prelude::*;
 use log::info;
 use common::path::{UniversalPath, PathProvider, PathRenderable};
 use crate::plugins::scene::{SceneData, SceneTag};

@@ -51,14 +51,14 @@ impl Plugin for CameraPlugin {
 fn setup_camera(
     mut commands: Commands, 
     mut instruction_state: ResMut<InstructionState>,
-    scene_query: Query<(&SceneData), With<SceneTag>>,
+    scene_query: Query<&SceneData, With<SceneTag>>,
     display_mode: Res<DisplayMode>,
     config: Res<CameraConfiguration>) {
     
      instruction_state.instructions.push(INSTRUCTION_F2.to_string());
      instruction_state.instructions.push(INSTRUCTION_F3.to_string());
      
-     for (scene_data) in scene_query.iter() {
+     for scene_data in scene_query.iter() {
 
         commands.spawn((
             DirectionalLight::default(),
@@ -86,10 +86,10 @@ fn setup_camera(
 }
 
 fn update_camera(
-    mut resize_events: EventReader<WindowResized>,
+    mut resize_events: MessageReader<WindowResized>, // Changed from EventReader to MessageReader
     mut camera_query: Query<(&mut Camera, &mut Projection, &mut Transform), With<CameraTag>>,
     scene_query: Query<(&GlobalTransform, &SceneData), With<SceneTag>>,
-    mut config: ResMut<CameraConfiguration>,
+    config: Res<CameraConfiguration>,
     keyboard: Res<ButtonInput<KeyCode>>,
     mut debug_info: ResMut<DebugInfoState>,
     mut display_mode: ResMut<DisplayMode>,

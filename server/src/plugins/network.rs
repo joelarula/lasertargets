@@ -366,7 +366,7 @@ fn send_ping_periodically(
     // Broadcast ping to all connected clients
     match endpoint.broadcast_payload(payload) {
         Ok(_) => {
-            info!("Sent ping to all clients at timestamp {}", timestamp);
+            debug!("Sent ping to all clients at timestamp {}", timestamp);
         }
         Err(e) => {
             error!("Failed to broadcast ping: {}", e);

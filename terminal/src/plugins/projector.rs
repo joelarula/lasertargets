@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use log::info;
+// Removed unused import: use log::info;
 use crate::plugins::calibration::CalibrationSystemSet;
 use crate::plugins::scene::{SceneData, SceneTag};
 use crate::plugins::toolbar::{ToolbarRegistry, ToolbarItem, Docking, ToolabarButton};

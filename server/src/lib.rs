@@ -5,6 +5,7 @@ use crate::plugins::camera::CameraPlugin;
 use crate::plugins::game::GamePlugin;
 use bevy::app::ScheduleRunnerPlugin;
 use bevy::prelude::*;
+use bevy::state::app::StatesPlugin;
 use bevy_quinnet::server::QuinnetServerPlugin;
 use common::game::GameRegistryPlugin;
 use common::scene::SceneSetupPlugin;
@@ -25,7 +26,9 @@ pub fn create_server_app(schedule_runner: ScheduleRunnerPlugin) -> App {
 
 pub fn add_common_server_plugins(app: &mut App) {
   
-    app.add_plugins(SceneSetupPlugin)
+    app
+    .add_plugins(StatesPlugin)
+    .add_plugins(SceneSetupPlugin)
     .insert_resource(Time::<Fixed>::from_seconds(FIXED_TIMESTEP))
     .init_state::<ServerState>()
     .init_state::<GameState>()

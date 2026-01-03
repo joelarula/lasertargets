@@ -53,6 +53,7 @@ pub enum NetworkMessage {
     PauseGameSession(Uuid),
     ResumeGameSession(Uuid),
     StopGameSession(Uuid),
+    ReplyGameSession(Uuid),
 
     // Actor 
     RegisterActor(Uuid,String,Vec<String>),

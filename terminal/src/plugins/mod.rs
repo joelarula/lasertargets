@@ -8,3 +8,4 @@ pub mod projector;
 pub mod settings;
 pub mod target;
 pub mod basictarget;
+pub mod network; // Added network module

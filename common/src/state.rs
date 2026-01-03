@@ -23,6 +23,4 @@ pub enum TerminalState {
     #[default]
     Connecting,
     Connected,
-    Menu,
-    InGame(u16),
 }
