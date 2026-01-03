@@ -56,6 +56,7 @@ pub struct ProjectorConfiguration {
     // projection angle in degrees
     pub angle: f32,
     pub transform: ConfigTransform,
+    // enable or disable projector rendering
     pub enabled: bool,
     pub locked_to_scene: bool,
 }

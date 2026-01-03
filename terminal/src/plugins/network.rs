@@ -1,9 +1,10 @@
 use bevy::prelude::*;
+use bevy_quinnet::client::connection::ClientSideConnection;
 use bevy_quinnet::client::{certificate::CertificateVerificationMode, connection::ClientAddrConfiguration, ClientConnectionConfiguration, QuinnetClient, QuinnetClientPlugin};
-use common::network::SERVER_PORT;
+use common::config::{CameraConfiguration, ProjectorConfiguration, SceneConfiguration};
+use common::network::{NetworkMessage, SERVER_PORT};
 use common::state::TerminalState;
 use std::net::{IpAddr, Ipv6Addr};
-// Removed unused imports: use bevy::color::palettes::css::{GREEN, RED};
 use crate::plugins::toolbar::{ToolbarRegistry, ToolbarItem, Docking};
 
 #[derive(Resource, Debug, Clone)]
@@ -30,7 +31,13 @@ impl Plugin for NetworkPlugin {
         app.add_plugins(QuinnetClientPlugin::default())
             .init_resource::<NetworkingConfiguration>()
             .add_systems(Startup, (start_client, register_connection_toolbar_button))
-            .add_systems(Update, (handle_client_connection_events, update_connection_toolbar_button));
+            .add_systems(Update, (
+                handle_client_connection_events, 
+                update_connection_toolbar_button,
+                send_projector_config_updates,
+                send_camera_config_updates,
+                send_scene_config_updates,
+            ));
     }
 }
 
@@ -116,3 +123,65 @@ fn update_connection_toolbar_button(
         toolbar.update_button_icon(CONN_BTN_NAME, Some(icon));
     }
 }
+
+/// Helper function to send a payload and log an error if it fails.
+fn send_payload_and_log_error(
+    connection: &mut ClientSideConnection,
+    payload: Vec<u8>,
+    error_context: &str,
+) {
+    if let Err(e) = connection.send_payload(payload) {
+        warn!("Failed to send {}: {:?}", error_context, e);
+    } else {
+        debug!("Sent {}", error_context);
+    }
+}
+
+fn send_projector_config_updates(
+    projector_config: Res<ProjectorConfiguration>,
+    mut client: ResMut<QuinnetClient>,
+    terminal_state: Res<State<TerminalState>>,
+) {
+    if projector_config.is_changed() && *terminal_state.get() == TerminalState::Connected {
+        if let Some(connection) = client.get_connection_mut() {
+            let payload = NetworkMessage::UpdateProjectorConfig(projector_config.clone())
+                .to_bytes()
+                .expect("Failed to serialize projector config");
+            
+            send_payload_and_log_error(connection, payload, "projector config update");
+        }
+    }
+}
+
+fn send_camera_config_updates(
+    camera_config: Res<CameraConfiguration>,
+    mut client: ResMut<QuinnetClient>,
+    terminal_state: Res<State<TerminalState>>,
+) {
+    if camera_config.is_changed() && *terminal_state.get() == TerminalState::Connected {
+        if let Some(connection) = client.get_connection_mut() {
+            let payload = NetworkMessage::UpdateCameraConfig(camera_config.clone())
+                .to_bytes()
+                .expect("Failed to serialize camera config");
+            
+            send_payload_and_log_error(connection, payload, "camera config update");
+        }
+    }
+}
+
+fn send_scene_config_updates(
+    scene_config: Res<SceneConfiguration>,
+    mut client: ResMut<QuinnetClient>,
+    terminal_state: Res<State<TerminalState>>,
+) {
+    if scene_config.is_changed() && *terminal_state.get() == TerminalState::Connected {
+        if let Some(connection) = client.get_connection_mut() {
+            let payload = NetworkMessage::UpdateSceneConfig(scene_config.clone())
+                .to_bytes()
+                .expect("Failed to serialize scene config");
+            
+            send_payload_and_log_error(connection, payload, "scene config update");
+        }
+    }
+}
+
