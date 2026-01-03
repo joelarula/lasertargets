@@ -3,10 +3,11 @@ use bevy::{asset::uuid::Uuid, prelude::*};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ActorMetaData {
+    pub game_session_uuid: Uuid,
     pub actors: Vec<Actor>,
 }
 
-#[derive(Component, Debug, Clone, Serialize, Deserialize)]
+#[derive(Component,Debug, Clone, Serialize, Deserialize,PartialEq,Eq)]
 pub struct Actor {
     pub name: String,
     pub uuid: Uuid,

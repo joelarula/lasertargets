@@ -3,8 +3,8 @@ use bincode;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    actor::ActorMetaData,
-    config::{CameraConfiguration, ProjectorConfiguration, SceneConfiguration}, game::GameSession, scene::SceneSetup,
+
+    actor::ActorMetaData, config::{CameraConfiguration, ProjectorConfiguration, SceneConfiguration}, game::GameSession, scene::SceneSetup
 };
 
 /// Network messages exchanged between server and terminal
@@ -18,6 +18,13 @@ pub enum NetworkMessage {
     Pong {
         timestamp: u64,
     },
+
+    //server
+    QueryServerState,
+    QueryGameState,
+    
+    ServerStateResponse(crate::state::ServerState),
+    GameStateResponse(crate::state::GameState),
 
     // Projector Configuration
     QueryProjectorConfig,
@@ -38,20 +45,22 @@ pub enum NetworkMessage {
     QuerySceneSetup,
     SceneSetupResponse(SceneSetup),
 
-    // Actor Configuration
-    QueryActor,
-    ActorResponse(ActorMetaData),
-    RegisterActor(ActorMetaData),
-    UnregisterActor(ActorMetaData),
-
     // Game Configuration
     QueryGameSession,
     GameSessionResponse(GameSession),
+    InitGameSession(u16,String),
+    StartGameSession(Uuid),
+    PauseGameSession(Uuid),
+    ResumeGameSession(Uuid),
+    StopGameSession(Uuid),
 
-    StartGame(String),
-    PauseGame(Uuid),
-    ResumeGame(Uuid),
-    StopGame(Uuid),
+    // Actor 
+    RegisterActor(Uuid,String,Vec<String>),
+    UnregisterActor(Uuid,Uuid),
+    QueryActor,
+    ActorResponse(ActorMetaData),
+    ActorError(String),
+
 }
 
 impl NetworkMessage {

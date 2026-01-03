@@ -42,7 +42,15 @@ pub fn handle_server_messages_system(
 
 /// Helper to create a test server app
 pub fn create_test_server(port: u16) -> App {
-    let mut app = server::create_server_app(ScheduleRunnerPlugin::run_once());
+    let mut app = App::new();
+    
+    // Add required plugins for state management first
+    app.add_plugins(MinimalPlugins.set(ScheduleRunnerPlugin::run_once()))
+        .add_plugins(bevy::state::app::StatesPlugin);
+    
+    // Add common server plugins
+    server::add_common_server_plugins(&mut app);
+    
     app.insert_resource(NetworkingConfiguration {
         ip: IpAddr::V4(Ipv4Addr::LOCALHOST),
         port,
@@ -57,9 +65,12 @@ pub fn create_test_server(port: u16) -> App {
 }
 
 /// Helper to flush all pending server messages into ReceivedMessages.
-/// Needs two updates: one for NetworkingPlugin to write Messages,
-/// and one for handle_server_messages_system to read them.
+/// Needs multiple updates to process the full message chain:
+/// 1. NetworkingPlugin reads from network and writes internal messages
+/// 2. Game/Actor plugins process internal messages and write responses
+/// 3. NetworkingPlugin sends responses back over the network
 pub fn flush_server_messages(app: &mut App) {
+    app.update();
     app.update();
     app.update();
 }

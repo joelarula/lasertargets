@@ -2,12 +2,13 @@ use crate::plugins::network::NetworkingPlugin;
 use crate::plugins::actor::ActorPlugin;
 use crate::plugins::projector::ProjectorPlugin;
 use crate::plugins::camera::CameraPlugin;
+use crate::plugins::game::GamePlugin;
 use bevy::app::ScheduleRunnerPlugin;
 use bevy::prelude::*;
 use bevy_quinnet::server::QuinnetServerPlugin;
 use common::game::GameRegistryPlugin;
 use common::scene::SceneSetupPlugin;
-use common::state::ServerState;
+use common::state::{GameState, ServerState};
 use hunter::plugin::HunterGamePlugin;
 use snake::plugin::SnakeGamePlugin;
 
@@ -27,6 +28,7 @@ pub fn add_common_server_plugins(app: &mut App) {
     app.add_plugins(SceneSetupPlugin)
     .insert_resource(Time::<Fixed>::from_seconds(FIXED_TIMESTEP))
     .init_state::<ServerState>()
+    .init_state::<GameState>()
     .add_plugins(ProjectorPlugin)
     .add_plugins(CameraPlugin)
     .add_plugins(ActorPlugin)
@@ -34,5 +36,6 @@ pub fn add_common_server_plugins(app: &mut App) {
     .add_plugins(QuinnetServerPlugin::default())
     .add_plugins(NetworkingPlugin)
     .add_plugins(HunterGamePlugin)
-    .add_plugins(SnakeGamePlugin);
+    .add_plugins(SnakeGamePlugin)
+    .add_plugins(GamePlugin);
 }
