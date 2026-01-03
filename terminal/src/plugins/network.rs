@@ -34,6 +34,7 @@ impl Plugin for NetworkPlugin {
             .add_systems(Update, (
                 handle_client_connection_events, 
                 update_connection_toolbar_button,
+                receive_server_messages,
                 send_projector_config_updates,
                 send_camera_config_updates,
                 send_scene_config_updates,
@@ -121,6 +122,46 @@ fn update_connection_toolbar_button(
         };
         toolbar.update_button_state(CONN_BTN_NAME, is_active);
         toolbar.update_button_icon(CONN_BTN_NAME, Some(icon));
+    }
+}
+
+fn receive_server_messages(
+    mut client: ResMut<QuinnetClient>,
+    mut projector_config: ResMut<ProjectorConfiguration>,
+    mut camera_config: ResMut<CameraConfiguration>,
+    mut scene_config: ResMut<SceneConfiguration>,
+) {
+    if let Some(connection) = client.get_connection_mut() {
+        if let Some(channel_id) = connection.default_channel() {
+            while let Some(bytes) = connection.try_receive_payload(channel_id) {
+                match NetworkMessage::from_bytes(&bytes) {
+                    Ok(msg) => {
+                        match msg {
+                            NetworkMessage::ProjectorConfigResponse(config)  => {
+                                // Bypass change detection to avoid feedback loop
+                                *projector_config.bypass_change_detection() = config;
+                                debug!("Updated projector configuration from server");
+                            }
+                            NetworkMessage::CameraConfigResponse(config) => {
+                                // Bypass change detection to avoid feedback loop
+                                *camera_config.bypass_change_detection() = config;
+                                debug!("Updated camera configuration from server");
+                            }
+                            NetworkMessage::SceneConfigResponse(config) => {
+                                // Bypass change detection to avoid feedback loop
+                                *scene_config.bypass_change_detection() = config;
+                                debug!("Updated scene configuration from server");
+                            }
+                            _ => {
+                                // Other messages can be handled by other systems if needed
+                                debug!("Received unhandled message: {:?}", msg);
+                            }
+                        }
+                    }
+                    Err(e) => warn!("Failed to deserialize server message: {:?}", e),
+                }
+            }
+        }
     }
 }
 
