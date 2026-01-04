@@ -6,7 +6,7 @@ use bevy::{
 };
 use serde::{Deserialize, Serialize};
 
-#[derive(Resource, Debug, Clone, Serialize, Deserialize)]
+#[derive(Resource, Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ConfigTransform {
     pub translation: Vec3,
     pub rotation: Quat,
@@ -23,7 +23,7 @@ impl Default for ConfigTransform {
     }
 }
 
-#[derive(Resource, Debug, Clone, Serialize, Deserialize)]
+#[derive(Resource, Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SceneConfiguration {
     /// Defines the distance of a target detection plane in modeled physical world in meters.
     pub target_projection_distance: f32,
@@ -50,7 +50,7 @@ impl Default for SceneConfiguration {
     }
 }
 
-#[derive(Resource, Debug, Clone, Serialize, Deserialize)]
+#[derive(Resource, Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ProjectorConfiguration {
     pub resolution: UVec2,
     // projection angle in degrees
@@ -84,7 +84,7 @@ impl Default for ProjectorConfiguration {
     }
 }
 
-#[derive(Resource, Debug, Clone, Serialize, Deserialize)]
+#[derive(Resource, Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct CameraConfiguration {
     /// Defines the size of the thermal camera viewport in pixels.
     pub resolution: UVec2,

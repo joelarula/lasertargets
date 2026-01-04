@@ -138,16 +138,25 @@ fn receive_server_messages(
                     Ok(msg) => {
                         match msg {
                             NetworkMessage::ProjectorConfigUpdate(config)  => {
-                                *projector_config = config;
-                                debug!("Updated projector configuration from server");
+                                // Only update if content is different to prevent feedback loop
+                                if *projector_config != config {
+                                    *projector_config = config;
+                                    debug!("Updated projector configuration from server");
+                                }
                             }
                             NetworkMessage::CameraConfigUpdate(config) => {
-                                *camera_config = config;
-                                debug!("Updated camera configuration from server");
+                                // Only update if content is different to prevent feedback loop
+                                if *camera_config != config {
+                                    *camera_config = config;
+                                    debug!("Updated camera configuration from server");
+                                }
                             }
                             NetworkMessage::SceneConfigUpdate(config) => {
-                                *scene_config = config;
-                                debug!("Updated scene configuration from server");
+                                // Only update if content is different to prevent feedback loop
+                                if *scene_config != config {
+                                    *scene_config = config;
+                                    debug!("Updated scene configuration from server");
+                                }
                             }
                             _ => {
                                 // Other messages can be handled by other systems if needed
