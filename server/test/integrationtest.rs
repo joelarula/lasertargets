@@ -30,7 +30,7 @@ fn test_query_scene_setup() {
         let found = received
             .0
             .iter()
-            .any(|m| matches!(m, NetworkMessage::SceneSetupResponse(_)));
+            .any(|m| matches!(m, NetworkMessage::SceneSetupUpdate(_)));
         assert!(
             found,
             "Expected SceneSetupResponse in {:?}",
@@ -82,7 +82,7 @@ fn test_update_camera_config_broadcast() {
         let received = client2_app.world().resource::<ReceivedMessages>();
         assert!(!received.0.is_empty(), "Client 2 should receive broadcast");
         let found = received.0.iter().any(|m| {
-            if let NetworkMessage::UpdateCameraConfig(received_config) = m {
+            if let NetworkMessage::CameraConfigUpdate(received_config) = m {
                 received_config.locked_to_scene == true && received_config.angle == 123.0
             } else {
                 false
@@ -90,7 +90,7 @@ fn test_update_camera_config_broadcast() {
         });
         assert!(
             found,
-            "Expected UpdateCameraConfig broadcast in {:?}",
+            "Expected CameraConfigUpdate broadcast in {:?}",
             received.0
         );
     }
@@ -137,7 +137,7 @@ fn test_update_scene_config_broadcast() {
         let received = client2_app.world().resource::<ReceivedMessages>();
         assert!(!received.0.is_empty(), "Client 2 should receive broadcast");
         let found = received.0.iter().any(|m| {
-            if let NetworkMessage::UpdateSceneConfig(received_config) = m {
+            if let NetworkMessage::SceneConfigUpdate(received_config) = m {
                 received_config.scene_width == 42.0
             } else {
                 false
@@ -145,7 +145,7 @@ fn test_update_scene_config_broadcast() {
         });
         assert!(
             found,
-            "Expected UpdateSceneConfig broadcast in {:?}",
+            "Expected SceneConfigUpdate broadcast in {:?}",
             received.0
         );
     }
@@ -555,7 +555,7 @@ fn test_query_projector_config() {
         let found = received
             .0
             .iter()
-            .any(|m| matches!(m, NetworkMessage::ProjectorConfigResponse(_)));
+            .any(|m| matches!(m, NetworkMessage::ProjectorConfigUpdate(_)));
         assert!(
             found,
             "Expected ProjectorConfigResponse in {:?}",
@@ -608,7 +608,7 @@ fn test_update_config_broadcast() {
         let received = client2_app.world().resource::<ReceivedMessages>();
         assert!(!received.0.is_empty(), "Client 2 should receive broadcast");
         let found = received.0.iter().any(|m| {
-            if let NetworkMessage::UpdateProjectorConfig(received_config) = m {
+            if let NetworkMessage::ProjectorConfigUpdate(received_config) = m {
                 received_config.enabled == true && received_config.angle == 45.0
             } else {
                 false
@@ -616,7 +616,7 @@ fn test_update_config_broadcast() {
         });
         assert!(
             found,
-            "Expected UpdateProjectorConfig broadcast in {:?}",
+            "Expected ProjectorConfigUpdate broadcast in {:?}",
             received.0
         );
     }

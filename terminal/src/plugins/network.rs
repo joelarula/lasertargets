@@ -137,19 +137,16 @@ fn receive_server_messages(
                 match NetworkMessage::from_bytes(&bytes) {
                     Ok(msg) => {
                         match msg {
-                            NetworkMessage::ProjectorConfigResponse(config)  => {
-                                // Bypass change detection to avoid feedback loop
-                                *projector_config.bypass_change_detection() = config;
+                            NetworkMessage::ProjectorConfigUpdate(config)  => {
+                                *projector_config = config;
                                 debug!("Updated projector configuration from server");
                             }
-                            NetworkMessage::CameraConfigResponse(config) => {
-                                // Bypass change detection to avoid feedback loop
-                                *camera_config.bypass_change_detection() = config;
+                            NetworkMessage::CameraConfigUpdate(config) => {
+                                *camera_config = config;
                                 debug!("Updated camera configuration from server");
                             }
-                            NetworkMessage::SceneConfigResponse(config) => {
-                                // Bypass change detection to avoid feedback loop
-                                *scene_config.bypass_change_detection() = config;
+                            NetworkMessage::SceneConfigUpdate(config) => {
+                                *scene_config = config;
                                 debug!("Updated scene configuration from server");
                             }
                             _ => {

@@ -44,11 +44,10 @@ pub fn handle_server_messages_system(
 pub fn create_test_server(port: u16) -> App {
     let mut app = App::new();
     
-    // Add required plugins for state management first
-    app.add_plugins(MinimalPlugins.set(ScheduleRunnerPlugin::run_once()))
-        .add_plugins(bevy::state::app::StatesPlugin);
+    // Add minimal plugins
+    app.add_plugins(MinimalPlugins.set(ScheduleRunnerPlugin::run_once()));
     
-    // Add common server plugins
+    // Add common server plugins (includes StatesPlugin)
     server::add_common_server_plugins(&mut app);
     
     app.insert_resource(NetworkingConfiguration {

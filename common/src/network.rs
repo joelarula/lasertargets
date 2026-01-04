@@ -23,27 +23,27 @@ pub enum NetworkMessage {
     QueryServerState,
     QueryGameState,
     
-    ServerStateResponse(crate::state::ServerState),
-    GameStateResponse(crate::state::GameState),
+    ServerStateUpdate(crate::state::ServerState),
+    GameStateUpdate(crate::state::GameState),
 
     // Projector Configuration
     QueryProjectorConfig,
-    ProjectorConfigResponse(ProjectorConfiguration),
+    ProjectorConfigUpdate(ProjectorConfiguration),
     UpdateProjectorConfig(ProjectorConfiguration),
 
     // Camera Configuration
     QueryCameraConfig,
-    CameraConfigResponse(CameraConfiguration),
+    CameraConfigUpdate(CameraConfiguration),
     UpdateCameraConfig(CameraConfiguration),
 
     // Scene Configuration
     QuerySceneConfig,
-    SceneConfigResponse(SceneConfiguration),
+    SceneConfigUpdate(SceneConfiguration),
     UpdateSceneConfig(SceneConfiguration),
 
     // Scene Setup
     QuerySceneSetup,
-    SceneSetupResponse(SceneSetup),
+    SceneSetupUpdate(SceneSetup),
 
     // Game Configuration
     QueryGameSession,

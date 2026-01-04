@@ -135,7 +135,7 @@ fn handle_server_events(
                             }
                             // Query handlers
                             NetworkMessage::QueryProjectorConfig => {
-                                let message = NetworkMessage::ProjectorConfigResponse(
+                                let message = NetworkMessage::ProjectorConfigUpdate(
                                     projector_config.clone(),
                                 );
                                 let payload = message
@@ -150,32 +150,32 @@ fn handle_server_events(
                             }
                             NetworkMessage::QueryCameraConfig => {
                                 let message =
-                                    NetworkMessage::CameraConfigResponse(camera_config.clone());
+                                    NetworkMessage::CameraConfigUpdate(camera_config.clone());
                                 let payload =
-                                    message.to_bytes().expect("Serialize CameraConfigResponse");
+                                    message.to_bytes().expect("Serialize CameraConfigUpdate");
                                 send_payload_and_log_error(
                                     endpoint,
                                     client_id,
                                     payload,
-                                    "CameraConfigResponse",
+                                    "CameraConfigUpdate",
                                 );
                             }
                             NetworkMessage::QuerySceneConfig => {
                                 let message =
-                                    NetworkMessage::SceneConfigResponse(scene_config.clone());
+                                    NetworkMessage::SceneConfigUpdate(scene_config.clone());
                                 let payload =
-                                    message.to_bytes().expect("Serialize SceneConfigResponse");
+                                    message.to_bytes().expect("Serialize SceneConfigUpdate");
                                 send_payload_and_log_error(
                                     endpoint,
                                     client_id,
                                     payload,
-                                    "SceneConfigResponse",
+                                    "SceneConfigUpdate",
                                 );
                             }
 
                             NetworkMessage::QuerySceneSetup => {
                                 let message =
-                                    NetworkMessage::SceneSetupResponse(scene_setup.clone());
+                                    NetworkMessage::SceneSetupUpdate(scene_setup.clone());
                                 let payload =
                                     message.to_bytes().expect("Serialize SceneSetupResponse");
                                 send_payload_and_log_error(
@@ -187,7 +187,7 @@ fn handle_server_events(
                             }
 
                             NetworkMessage::QueryServerState => {
-                                let message = NetworkMessage::ServerStateResponse(
+                                let message = NetworkMessage::ServerStateUpdate(
                                     current_state.get().clone(),
                                 );
                                 let payload =
@@ -201,7 +201,7 @@ fn handle_server_events(
                             }
 
                             NetworkMessage::QueryGameState => {
-                                let message = NetworkMessage::GameStateResponse(
+                                let message = NetworkMessage::GameStateUpdate(
                                     current_game_state.get().clone(),
                                 );
                                 let payload =
@@ -215,40 +215,16 @@ fn handle_server_events(
                             }
 
                             NetworkMessage::UpdateProjectorConfig(new_config) => {
-                                *projector_config = new_config.clone();
+                                *projector_config = new_config;
                                 info!("Projector configuration updated by client {}", client_id);
-                                let payload = NetworkMessage::UpdateProjectorConfig(new_config)
-                                    .to_bytes()
-                                    .expect("Serialize");
-                                broadcast_payload_and_log_error(
-                                    endpoint,
-                                    payload,
-                                    "UpdateProjectorConfig",
-                                );
                             }
                             NetworkMessage::UpdateCameraConfig(new_config) => {
-                                *camera_config = new_config.clone();
+                                *camera_config = new_config;
                                 info!("Camera configuration updated by client {}", client_id);
-                                let payload = NetworkMessage::UpdateCameraConfig(new_config)
-                                    .to_bytes()
-                                    .expect("Serialize");
-                                broadcast_payload_and_log_error(
-                                    endpoint,
-                                    payload,
-                                    "UpdateCameraConfig",
-                                );
                             }
                             NetworkMessage::UpdateSceneConfig(new_config) => {
-                                *scene_config = new_config.clone();
+                                *scene_config = new_config;
                                 info!("Scene configuration updated by client {}", client_id);
-                                let payload = NetworkMessage::UpdateSceneConfig(new_config)
-                                    .to_bytes()
-                                    .expect("Serialize");
-                                broadcast_payload_and_log_error(
-                                    endpoint,
-                                    payload,
-                                    "UpdateSceneConfig",
-                                );
                             }
 
                             NetworkMessage::RegisterActor(game, name, roles) => {
@@ -389,7 +365,7 @@ fn broadcast_scene_setup_on_change(
     // Check and broadcast CameraConfiguration changes
     if camera_config.is_changed() {
         info!("CameraConfiguration changed, broadcasting update.");
-        let message = NetworkMessage::UpdateCameraConfig(camera_config.clone());
+        let message = NetworkMessage::CameraConfigUpdate(camera_config.clone());
         let payload = message.to_bytes().expect("Serialize CameraConfig");
         if let Err(e) = endpoint.broadcast_payload(payload) {
             error!("Failed to broadcast CameraConfiguration update: {}", e);
@@ -399,7 +375,7 @@ fn broadcast_scene_setup_on_change(
     // Check and broadcast ProjectorConfiguration changes
     if projector_config.is_changed() {
         info!("ProjectorConfiguration changed, broadcasting update.");
-        let message = NetworkMessage::UpdateProjectorConfig(projector_config.clone());
+        let message = NetworkMessage::ProjectorConfigUpdate(projector_config.clone());
         let payload = message.to_bytes().expect("Serialize ProjectorConfig");
         if let Err(e) = endpoint.broadcast_payload(payload) {
             error!("Failed to broadcast ProjectorConfiguration update: {}", e);
@@ -409,7 +385,7 @@ fn broadcast_scene_setup_on_change(
     // Check and broadcast SceneConfiguration changes
     if scene_configuration.is_changed() {
         info!("SceneConfiguration changed, broadcasting update.");
-        let message = NetworkMessage::UpdateSceneConfig(scene_configuration.clone());
+        let message = NetworkMessage::SceneConfigUpdate(scene_configuration.clone());
         let payload = message.to_bytes().expect("Serialize SceneConfig");
         if let Err(e) = endpoint.broadcast_payload(payload) {
             error!("Failed to broadcast SceneConfiguration update: {}", e);
@@ -419,7 +395,7 @@ fn broadcast_scene_setup_on_change(
     // Check and broadcast SceneSetup changes (if still desired, as it aggregates the above)
     if scene_setup.is_changed() {
         info!("SceneSetup changed, broadcasting update.");
-        let message = NetworkMessage::SceneSetupResponse(scene_setup.clone());
+        let message = NetworkMessage::SceneSetupUpdate(scene_setup.clone());
         let payload = message.to_bytes().expect("Serialize SceneSetupResponse");
         if let Err(e) = endpoint.broadcast_payload(payload) {
             error!("Failed to broadcast SceneSetup: {}", e);
@@ -612,13 +588,13 @@ fn broadcast_state_on_change(
     };
 
     if server_state.is_changed() {
-        let msg = NetworkMessage::ServerStateResponse(server_state.get().clone());
+        let msg = NetworkMessage::ServerStateUpdate(server_state.get().clone());
         let payload = msg.to_bytes().expect("Serialize ServerStateResponse");
         let _ = endpoint.broadcast_payload(payload);
     }
 
     if game_state.is_changed() {
-        let msg = NetworkMessage::GameStateResponse(game_state.get().clone());
+        let msg = NetworkMessage::GameStateUpdate(game_state.get().clone());
         let payload = msg.to_bytes().expect("Serialize GameStateResponse");
         let _ = endpoint.broadcast_payload(payload);
     }
