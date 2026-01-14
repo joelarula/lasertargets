@@ -4967,7 +4967,9 @@ dependencies = [
  "bincode",
  "common",
  "hunter",
+ "libloading",
  "log",
+ "lyon_tessellation",
  "serde",
  "snake",
 ]

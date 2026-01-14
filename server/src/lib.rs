@@ -14,6 +14,7 @@ use hunter::plugin::HunterGamePlugin;
 use snake::plugin::SnakeGamePlugin;
 
 pub mod plugins;
+pub mod dac;
 
 const FIXED_TIMESTEP: f64 = 1.0 / 50.0; 
 
