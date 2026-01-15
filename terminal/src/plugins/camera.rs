@@ -2,8 +2,9 @@ use bevy::prelude::*;
 use bevy::prelude::KeyCode;
 use bevy::camera::Viewport;
 use bevy::window::WindowResized;
+use common::scene::SceneSystemSet;
 use crate::plugins::instructions::{DebugInfoState, InstructionState};
-use crate::plugins::scene::{SceneData, SceneSystemSet, SceneTag};
+use crate::plugins::scene::{SceneData, SceneTag};
 use bevy_camera::ScalingMode;
 use common::config::CameraConfiguration;
 

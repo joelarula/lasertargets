@@ -5,8 +5,13 @@ use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 pub struct SceneSetupPlugin;
 
+#[derive(SystemSet, Debug, Hash, PartialEq, Eq, Clone)]
+pub struct SceneSystemSet;
+
 impl Plugin for SceneSetupPlugin {
     fn build(&self, app: &mut App) {
+        app.configure_sets(Startup, SceneSystemSet);
+        app.configure_sets(Update, SceneSystemSet);
         app.insert_resource(SceneConfiguration::default());
         app.init_resource::<SceneSetup>(); // Initialize SceneSetup as a resource
         app.add_systems(Startup, initialize_scene_setup_resource);

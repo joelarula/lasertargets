@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use crate::plugins::scene::SceneSystemSet;
+use common::scene::SceneSystemSet;
 
 #[derive(Component)]
 struct InstructionTag;

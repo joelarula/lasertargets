@@ -3,6 +3,7 @@ use bevy::window::PrimaryWindow;
 use common::config::CameraConfiguration;
 use common::config::ProjectorConfiguration;
 use common::config::SceneConfiguration;
+use common::scene::SceneSystemSet;
 use crate::plugins::camera::{CameraTag, ViewportMode};
 use crate::plugins::instructions::DebugInfoState;
 use crate::plugins::instructions::InstructionState;
@@ -15,8 +16,7 @@ const INSTRUCTION_TEXT_B: &str = "Press [Left][Right] to adjust target width";
 
 #[derive(Component)]
 pub struct SceneTag;
-#[derive(SystemSet, Debug, Hash, PartialEq, Eq, Clone)]
-pub struct SceneSystemSet;
+
 pub struct ScenePlugin;
 
 
