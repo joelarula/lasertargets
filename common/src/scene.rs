@@ -27,7 +27,7 @@ fn initialize_scene_setup_resource(
     scene_configuration: Res<SceneConfiguration>,
 ) {
     *scene_setup = SceneSetup::new(
-        scene_configuration.transform.clone(),
+        scene_configuration.clone(),
         config.clone(),
         projection_config.clone(),
     );
@@ -41,7 +41,7 @@ fn update_scene_setup_resource(
 ) {
     if config.is_changed() || scene_configuration.is_changed() || projection_config.is_changed() {
         *scene_setup = SceneSetup::new(
-            scene_configuration.transform.clone(),
+            scene_configuration.clone(),
             config.clone(),
             projection_config.clone(),
         );
@@ -51,8 +51,8 @@ fn update_scene_setup_resource(
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, Resource)]
 pub struct SceneSetup {
-    /// Transform of the scene in world space.
-    pub transform: ConfigTransform,
+    /// Scene configuration including transform, dimensions, and distance.
+    pub scene: SceneConfiguration,
     /// Configuration for the camera.
     pub camera: CameraConfiguration,
     /// Configuration for the projector.
@@ -61,12 +61,12 @@ pub struct SceneSetup {
 
 impl SceneSetup {
     pub fn new(
-        transform: ConfigTransform,
+        scene: SceneConfiguration,
         camera: CameraConfiguration,
         projector: ProjectorConfiguration,
     ) -> Self {
         SceneSetup {
-            transform,
+            scene,
             camera,
             projector,
         }
@@ -78,7 +78,7 @@ impl SceneSetup {
             .camera
             .transform
             .translation
-            .distance(self.transform.translation);
+            .distance(self.scene.transform.translation);
         let half_angle_rad = self.camera.angle.to_radians() / 2.0;
         let width = 2.0 * distance * half_angle_rad.tan();
         let height = width;
@@ -92,7 +92,7 @@ impl SceneSetup {
             .projector
             .transform
             .translation
-            .distance(self.transform.translation);
+            .distance(self.scene.transform.translation);
         let half_angle_rad = self.projector.angle.to_radians() / 2.0;
         let width = 2.0 * distance * half_angle_rad.tan();
         let height = width;
@@ -118,7 +118,7 @@ impl SceneSetup {
             .camera
             .transform
             .translation
-            .distance(self.transform.translation);
+            .distance(self.scene.transform.translation);
 
         // Assuming camera looks down -Z
         let local_pos = Vec3::new(local_x, local_y, -distance);
@@ -143,7 +143,7 @@ impl SceneSetup {
             .projector
             .transform
             .translation
-            .distance(self.transform.translation);
+            .distance(self.scene.transform.translation);
 
         let local_pos = Vec3::new(local_x, local_y, -distance);
 
@@ -158,8 +158,8 @@ impl SceneSetup {
         let ray_origin = self.camera.transform.translation;
         let ray_dir = self.camera.transform.rotation * -Vec3::Z; // Camera looks down -Z
 
-        let plane_origin = self.transform.translation;
-        let plane_normal = self.transform.rotation * Vec3::Z; // Assuming scene plane is XY, so normal is Z
+        let plane_origin = self.scene.transform.translation;
+        let plane_normal = self.scene.transform.rotation * Vec3::Z; // Assuming scene plane is XY, so normal is Z
 
         let denominator = ray_dir.dot(plane_normal);
         if denominator.abs() < 1e-6 {
@@ -177,8 +177,8 @@ impl SceneSetup {
         let ray_origin = self.projector.transform.translation;
         let ray_dir = self.projector.transform.rotation * -Vec3::Z; // Projector looks down -Z
 
-        let plane_origin = self.transform.translation;
-        let plane_normal = self.transform.rotation * Vec3::Z; // Assuming scene plane is XY, so normal is Z
+        let plane_origin = self.scene.transform.translation;
+        let plane_normal = self.scene.transform.rotation * Vec3::Z; // Assuming scene plane is XY, so normal is Z
 
         let denominator = ray_dir.dot(plane_normal);
         if denominator.abs() < 1e-6 {
@@ -192,7 +192,7 @@ impl SceneSetup {
     /// Calculates the rotation required for the camera to look exactly at the scene's center.
     pub fn get_camera_look_at_scene_rotation(&self) -> Quat {
         let eye = self.camera.transform.translation;
-        let target = self.transform.translation;
+        let target = self.scene.transform.translation;
         let up = Vec3::Y;
         Transform::from_translation(eye)
             .looking_at(target, up)
@@ -202,7 +202,7 @@ impl SceneSetup {
     /// Calculates the rotation required for the projector to look exactly at the scene's center.
     pub fn get_projector_look_at_scene_rotation(&self) -> Quat {
         let eye = self.projector.transform.translation;
-        let target = self.transform.translation;
+        let target = self.scene.transform.translation;
         let up = Vec3::Y;
         Transform::from_translation(eye)
             .looking_at(target, up)
@@ -216,9 +216,9 @@ impl SceneSetup {
         let projector_center = self.get_projector_center_on_scene_plane()?;
 
         let transform = Transform {
-            translation: self.transform.translation,
-            rotation: self.transform.rotation,
-            scale: self.transform.scale,
+            translation: self.scene.transform.translation,
+            rotation: self.scene.transform.rotation,
+            scale: self.scene.transform.scale,
         };
 
         let to_local = transform.compute_affine().inverse();

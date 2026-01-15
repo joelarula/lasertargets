@@ -37,7 +37,7 @@ fn update_grid(mut gizmos: Gizmos, scene_configuration: Res<SceneConfiguration>,
     if *display_mode == DisplayMode::Mode3D {
         gizmos.grid(
             Quat::from_rotation_x(PI / 2.),
-            UVec2::new((scene_configuration.scene_width * 4.) as u32, (scene_configuration.target_projection_distance * 4.) as u32),
+            UVec2::new((scene_configuration.scene_width * 4.) as u32, (scene_configuration.transform.translation.z.abs() * 4.) as u32),
             Vec2::new(GRID_SPACING, GRID_SPACING),
             DARK_GREY
         );  
@@ -53,8 +53,8 @@ fn draw_billboard_gizmos(
     for(_camera, camera_transform) in camera_query.iter(){ // Prefixed with underscore to ignore unused camera variable
         for (scene_transform, scene_data) in scene_query.iter() {
             let billboard_position = scene_transform.translation();
-            let width = scene_data.dimensions.x;
-            let height = scene_data.dimensions.y;
+            let width = scene_data.projection_resolution.x as f32;
+            let height = scene_data.projection_resolution.y as f32;
             
             draw_billboard_grid(
                 &mut gizmos,
@@ -119,7 +119,7 @@ fn draw_projector_billboard(
             
             // Calculate projected size based on angle and distance
             let angle_rad = projector_config.angle.to_radians();
-            let distance = scene_config.target_projection_distance;
+            let distance = scene_config.transform.translation.z.abs();
             let half_angle = angle_rad / 2.0;
             let projected_size = 2.0 * distance * half_angle.tan();
             

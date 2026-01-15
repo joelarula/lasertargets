@@ -9,10 +9,13 @@ use bevy::{
 
 #[test]
 fn test_get_camera_view_dimensions() {
-    let scene_transform = ConfigTransform {
-        translation: Vec3::ZERO,
-        rotation: Quat::IDENTITY,
-        scale: Vec3::ONE,
+    let scene_config = SceneConfiguration {
+        scene_width: 10.0,
+        transform: ConfigTransform {
+            translation: Vec3::ZERO,
+            rotation: Quat::IDENTITY,
+            scale: Vec3::ONE,
+        },
     };
 
     // Camera at (0, 0, 10), looking at (0, 0, 0)
@@ -35,7 +38,7 @@ fn test_get_camera_view_dimensions() {
 
     let projector_config = ProjectorConfiguration::default();
 
-    let scene_setup = SceneSetup::new(scene_transform, camera_config, projector_config);
+    let scene_setup = SceneSetup::new(scene_config, camera_config, projector_config);
     let dims = scene_setup.get_camera_view_dimensions();
 
     assert!((dims.x - 20.0).abs() < 1e-5);
@@ -44,10 +47,13 @@ fn test_get_camera_view_dimensions() {
 
 #[test]
 fn test_get_projector_view_dimensions() {
-    let scene_transform = ConfigTransform {
-        translation: Vec3::ZERO,
-        rotation: Quat::IDENTITY,
-        scale: Vec3::ONE,
+    let scene_config = SceneConfiguration {
+        scene_width: 10.0,
+        transform: ConfigTransform {
+            translation: Vec3::ZERO,
+            rotation: Quat::IDENTITY,
+            scale: Vec3::ONE,
+        },
     };
 
     let camera_config = CameraConfiguration::default();
@@ -71,7 +77,7 @@ fn test_get_projector_view_dimensions() {
         locked_to_scene: false,
     };
 
-    let scene_setup = SceneSetup::new(scene_transform, camera_config, projector_config);
+    let scene_setup = SceneSetup::new(scene_config, camera_config, projector_config);
     let dims = scene_setup.get_projector_view_dimensions();
 
     let expected_width = 2.0 * 5.0 * (30.0f32.to_radians().tan());
@@ -81,10 +87,13 @@ fn test_get_projector_view_dimensions() {
 
 #[test]
 fn test_get_camera_center_on_scene_plane() {
-    let scene_transform = ConfigTransform {
-        translation: Vec3::ZERO,
-        rotation: Quat::IDENTITY,
-        scale: Vec3::ONE,
+    let scene_config = SceneConfiguration {
+        scene_width: 10.0,
+        transform: ConfigTransform {
+            translation: Vec3::ZERO,
+            rotation: Quat::IDENTITY,
+            scale: Vec3::ONE,
+        },
     };
 
     // Camera at (0, 0, 10), looking directly at scene center.
@@ -102,7 +111,7 @@ fn test_get_camera_center_on_scene_plane() {
     };
 
     let projector_config = ProjectorConfiguration::default();
-    let scene_setup = SceneSetup::new(scene_transform, camera_config, projector_config);
+    let scene_setup = SceneSetup::new(scene_config, camera_config, projector_config);
 
     let center = scene_setup.get_camera_center_on_scene_plane();
     assert!(center.is_some());
@@ -114,10 +123,13 @@ fn test_get_camera_center_on_scene_plane() {
 
 #[test]
 fn test_get_common_viewport_stats_full_overlap() {
-    let scene_transform = ConfigTransform {
-        translation: Vec3::ZERO,
-        rotation: Quat::IDENTITY,
-        scale: Vec3::ONE,
+    let scene_config = SceneConfiguration {
+        scene_width: 10.0,
+        transform: ConfigTransform {
+            translation: Vec3::ZERO,
+            rotation: Quat::IDENTITY,
+            scale: Vec3::ONE,
+        },
     };
 
     // Camera covers 20x20 area centered at 0,0
@@ -151,7 +163,7 @@ fn test_get_common_viewport_stats_full_overlap() {
         locked_to_scene: false,
     };
 
-    let scene_setup = SceneSetup::new(scene_transform, camera_config, projector_config);
+    let scene_setup = SceneSetup::new(scene_config, camera_config, projector_config);
     let stats = scene_setup.get_common_viewport_stats();
 
     assert!(stats.is_some());
@@ -165,10 +177,13 @@ fn test_get_common_viewport_stats_full_overlap() {
 
 #[test]
 fn test_get_common_viewport_stats_partial_overlap() {
-    let scene_transform = ConfigTransform {
-        translation: Vec3::ZERO,
-        rotation: Quat::IDENTITY,
-        scale: Vec3::ONE,
+    let scene_config = SceneConfiguration {
+        scene_width: 10.0,
+        transform: ConfigTransform {
+            translation: Vec3::ZERO,
+            rotation: Quat::IDENTITY,
+            scale: Vec3::ONE,
+        },
     };
 
     // Camera: width 2 centered at (1, 0)
@@ -244,7 +259,7 @@ fn test_get_common_viewport_stats_partial_overlap() {
     };
 
     let scene_setup = SceneSetup::new(
-        scene_transform,
+        scene_config,
         camera_config_shifted,
         projector_config_shifted,
     );

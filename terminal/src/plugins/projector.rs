@@ -1,18 +1,14 @@
 use bevy::prelude::*;
 // Removed unused import: use log::info;
 use crate::plugins::calibration::CalibrationSystemSet;
-use crate::plugins::scene::{SceneData, SceneTag};
 use crate::plugins::toolbar::{ToolbarRegistry, ToolbarItem, Docking, ToolabarButton};
 use crate::plugins::instructions::InstructionState;
-use common::config::ProjectorConfiguration;
+use common::config::{ProjectorConfiguration};
 
 const BTN_NAME: &str = "projector";
 
 #[derive(SystemSet, Debug, Hash, PartialEq, Eq, Clone)]
 pub struct ProjectorSystemSet;
-
-#[derive(Resource, Default)]
-pub struct ProjectorLockToScene(pub bool);
 
 
 pub struct ProjectorPlugin;
@@ -21,7 +17,6 @@ impl Plugin for ProjectorPlugin {
     fn build(&self, app: &mut App) {
         app
             .insert_resource(ProjectorConfiguration::default())
-            .insert_resource(ProjectorLockToScene(true))
             .add_systems(Startup, (register_projector, register_projector_instructions).in_set(ProjectorSystemSet).after(CalibrationSystemSet))
             .add_systems(Update, (
                 handle_projector_button,
@@ -61,32 +56,20 @@ fn handle_projector_button(
 
 fn update_projector_system(
     mut projector_config: ResMut<ProjectorConfiguration>,
-    mut lock_to_scene: ResMut<ProjectorLockToScene>,
     mut toolbar_registry: ResMut<ToolbarRegistry>,
-    scene_query: Query<&SceneData, With<SceneTag>>,
     keyboard: Res<ButtonInput<KeyCode>>,
 ) {
     let prev_enabled = projector_config.enabled;
     
-    configure_projector(&mut projector_config, &mut lock_to_scene, &keyboard);
+    configure_projector(&mut projector_config, &keyboard);
     if prev_enabled != projector_config.enabled {
         toolbar_registry.update_button_state(BTN_NAME, projector_config.enabled);
     }
     
-    if lock_to_scene.0 {
-        if let Ok(scene_data) = scene_query.single() {
-            let new_angle = scene_data.calculate_projector_angle_for_scene_width();
-            // Only update if the angle actually changed to prevent triggering network updates
-            if (projector_config.angle - new_angle).abs() > 0.001 {
-                projector_config.angle = new_angle;
-            }
-        }
-    }
 }
 
 fn configure_projector(
     projector_config: &mut ResMut<ProjectorConfiguration>,
-    lock_to_scene: &mut ResMut<ProjectorLockToScene>,
     keyboard: &Res<ButtonInput<KeyCode>>,
 ) {
     // Toggle projector enabled state with F1 key
@@ -96,7 +79,8 @@ fn configure_projector(
     
     // Toggle lock to scene with a key (e.g., L key)
     if keyboard.just_pressed(KeyCode::KeyL) {
-        lock_to_scene.0 = !lock_to_scene.0;
+        projector_config.locked_to_scene = !projector_config.locked_to_scene;
     }
-    
 }
+
+

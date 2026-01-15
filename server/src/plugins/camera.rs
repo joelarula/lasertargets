@@ -20,7 +20,7 @@ fn update_server_camera(
     if camera_config.is_changed() || scene_setup.is_changed() {
         if camera_config.locked_to_scene {
             // Lock camera to scene center
-            let scene_center = scene_setup.transform.translation;
+            let scene_center = scene_setup.scene.transform.translation;
             let new_rotation = Transform::from_translation(camera_config.transform.translation)
                 .looking_at(scene_center, Vec3::Y).rotation;
             // Only update if rotation actually changed

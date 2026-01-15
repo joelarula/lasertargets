@@ -4,7 +4,6 @@ use bevy_egui::egui;
 use common::config::{SceneConfiguration, ProjectorConfiguration};
 
 use crate::plugins::camera::DisplayMode;
-use crate::plugins::projector::ProjectorLockToScene;
 use crate::plugins::{
     calibration::CalibrationSystemSet, 
     toolbar::{ToolbarRegistry, ToolbarItem, Docking, ToolabarButton},
@@ -86,7 +85,6 @@ pub fn overlay_ui_system(
     mut scene_configuration: ResMut<SceneConfiguration>,
     mut camera_configuration: ResMut<common::config::CameraConfiguration>,
     mut projector_config: ResMut<ProjectorConfiguration>,
-    mut lock_to_scene: ResMut<ProjectorLockToScene>,
 ) {
     // Early return if overlay not visible - prevents all work
     if !overlay_visible.0 {
@@ -131,7 +129,6 @@ pub fn overlay_ui_system(
                                 *camera_config_ref = common::config::CameraConfiguration::default();
                                 *projector_config_ref = ProjectorConfiguration::default();
                                 *display_mode = DisplayMode::Mode2D;
-                                lock_to_scene.0 = false;
                             }
                         });
                         ui.separator();
@@ -147,12 +144,18 @@ pub fn overlay_ui_system(
                                         }
                                     });
                                     property_row(ui, "Target Distance", |ui| {
-                                        ui.add(
-                                            egui::DragValue::new(&mut scene_config_ref.target_projection_distance)
+                                        // Edit the absolute value, store as negative Z
+                                        let mut distance = scene_config_ref.transform.translation.z.abs();
+                                        let response = ui.add(
+                                            egui::DragValue::new(&mut distance)
                                                 .range(0.0..=100.0)
                                                 .speed(0.1)
                                                 .suffix(" m"),
-                                        )
+                                        );
+                                        if response.changed() {
+                                            scene_config_ref.transform.translation.z = -distance;
+                                        }
+                                        response
                                     });
                                     property_row(ui, "Scene Width", |ui| {
                                         ui.add(
@@ -270,7 +273,6 @@ pub fn overlay_ui_system(
                                     ui.horizontal(|ui| {
                                         if ui.button("Reset").clicked() {
                                             *projector_config_ref = ProjectorConfiguration::default();
-                                            lock_to_scene.0 = false;
                                         }
                                     });
                                     property_row(ui, "Enabled", |ui| {
@@ -291,7 +293,7 @@ pub fn overlay_ui_system(
                                         });
                                     });
                                     property_row(ui, "Projection Angle", |ui| {
-                                        ui.add_enabled_ui(!lock_to_scene.0, |ui| {
+                                        ui.add_enabled_ui(!projector_config_ref.locked_to_scene, |ui| {
                                             ui.add(
                                                 egui::DragValue::new(&mut projector_config_ref.angle)
                                                     .range(10.0..=90.0)
@@ -301,10 +303,9 @@ pub fn overlay_ui_system(
                                         })
                                     });
                                     property_row(ui, "Lock to Scene", |ui| {
-                                        let mut locked = lock_to_scene.0;
+                                        let mut locked = projector_config_ref.locked_to_scene;
                                         let changed = ui.checkbox(&mut locked, "").changed();
                                         if changed {
-                                            lock_to_scene.0 = locked;
                                             projector_config_ref.locked_to_scene = locked;
                                         }
                                     });

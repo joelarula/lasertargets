@@ -25,9 +25,7 @@ impl Default for ConfigTransform {
 
 #[derive(Resource, Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SceneConfiguration {
-    /// Defines the distance of a target detection plane in modeled physical world in meters.
-    pub target_projection_distance: f32,
-    /// Defines the desired width of the scene in meters.
+    /// Defines the width of the scene in meters.
     pub scene_width: f32,
     /// Defines the position and orientation of the scene in world space.
     pub transform: ConfigTransform,
@@ -35,14 +33,10 @@ pub struct SceneConfiguration {
 
 impl Default for SceneConfiguration {
     fn default() -> Self {
-        let target_projection_distance = 25.0;
-        let translation = Vec3::new(0.0, 0.0, -target_projection_distance);
-
         Self {
-            target_projection_distance,
             scene_width: 10.0,
             transform: ConfigTransform {
-                translation,
+                translation: Vec3::new(0.0, 0.0, -25.0),
                 rotation: Quat::IDENTITY,
                 scale: Vec3::ONE,
             },

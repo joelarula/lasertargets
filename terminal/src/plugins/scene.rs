@@ -3,8 +3,8 @@ use bevy::window::PrimaryWindow;
 use common::config::CameraConfiguration;
 use common::config::ProjectorConfiguration;
 use common::config::SceneConfiguration;
-use common::scene::SceneSystemSet;
-use crate::plugins::camera::{CameraTag, ViewportMode};
+use common::scene::{SceneSystemSet, SceneSetup};
+use crate::plugins::camera::{CameraTag};
 use crate::plugins::instructions::DebugInfoState;
 use crate::plugins::instructions::InstructionState;
 use bevy::prelude::UVec2;
@@ -17,6 +17,12 @@ const INSTRUCTION_TEXT_B: &str = "Press [Left][Right] to adjust target width";
 #[derive(Component)]
 pub struct SceneTag;
 
+#[derive(Resource, Debug, Clone, Copy, Default)]
+pub enum ViewportMode {
+    #[default]
+    FillWidth,
+}
+
 pub struct ScenePlugin;
 
 
@@ -24,6 +30,8 @@ impl Plugin for ScenePlugin {
     fn build(&self, app: &mut App) {
        
         app.insert_resource(SceneConfiguration::default());
+        app.init_resource::<SceneSetup>();
+        app.init_resource::<ViewportMode>();
         app.add_systems(Startup, setup_scene.in_set(SceneSystemSet));
         app.add_systems(Update, update_scene.in_set(SceneSystemSet));  
     }
@@ -31,10 +39,6 @@ impl Plugin for ScenePlugin {
 
 #[derive(Component,Debug, Default,Clone, Copy)] 
 pub struct SceneData{
-    /// The dimensions of the scene in world units.
-    pub dimensions: Vec2,
-    /// Distance from the camera to the scene in world units.
-    pub distance: f32,
     /// The size of the window in pixels.
     pub window_size: UVec2,
     /// scale factor of the window.
@@ -55,22 +59,17 @@ impl SceneData {
         window_size: UVec2, 
         camera_resolution: UVec2, 
         projection_resolution: UVec2,
-        distance: f32,
-        scene_width: f32,
         mouse_pos: Option<Vec3>, 
         scale_factor:f32,
-        viewport_mode: ViewportMode,
         ) -> Self {
       
         SceneData{
-            dimensions: Self::get_scene_dimensions(scene_width,camera_resolution),
-            distance,
             window_size,
             scale_factor,
-            viewport_size: Self::calculate_viewport_size(window_size, camera_resolution, viewport_mode),
-            camera_resolution: camera_resolution,
+            viewport_size: Self::calculate_viewport_size(window_size, camera_resolution),
+            camera_resolution,
             mouse_world_pos: mouse_pos,
-            projection_resolution: projection_resolution,
+            projection_resolution,
        }
     }
 
@@ -125,48 +124,44 @@ impl SceneData {
    }
     
 
-   fn get_scene_dimensions(scene_width: f32, camera_input_size: UVec2) -> Vec2 {
-      let aspect_ratio = camera_input_size.y as f32 / camera_input_size.x as f32;
-      Vec2::new(scene_width, scene_width * aspect_ratio)
-   }
-
-   fn calculate_viewport_size(window_size: UVec2, camera_input_size: UVec2, viewport_mode: ViewportMode) -> UVec2 { 
+   fn calculate_viewport_size(window_size: UVec2, camera_input_size: UVec2) -> UVec2 { 
       
       let hscale = window_size.x as f32 / camera_input_size.x as f32;
       let vscale = window_size.y as f32 / camera_input_size.y as f32;
-      
-      let scale = match viewport_mode {
-          ViewportMode::AspectFit => hscale.min(vscale),
-          ViewportMode::FillWidth => hscale,
-      };
-      
+
       return  UVec2::new(
-      (camera_input_size.x as f32 * scale).round() as u32, 
-      (camera_input_size.y as f32 * scale).round() as u32
+      (camera_input_size.x as f32 * hscale).round() as u32, 
+      (camera_input_size.y as f32 * vscale).round() as u32
       );
 
    }
 
-   fn get_normalized_mouse_position(&self) -> Vec2 {
+   pub fn get_normalized_mouse_position(&self, scene_dimensions: Vec2) -> Vec2 {
       let local_pos_2d = self.mouse_world_pos.unwrap().truncate();
-      let normalized_x = (local_pos_2d.x + self.dimensions.x / 2.0) / self.dimensions.x;
-      let normalized_y = (local_pos_2d.y + self.dimensions.y / 2.0) / self.dimensions.y;
+      let normalized_x = (local_pos_2d.x + scene_dimensions.x / 2.0) / scene_dimensions.x;
+      let normalized_y = (local_pos_2d.y + scene_dimensions.y / 2.0) / scene_dimensions.y;
       Vec2::new(normalized_x, normalized_y)
    }
 
-   pub fn get_world_units_per_camera_input_pixel(&self) -> f32 {
-      self.dimensions.x / self.camera_resolution.x as f32
+   /// Helper method to calculate scene dimensions from scene width and camera aspect ratio
+   pub fn get_scene_dimensions(&self, scene_width: f32) -> Vec2 {
+      let aspect_ratio = self.camera_resolution.y as f32 / self.camera_resolution.x as f32;
+      Vec2::new(scene_width, scene_width * aspect_ratio)
    }
 
-   pub fn get_world_units_per_viewport_pixel(&self) -> f32 {
-      self.dimensions.x / self.viewport_size.x as f32
+   pub fn get_world_units_per_camera_input_pixel(&self, scene_width: f32) -> f32 {
+      scene_width / self.camera_resolution.x as f32
+   }
+
+   pub fn get_world_units_per_viewport_pixel(&self, scene_width: f32) -> f32 {
+      scene_width / self.viewport_size.x as f32
    }
 
    /// Calculates the projector angle (in degrees) needed to cover the scene width at the target distance.
    /// Uses the formula: angle = 2 * atan(width / (2 * distance))
-   pub fn calculate_projector_angle_for_scene_width(&self) -> f32 {
-      let half_width = self.dimensions.x / 2.0;
-      let half_angle_rad = (half_width / self.distance).atan();
+   pub fn calculate_projector_angle_for_scene_width(scene_width: f32, distance: f32) -> f32 {
+      let half_width = scene_width / 2.0;
+      let half_angle_rad = (half_width / distance).atan();
       let full_angle_rad = 2.0 * half_angle_rad;
       full_angle_rad.to_degrees()
    }
@@ -179,6 +174,7 @@ fn setup_scene(
     config: Res<CameraConfiguration>,
     projection_config: Res<ProjectorConfiguration>,
     scene_configuration: Res<SceneConfiguration>,
+    scene_setup: Res<SceneSetup>,
     window: Single<&Window>,
     mut instruction_state: ResMut<InstructionState>,
     viewport_mode: Res<ViewportMode>,
@@ -187,22 +183,20 @@ fn setup_scene(
         instruction_state.instructions.push(INSTRUCTION_TEXT_A.to_string());
         instruction_state.instructions.push(INSTRUCTION_TEXT_B.to_string());
     
-
         let scene_data = SceneData::new(
             window.physical_size(),
             config.resolution,
             projection_config.resolution,
-            scene_configuration.target_projection_distance,
-            scene_configuration.scene_width,
             None,
             window.scale_factor(),
-            *viewport_mode,
         );
+
+        let scene_dimensions = scene_data.get_scene_dimensions(scene_configuration.scene_width);
 
         commands.spawn((
             SceneTag,
             scene_data,
-            Transform::from_xyz(0.0, scene_data.dimensions.y / 2.0, -scene_configuration.target_projection_distance),
+            Transform::from_xyz(0.0, scene_dimensions.y / 2.0, scene_configuration.transform.translation.z),
             GlobalTransform::default(),
         ));
 }
@@ -220,10 +214,10 @@ fn update_scene(
 ) {
     // Only modify scene_configuration when keys are pressed
     if keyboard.just_pressed(KeyCode::ArrowUp) {
-        scene_configuration.target_projection_distance += 1.0;
+        scene_configuration.transform.translation.z -= 1.0;
     }
     if keyboard.just_pressed(KeyCode::ArrowDown) {
-        scene_configuration.target_projection_distance -= 1.0;
+        scene_configuration.transform.translation.z += 1.0;
     }
     if keyboard.just_pressed(KeyCode::ArrowLeft) {
         scene_configuration.scene_width = scene_configuration.scene_width - 1.;
@@ -246,8 +240,10 @@ fn update_scene(
 
             for (scene_transform,mut transform,  mut scene_data) in scene_query.iter_mut() {
                 
-                transform.translation.z = -scene_configuration.target_projection_distance;
-                transform.translation.y = scene_data.dimensions.y / 2.0;
+                let scene_dimensions = scene_data.get_scene_dimensions(scene_configuration.scene_width);
+                
+                transform.translation.z = scene_configuration.transform.translation.z;
+                transform.translation.y = scene_dimensions.y / 2.0;
 
                 if let Some(ray) = cursor_ray {
                     let scene_position = scene_transform.translation();
@@ -260,8 +256,8 @@ fn update_scene(
                         let local_pos_3d = scene_transform.affine().inverse().transform_point(intersection_point);
 
                         // Check if the intersection point is within the scene bounds
-                        if local_pos_3d.x.abs() <= scene_data.dimensions.x / 2.0
-                            && local_pos_3d.y.abs() <= scene_data.dimensions.y / 2.0
+                        if local_pos_3d.x.abs() <= scene_dimensions.x / 2.0
+                            && local_pos_3d.y.abs() <= scene_dimensions.y / 2.0
                         {
                             mouse_pos = Some(intersection_point);
                         }
@@ -275,21 +271,18 @@ fn update_scene(
                     window.physical_size(),
                     config.resolution,
                     projection_config.resolution,    
-                    scene_configuration.target_projection_distance,
-                    scene_configuration.scene_width,
                     mouse_pos,
-                    window.scale_factor(),
-                    *viewport_mode,
+                    window.scale_factor()
                 );
 
-                update_debug_info(&mut debug_info, &window, &config, &projection_config, &scene_data);
+                update_debug_info(&mut debug_info, &window, &config, &projection_config, &scene_data, scene_dimensions, scene_configuration.transform.translation.z.abs());
 
             }
         }
     }
 }
 
-fn update_debug_info(debug_info: &mut DebugInfoState, window: &Window, config: &CameraConfiguration, projector_config: &ProjectorConfiguration, scene_data: &SceneData){
+fn update_debug_info(debug_info: &mut DebugInfoState, window: &Window, config: &CameraConfiguration, projector_config: &ProjectorConfiguration, scene_data: &SceneData, scene_dimensions: Vec2, distance: f32){
         
         let window_txt =  format!("Window size: {}x{} Camera input size: {}x{} Viewport size: {}x{} scale factor {}", 
             window.physical_size().x ,
@@ -312,18 +305,18 @@ fn update_debug_info(debug_info: &mut DebugInfoState, window: &Window, config: &
 
         debug_info.messages.push(mouse_txt);
 
-        let target_txt =  format!("Target distance {:.2} m , width {:.2}, height {:.2}", scene_data.distance, scene_data.dimensions.x,scene_data.dimensions.y);
+        let target_txt =  format!("Target distance {:.2} m , width {:.2}, height {:.2}", distance, scene_dimensions.x, scene_dimensions.y);
         debug_info.messages.push(target_txt);
 
         let ratio_txt =  format!("Input camera pixels  to world:{:.2} Viewport pixels to world{:.2}", 
-            scene_data.get_world_units_per_camera_input_pixel(), scene_data.get_world_units_per_viewport_pixel());
+            scene_data.get_world_units_per_camera_input_pixel(scene_dimensions.x), scene_data.get_world_units_per_viewport_pixel(scene_dimensions.x));
         
         debug_info.messages.push(ratio_txt);
 
         // Calculate projector pixel to world ratio
         let angle_rad = projector_config.angle.to_radians();
         let half_angle = angle_rad / 2.0;
-        let projected_width = 2.0 * scene_data.distance * half_angle.tan();
+        let projected_width = 2.0 * distance * half_angle.tan();
         let projector_pixel_to_world = projected_width / projector_config.resolution.x as f32;
         
         let projector_txt = format!("Projector angle: {:.2}° Resolution: {}x{} Pixel to world: {:.4}", 
