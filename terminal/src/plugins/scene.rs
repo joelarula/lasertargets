@@ -211,15 +211,26 @@ fn update_scene(
     camera_query: Query<(&Camera, &GlobalTransform), With<CameraTag>>,
     window_query: Query<&Window, With<PrimaryWindow>>,
     mut scene_query: Query<(&GlobalTransform, &mut Transform,&mut SceneData), With<SceneTag>>,
-    mut config: ResMut<CameraConfiguration>,
+    config: Res<CameraConfiguration>,
     mut scene_configuration: ResMut<SceneConfiguration>,
     projection_config: Res<ProjectorConfiguration>,
     keyboard: Res<ButtonInput<KeyCode>>,
     mut debug_info: ResMut<DebugInfoState>,
     viewport_mode: Res<ViewportMode>,
 ) {
-
-    configure_scene(&mut config, &mut scene_configuration,&keyboard);
+    // Only modify scene_configuration when keys are pressed
+    if keyboard.just_pressed(KeyCode::ArrowUp) {
+        scene_configuration.target_projection_distance += 1.0;
+    }
+    if keyboard.just_pressed(KeyCode::ArrowDown) {
+        scene_configuration.target_projection_distance -= 1.0;
+    }
+    if keyboard.just_pressed(KeyCode::ArrowLeft) {
+        scene_configuration.scene_width = scene_configuration.scene_width - 1.;
+    }
+    if keyboard.just_pressed(KeyCode::ArrowRight) {
+        scene_configuration.scene_width = scene_configuration.scene_width + 1.;
+    }
 
     if let Ok(window) = window_query.single()  {
 
@@ -276,27 +287,6 @@ fn update_scene(
             }
         }
     }
-}
-
-
-fn configure_scene(_config: &mut CameraConfiguration, scene_configuration: &mut SceneConfiguration, keyboard: &Res<ButtonInput<KeyCode>>){ // Prefixed with underscore to ignore unused config variable
-            
-    if keyboard.just_pressed(KeyCode::ArrowUp) {
-        scene_configuration.target_projection_distance += 1.0;
-    }
-
-    if keyboard.just_pressed(KeyCode::ArrowDown) {
-        scene_configuration.target_projection_distance -= 1.0;
-    }
-
-    if keyboard.just_pressed(KeyCode::ArrowLeft) {
-        scene_configuration.scene_width = scene_configuration.scene_width - 1.;
-    }
-
-    if keyboard.just_pressed(KeyCode::ArrowRight) {
-        scene_configuration.scene_width =  scene_configuration.scene_width + 1.;
-    }
-
 }
 
 fn update_debug_info(debug_info: &mut DebugInfoState, window: &Window, config: &CameraConfiguration, projector_config: &ProjectorConfiguration, scene_data: &SceneData){

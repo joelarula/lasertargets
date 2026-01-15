@@ -75,7 +75,11 @@ fn update_projector_system(
     
     if lock_to_scene.0 {
         if let Ok(scene_data) = scene_query.single() {
-            projector_config.angle = scene_data.calculate_projector_angle_for_scene_width();
+            let new_angle = scene_data.calculate_projector_angle_for_scene_width();
+            // Only update if the angle actually changed to prevent triggering network updates
+            if (projector_config.angle - new_angle).abs() > 0.001 {
+                projector_config.angle = new_angle;
+            }
         }
     }
 }

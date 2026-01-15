@@ -140,22 +140,36 @@ fn receive_server_messages(
                             NetworkMessage::ProjectorConfigUpdate(config)  => {
                                 // Only update if content is different to prevent feedback loop
                                 if *projector_config != config {
-                                    *projector_config = config;
+                                    // Use bypass_change_detection to prevent triggering send systems
+                                    *projector_config.bypass_change_detection() = config;
                                     debug!("Updated projector configuration from server");
                                 }
                             }
                             NetworkMessage::CameraConfigUpdate(config) => {
                                 // Only update if content is different to prevent feedback loop
                                 if *camera_config != config {
-                                    *camera_config = config;
+                                    // Use bypass_change_detection to prevent triggering send systems
+                                    *camera_config.bypass_change_detection() = config;
                                     debug!("Updated camera configuration from server");
                                 }
                             }
                             NetworkMessage::SceneConfigUpdate(config) => {
                                 // Only update if content is different to prevent feedback loop
                                 if *scene_config != config {
-                                    *scene_config = config;
+                                    // Use bypass_change_detection to prevent triggering send systems
+                                    *scene_config.bypass_change_detection() = config;
                                     debug!("Updated scene configuration from server");
+                                }
+                            }
+                            NetworkMessage::SceneSetupUpdate(setup) => {
+                                // Update individual configs from SceneSetup without triggering change detection
+                                if *camera_config != setup.camera {
+                                    *camera_config.bypass_change_detection() = setup.camera;
+                                    debug!("Updated camera configuration from SceneSetup");
+                                }
+                                if *projector_config != setup.projector {
+                                    *projector_config.bypass_change_detection() = setup.projector;
+                                    debug!("Updated projector configuration from SceneSetup");
                                 }
                             }
                             _ => {
