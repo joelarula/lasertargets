@@ -3,6 +3,8 @@ use crate::plugins::actor::ActorPlugin;
 use crate::plugins::projector::ProjectorPlugin;
 use crate::plugins::camera::CameraPlugin;
 use crate::plugins::game::GamePlugin;
+use crate::plugins::scene::ScenePlugin;
+use crate::plugins::calibration::CalibrationPlugin;
 use bevy::app::ScheduleRunnerPlugin;
 use bevy::prelude::*;
 use bevy::state::app::StatesPlugin;
@@ -30,6 +32,8 @@ pub fn add_common_server_plugins(app: &mut App) {
     app
     .add_plugins(StatesPlugin)
     .add_plugins(SceneSetupPlugin)
+    .add_plugins(ScenePlugin)
+    .add_plugins(CalibrationPlugin)
     .insert_resource(Time::<Fixed>::from_seconds(FIXED_TIMESTEP))
     .init_state::<ServerState>()
     .init_state::<GameState>()

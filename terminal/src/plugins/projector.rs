@@ -38,7 +38,6 @@ fn register_projector(mut toolbar: ResMut<ToolbarRegistry>) {
 
 fn register_projector_instructions(mut instructions: ResMut<InstructionState>) {
     instructions.add_instruction("Press [F1] to toggle projector".to_string());
-    instructions.add_instruction("Press [L] to toggle lock projector to scene".to_string());
 }
 
 fn handle_projector_button(
@@ -76,11 +75,7 @@ fn configure_projector(
     if keyboard.just_pressed(KeyCode::F1) {
         projector_config.enabled = !projector_config.enabled;
     }
-    
-    // Toggle lock to scene with a key (e.g., L key)
-    if keyboard.just_pressed(KeyCode::KeyL) {
-        projector_config.locked_to_scene = !projector_config.locked_to_scene;
-    }
+
 }
 
 

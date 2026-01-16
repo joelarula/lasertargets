@@ -3,6 +3,7 @@ use common::scene::SceneSetup;
 use crate::plugins::camera::CameraSystemSet;
 use crate::plugins::camera::DisplayMode;
 use crate::plugins::scene::SceneData;
+use crate::plugins::instructions::InstructionState;
 use common::config::{SceneConfiguration, ProjectorConfiguration};
 use std::f32::consts::PI;
 use bevy::color::palettes::css::DARK_GREY;
@@ -15,6 +16,12 @@ use bevy::color::palettes::css::RED;
 pub const DARK_GREY_THIRD: Srgba = Srgba::new(0.663, 0.663, 0.663, 0.3);
 
 pub const GRID_SPACING: f32 = 0.25;
+
+const INSTRUCTION_TEXT_F3: &str = "Press [F3] to toggle calibration gizmos visibility";
+
+#[derive(Resource, Default)]
+pub struct CalibrationVisible(pub bool);
+
 #[derive(SystemSet, Debug, Hash, PartialEq, Eq, Clone)]
 pub struct CalibrationSystemSet;
 
@@ -25,15 +32,37 @@ pub struct CalibrationPlugin;
 impl Plugin for CalibrationPlugin {
     fn build(&self, app: &mut App) {
         app
+        .insert_resource(CalibrationVisible(true)) // Start with calibration visible
+        .add_systems(Startup, setup_calibration_instructions)
+        .add_systems(Update, toggle_calibration_visibility.in_set(CalibrationSystemSet))
         .add_systems(Update, update_grid.in_set(CalibrationSystemSet).after(CameraSystemSet))
         .add_systems(Update, draw_billboard_gizmos.in_set(CalibrationSystemSet).after(CameraSystemSet))
         .add_systems(Update, draw_projector_billboard.in_set(CalibrationSystemSet).after(CameraSystemSet))
-        .add_systems(Update, draw_scene_crosshair.in_set(CalibrationSystemSet).after(CameraSystemSet));
+        .add_systems(Update, draw_scene_crosshair.in_set(CalibrationSystemSet).after(CameraSystemSet))
+        .add_systems(Update, draw_mouse_crosshair.in_set(CalibrationSystemSet).after(CameraSystemSet));
     }
 }
 
 
-fn update_grid(mut gizmos: Gizmos, scene_configuration: Res<SceneConfiguration>, display_mode: Res<DisplayMode>) {
+fn setup_calibration_instructions(mut instruction_state: ResMut<InstructionState>) {
+    instruction_state.instructions.push(INSTRUCTION_TEXT_F3.to_string());
+}
+
+fn toggle_calibration_visibility(
+    keyboard_input: Res<ButtonInput<KeyCode>>,
+    mut calibration_visible: ResMut<CalibrationVisible>,
+) {
+    if keyboard_input.just_pressed(KeyCode::F3) {
+        calibration_visible.0 = !calibration_visible.0;
+        info!("Calibration gizmos visibility toggled: {}", calibration_visible.0);
+    }
+}
+
+fn update_grid(mut gizmos: Gizmos, scene_configuration: Res<SceneConfiguration>, display_mode: Res<DisplayMode>, calibration_visible: Res<CalibrationVisible>) {
+    
+    if !calibration_visible.0 {
+        return;
+    }
     
     if *display_mode == DisplayMode::Mode3D {
         gizmos.grid(
@@ -51,7 +80,12 @@ fn draw_billboard_gizmos(
     camera_query: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
     scene_data: Res<SceneData>,
     scene_configuration: Res<SceneConfiguration>,
+    calibration_visible: Res<CalibrationVisible>,
 ) {
+    if !calibration_visible.0 {
+        return;
+    }
+    
     for(_camera, camera_transform) in camera_query.iter(){ // Prefixed with underscore to ignore unused camera variable
         let billboard_position = scene_configuration.origin.translation;
         let width = scene_configuration.scene_dimension.x as f32;
@@ -70,15 +104,22 @@ fn draw_billboard_gizmos(
             DARK_GREY_THIRD,
             GRID_SPACING,
         );
-        
-        // Calculate billboard orientation for crosshair
-        let billboard_up = billboard_rotation.mul_vec3(Vec3::Y);
-        let billboard_right = billboard_rotation.mul_vec3(Vec3::X);
-        
-        draw_crosshair(&mut gizmos, &scene_data, &billboard_right, &billboard_up);
     }
 }
 
+
+fn draw_mouse_crosshair(
+    mut gizmos: Gizmos,
+    scene_data: Res<SceneData>,
+    scene_configuration: Res<SceneConfiguration>,
+) {
+    // Mouse crosshair is always visible regardless of calibration toggle
+    let billboard_rotation = scene_configuration.origin.rotation;
+    let billboard_up = billboard_rotation.mul_vec3(Vec3::Y);
+    let billboard_right = billboard_rotation.mul_vec3(Vec3::X);
+    
+    draw_crosshair(&mut gizmos, &scene_data, &billboard_right, &billboard_up);
+}
 
 fn draw_crosshair(
     gizmos: &mut Gizmos,
@@ -110,8 +151,9 @@ fn draw_projector_billboard(
     scene_setup: Res<SceneSetup>,
     projector_config: Res<ProjectorConfiguration>,
     camera_query: Query<&GlobalTransform, With<Camera3d>>,
+    calibration_visible: Res<CalibrationVisible>,
 ) {
-    if !projector_config.enabled {
+    if !calibration_visible.0 || !projector_config.enabled {
         return;
     }
 
@@ -205,7 +247,12 @@ fn draw_billboard_grid(
 fn draw_scene_crosshair(
     mut gizmos: Gizmos,
     scene_setup: Res<SceneSetup>,
+    calibration_visible: Res<CalibrationVisible>,
 ) {
+    if !calibration_visible.0 {
+        return;
+    }
+    
     let center = scene_setup.scene.origin.translation;
     let crosshair_size = GRID_SPACING * 2.0; // Larger crosshair for scene center
     gizmos.line(center - Vec3::X * crosshair_size, center + Vec3::X * crosshair_size, RED);

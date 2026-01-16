@@ -45,6 +45,21 @@ pub struct FromClientMessage {
     pub message: NetworkMessage,
 }
 
+/// Event for mouse position updates from clients
+#[derive(Message, Debug, Clone)]
+pub struct MousePositionEvent {
+    pub client_id: u64,
+    pub position: Option<Vec3>,
+}
+
+/// Event for keyboard input from clients
+#[derive(Message, Debug, Clone)]
+pub struct KeyboardInputEvent {
+    pub client_id: u64,
+    pub key: String,
+    pub pressed: bool,
+}
+
 pub struct NetworkingPlugin;
 
 impl Plugin for NetworkingPlugin {
@@ -53,19 +68,20 @@ impl Plugin for NetworkingPlugin {
             .add_message::<GameActorUpdateEvent>()
             .add_message::<ActorRegistrationResultEvent>()
             .add_message::<ActorUnregistrationResultEvent>()
+            .add_message::<MousePositionEvent>()
+            .add_message::<KeyboardInputEvent>()
             .init_resource::<NetworkingConfiguration>()
             .add_systems(Startup, start_server)
-            .add_systems(
-                Update,
-                (
-                    handle_server_events,
-                    send_ping_periodically,
-                    handle_game_session_created,
-                    send_game_session_updates,
-                    handle_game_actor_update_event,
-                    handle_actor_result_events,
-                ),
-            )
+            .add_systems(Update, receive_network_messages)
+            .add_systems(Update, handle_config_messages)
+            .add_systems(Update, handle_actor_messages)
+            .add_systems(Update, handle_game_session_messages)
+            .add_systems(Update, handle_input_messages)
+            .add_systems(Update, send_ping_periodically)
+            .add_systems(Update, handle_game_session_created)
+            .add_systems(Update, send_game_session_updates)
+            .add_systems(Update, handle_game_actor_update_event)
+            .add_systems(Update, handle_actor_result_events)
             .add_systems(Update, broadcast_scene_setup_on_change)
             .add_systems(Update, broadcast_state_on_change);
     }
@@ -94,23 +110,10 @@ fn start_server(mut server: ResMut<QuinnetServer>, config: Res<NetworkingConfigu
     }
 }
 
-/// Handle incoming client connections and messages
-fn handle_server_events(
+/// Receive network messages and forward them to the message system
+fn receive_network_messages(
     mut server: ResMut<QuinnetServer>,
     mut message_writer: MessageWriter<FromClientMessage>,
-    mut projector_config: ResMut<ProjectorConfiguration>,
-    mut camera_config: ResMut<CameraConfiguration>,
-    mut scene_config: ResMut<SceneConfiguration>,
-    scene_setup: ResMut<SceneSetup>,
-    current_state: Res<State<ServerState>>,
-    current_game_state: Res<State<GameState>>,
-    mut start_game_session_events: MessageWriter<StartGameEvent>,
-    mut init_game_session_events: MessageWriter<InitGameSessionEvent>,
-    mut pause_game_events: MessageWriter<PauseGameEvent>,
-    mut resume_game_events: MessageWriter<ResumeGameEvent>,
-    mut stop_game_events: MessageWriter<StopGameEvent>,
-    mut register_actor_events: MessageWriter<RegisterActorEvent>,
-    mut unregister_actor_events: MessageWriter<UnregisterActorEvent>,
 ) {
     let Some(endpoint) = server.get_endpoint_mut() else {
         return;
@@ -124,169 +127,8 @@ fn handle_server_events(
                         info!("Received message from client {}: {:?}", client_id, message);
                         message_writer.write(FromClientMessage {
                             client_id,
-                            message: message.clone(),
+                            message,
                         });
-                        match message {
-                            NetworkMessage::Pong { timestamp } => {
-                                info!(
-                                    "Received pong from client {} at timestamp {}",
-                                    client_id, timestamp
-                                );
-                            }
-                            // Query handlers
-                            NetworkMessage::QueryProjectorConfig => {
-                                let message = NetworkMessage::ProjectorConfigUpdate(
-                                    projector_config.clone(),
-                                );
-                                let payload = message
-                                    .to_bytes()
-                                    .expect("Serialize ProjectorConfigResponse");
-                                send_payload_and_log_error(
-                                    endpoint,
-                                    client_id,
-                                    payload,
-                                    "ProjectorConfigResponse",
-                                );
-                            }
-                            NetworkMessage::QueryCameraConfig => {
-                                let message =
-                                    NetworkMessage::CameraConfigUpdate(camera_config.clone());
-                                let payload =
-                                    message.to_bytes().expect("Serialize CameraConfigUpdate");
-                                send_payload_and_log_error(
-                                    endpoint,
-                                    client_id,
-                                    payload,
-                                    "CameraConfigUpdate",
-                                );
-                            }
-                            NetworkMessage::QuerySceneConfig => {
-                                let message =
-                                    NetworkMessage::SceneConfigUpdate(scene_config.clone());
-                                let payload =
-                                    message.to_bytes().expect("Serialize SceneConfigUpdate");
-                                send_payload_and_log_error(
-                                    endpoint,
-                                    client_id,
-                                    payload,
-                                    "SceneConfigUpdate",
-                                );
-                            }
-
-                            NetworkMessage::QuerySceneSetup => {
-                                let message =
-                                    NetworkMessage::SceneSetupUpdate(scene_setup.clone());
-                                let payload =
-                                    message.to_bytes().expect("Serialize SceneSetupResponse");
-                                send_payload_and_log_error(
-                                    endpoint,
-                                    client_id,
-                                    payload,
-                                    "SceneSetupResponse",
-                                );
-                            }
-
-                            NetworkMessage::QueryServerState => {
-                                let message = NetworkMessage::ServerStateUpdate(
-                                    current_state.get().clone(),
-                                );
-                                let payload =
-                                    message.to_bytes().expect("Serialize ServerStateResponse");
-                                send_payload_and_log_error(
-                                    endpoint,
-                                    client_id,
-                                    payload,
-                                    "ServerStateResponse",
-                                );
-                            }
-
-                            NetworkMessage::QueryGameState => {
-                                let message = NetworkMessage::GameStateUpdate(
-                                    current_game_state.get().clone(),
-                                );
-                                let payload =
-                                    message.to_bytes().expect("Serialize GameStateResponse");
-                                send_payload_and_log_error(
-                                    endpoint,
-                                    client_id,
-                                    payload,
-                                    "GameStateResponse",
-                                );
-                            }
-
-                            NetworkMessage::UpdateProjectorConfig(new_config) => {
-                                *projector_config = new_config;
-                                info!("Projector configuration updated by client {}", client_id);
-                            }
-                            NetworkMessage::UpdateCameraConfig(new_config) => {
-                                *camera_config = new_config;
-                                info!("Camera configuration updated by client {}", client_id);
-                            }
-                            NetworkMessage::UpdateSceneConfig(new_config) => {
-                                *scene_config = new_config;
-                                info!("Scene configuration updated by client {}", client_id);
-                            }
-
-                            NetworkMessage::RegisterActor(game, name, roles) => {
-                                let actor = Actor {
-                                    uuid: Uuid::new_v4(),
-                                    name,
-                                    roles,
-                                };
-
-                                register_actor_events.write(RegisterActorEvent {
-                                    client_id,
-                                    game_id: game,
-                                    actor,
-                                });
-                            }
-
-                            NetworkMessage::UnregisterActor(game_uuid, actor_uuid) => {
-                                unregister_actor_events.write(UnregisterActorEvent {
-                                    client_id,
-                                    actor_uuid,
-                                    game_uuid,
-                                });
-                            }
-
-                            NetworkMessage::InitGameSession(game_id, game_name) => {
-                                info!("Received InitGameSession for: {}", game_id);
-                                init_game_session_events.write(InitGameSessionEvent {
-                                    game_id,
-                                    game_name: game_name.clone(),
-                                    game_session_uuid: Uuid::new_v4(),
-                                });
-                            }
-
-                            NetworkMessage::StartGameSession(uuid) => {
-                                info!("Received StartGameSession for: {}", uuid);
-                                start_game_session_events.write(StartGameEvent {
-                                    game_session_uuid: uuid,
-                                });
-                            }
-
-                            NetworkMessage::PauseGameSession(uuid) => {
-                                info!("Received PauseGame for: {}", uuid);
-                                pause_game_events.write(PauseGameEvent {
-                                    game_session_uuid: uuid,
-                                });
-                            }
-
-                            NetworkMessage::ResumeGameSession(uuid) => {
-                                info!("Received ResumeGame for: {}", uuid);
-                                resume_game_events.write(ResumeGameEvent {
-                                    game_session_uuid: uuid,
-                                });
-                            }
-                            NetworkMessage::StopGameSession(uuid) => {
-                                info!("Received StopGameSession for: {}", uuid);
-                                stop_game_events.write(StopGameEvent {
-                                    game_session_uuid: uuid,
-                                });
-                            }
-
-                            _ => {}
-                        }
                     }
                     Err(e) => {
                         error!(
@@ -296,6 +138,179 @@ fn handle_server_events(
                     }
                 }
             }
+        }
+    }
+}
+
+/// Handle configuration query and update messages
+fn handle_config_messages(
+    mut server: ResMut<QuinnetServer>,
+    mut messages: MessageReader<FromClientMessage>,
+    mut projector_config: ResMut<ProjectorConfiguration>,
+    mut camera_config: ResMut<CameraConfiguration>,
+    mut scene_config: ResMut<SceneConfiguration>,
+    scene_setup: Res<SceneSetup>,
+    current_state: Res<State<ServerState>>,
+    current_game_state: Res<State<GameState>>,
+) {
+    let Some(endpoint) = server.get_endpoint_mut() else {
+        return;
+    };
+    
+    for msg in messages.read() {
+        match &msg.message {
+            NetworkMessage::Pong { timestamp } => {
+                info!("Received pong from client {} at timestamp {}", msg.client_id, timestamp);
+            }
+            NetworkMessage::QueryProjectorConfig => {
+                let message = NetworkMessage::ProjectorConfigUpdate(projector_config.clone());
+                let payload = message.to_bytes().expect("Serialize ProjectorConfigResponse");
+                send_payload_and_log_error(endpoint, msg.client_id, payload, "ProjectorConfigResponse");
+            }
+            NetworkMessage::QueryCameraConfig => {
+                let message = NetworkMessage::CameraConfigUpdate(camera_config.clone());
+                let payload = message.to_bytes().expect("Serialize CameraConfigUpdate");
+                send_payload_and_log_error(endpoint, msg.client_id, payload, "CameraConfigUpdate");
+            }
+            NetworkMessage::QuerySceneConfig => {
+                let message = NetworkMessage::SceneConfigUpdate(scene_config.clone());
+                let payload = message.to_bytes().expect("Serialize SceneConfigUpdate");
+                send_payload_and_log_error(endpoint, msg.client_id, payload, "SceneConfigUpdate");
+            }
+            NetworkMessage::QuerySceneSetup => {
+                let message = NetworkMessage::SceneSetupUpdate(scene_setup.clone());
+                let payload = message.to_bytes().expect("Serialize SceneSetupResponse");
+                send_payload_and_log_error(endpoint, msg.client_id, payload, "SceneSetupResponse");
+            }
+            NetworkMessage::QueryServerState => {
+                let message = NetworkMessage::ServerStateUpdate(current_state.get().clone());
+                let payload = message.to_bytes().expect("Serialize ServerStateResponse");
+                send_payload_and_log_error(endpoint, msg.client_id, payload, "ServerStateResponse");
+            }
+            NetworkMessage::QueryGameState => {
+                let message = NetworkMessage::GameStateUpdate(current_game_state.get().clone());
+                let payload = message.to_bytes().expect("Serialize GameStateResponse");
+                send_payload_and_log_error(endpoint, msg.client_id, payload, "GameStateResponse");
+            }
+            NetworkMessage::UpdateProjectorConfig(new_config) => {
+                *projector_config = new_config.clone();
+                info!("Projector configuration updated by client {}", msg.client_id);
+            }
+            NetworkMessage::UpdateCameraConfig(new_config) => {
+                *camera_config = new_config.clone();
+                info!("Camera configuration updated by client {}", msg.client_id);
+            }
+            NetworkMessage::UpdateSceneConfig(new_config) => {
+                *scene_config = new_config.clone();
+                info!("Scene configuration updated by client {}", msg.client_id);
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Handle actor registration and unregistration messages
+fn handle_actor_messages(
+    mut messages: MessageReader<FromClientMessage>,
+    mut register_actor_events: MessageWriter<RegisterActorEvent>,
+    mut unregister_actor_events: MessageWriter<UnregisterActorEvent>,
+) {
+    for msg in messages.read() {
+        match &msg.message {
+            NetworkMessage::RegisterActor(game, name, roles) => {
+                let actor = Actor {
+                    uuid: Uuid::new_v4(),
+                    name: name.clone(),
+                    roles: roles.clone(),
+                };
+                register_actor_events.write(RegisterActorEvent {
+                    client_id: msg.client_id,
+                    game_id: *game,
+                    actor,
+                });
+            }
+            NetworkMessage::UnregisterActor(game_uuid, actor_uuid) => {
+                unregister_actor_events.write(UnregisterActorEvent {
+                    client_id: msg.client_id,
+                    actor_uuid: *actor_uuid,
+                    game_uuid: *game_uuid,
+                });
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Handle game session management messages
+fn handle_game_session_messages(
+    mut messages: MessageReader<FromClientMessage>,
+    mut start_game_session_events: MessageWriter<StartGameEvent>,
+    mut init_game_session_events: MessageWriter<InitGameSessionEvent>,
+    mut pause_game_events: MessageWriter<PauseGameEvent>,
+    mut resume_game_events: MessageWriter<ResumeGameEvent>,
+    mut stop_game_events: MessageWriter<StopGameEvent>,
+) {
+    for msg in messages.read() {
+        match &msg.message {
+            NetworkMessage::InitGameSession(game_id, game_name) => {
+                info!("Received InitGameSession for: {}", game_id);
+                init_game_session_events.write(InitGameSessionEvent {
+                    game_id: *game_id,
+                    game_name: game_name.clone(),
+                    game_session_uuid: Uuid::new_v4(),
+                });
+            }
+            NetworkMessage::StartGameSession(uuid) => {
+                info!("Received StartGameSession for: {}", uuid);
+                start_game_session_events.write(StartGameEvent {
+                    game_session_uuid: *uuid,
+                });
+            }
+            NetworkMessage::PauseGameSession(uuid) => {
+                info!("Received PauseGame for: {}", uuid);
+                pause_game_events.write(PauseGameEvent {
+                    game_session_uuid: *uuid,
+                });
+            }
+            NetworkMessage::ResumeGameSession(uuid) => {
+                info!("Received ResumeGame for: {}", uuid);
+                resume_game_events.write(ResumeGameEvent {
+                    game_session_uuid: *uuid,
+                });
+            }
+            NetworkMessage::StopGameSession(uuid) => {
+                info!("Received StopGameSession for: {}", uuid);
+                stop_game_events.write(StopGameEvent {
+                    game_session_uuid: *uuid,
+                });
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Handle input messages (mouse and keyboard)
+fn handle_input_messages(
+    mut messages: MessageReader<FromClientMessage>,
+    mut mouse_position_events: MessageWriter<MousePositionEvent>,
+    mut keyboard_input_events: MessageWriter<KeyboardInputEvent>,
+) {
+    for msg in messages.read() {
+        match &msg.message {
+            NetworkMessage::UpdateMousePosition(position) => {
+                mouse_position_events.write(MousePositionEvent {
+                    client_id: msg.client_id,
+                    position: *position,
+                });
+            }
+            NetworkMessage::KeyboardInput { key, pressed } => {
+                keyboard_input_events.write(KeyboardInputEvent {
+                    client_id: msg.client_id,
+                    key: key.clone(),
+                    pressed: *pressed,
+                });
+            }
+            _ => {}
         }
     }
 }

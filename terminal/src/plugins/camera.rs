@@ -2,8 +2,7 @@ use bevy::prelude::*;
 use bevy::prelude::KeyCode;
 use common::scene::{SceneSystemSet, SceneSetup};
 use crate::plugins::instructions::{InstructionState};
-use bevy_camera::ScalingMode;
-use common::config::CameraConfiguration;
+use common::config::{CameraConfiguration, SceneConfiguration};
 
 pub struct CameraPlugin;
 
@@ -39,6 +38,7 @@ fn setup_camera(
     mut commands: Commands, 
     mut instruction_state: ResMut<InstructionState>,
     scene_setup: Res<SceneSetup>,
+    scene_config: Res<SceneConfiguration>,
     display_mode: Res<DisplayMode>,
     config: Res<CameraConfiguration>) {
     
@@ -56,7 +56,7 @@ fn setup_camera(
                 order: 1,
                 ..default()
             },
-        get_projection(*display_mode, scene_setup.camera.angle),
+        get_projection(*display_mode, scene_setup.camera.angle, &scene_config),
         Transform::from_translation(config.origin.translation)
             .looking_at(scene_setup.scene.origin.translation, Vec3::Y),
         ));
@@ -67,6 +67,7 @@ fn setup_camera(
 fn update_camera(
     mut camera_query: Query<(&mut Camera, &mut Projection, &mut Transform), With<CameraTag>>,
     scene_setup: Res<SceneSetup>,
+    scene_config: Res<SceneConfiguration>,
     config: Res<CameraConfiguration>,
     keyboard: Res<ButtonInput<KeyCode>>,
     mut display_mode: ResMut<DisplayMode>,
@@ -85,8 +86,8 @@ fn update_camera(
                 .looking_at(scene_setup.scene.origin.translation, Vec3::Y);
         }
 
-        if config.is_changed() || scene_setup.is_changed() {
-            *projection = get_projection(*display_mode, scene_setup.camera.angle);
+        if config.is_changed() || scene_setup.is_changed() || scene_config.is_changed() {
+            *projection = get_projection(*display_mode, scene_setup.camera.angle, &scene_config);
         }
          
        
@@ -94,16 +95,29 @@ fn update_camera(
 }
 
 
-fn get_projection(display_mode: DisplayMode, camera_angle: f32) -> Projection {
+fn get_projection(display_mode: DisplayMode, camera_angle: f32, scene_config: &SceneConfiguration) -> Projection {
     match display_mode {
         
         DisplayMode::Mode2D => {
-            // Use camera angle to determine orthographic scale
-            // This provides consistent scale based on camera configuration
-            let scale = camera_angle;
+            // Calculate the scene dimensions to fit the camera view
+            let scene_width = scene_config.scene_dimension.x as f32;
+            let scene_height = scene_config.scene_dimension.y as f32;
+            
+            // Add some padding to ensure the scene is fully visible
+            let padding = 50.0;
+            let total_width = scene_width + padding;
+            let total_height = scene_height + padding;
+            
+            // Use the area field to define the orthographic bounds
+            let half_width = total_width / 2.0;
+            let half_height = total_height / 2.0;
+            
             Projection::from(OrthographicProjection {
-                scaling_mode: ScalingMode::FixedVertical { viewport_height: scale },
-                ..OrthographicProjection::default_2d()
+                area: bevy::math::Rect::from_center_half_size(
+                    bevy::math::Vec2::ZERO, 
+                    bevy::math::Vec2::new(half_width, half_height)
+                ),
+                ..OrthographicProjection::default_3d()
             })
         },
         

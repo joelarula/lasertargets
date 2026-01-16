@@ -21,7 +21,7 @@ impl PathSegment {
 }
 
 /// Universal path representation containing multiple segments
-#[derive(Clone, Debug,Serialize, Deserialize)]
+#[derive(Component, Clone, Debug, Serialize, Deserialize)]
 pub struct UniversalPath {
     pub segments: Vec<PathSegment>,
 }

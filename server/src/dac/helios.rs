@@ -10,23 +10,32 @@ use common::path::UniversalPath;
 use bevy::prelude::*;
 use lyon_tessellation;
 
-// Point structures matching the C++ definitions
+// Point structures matching the working darkelf implementation
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub struct HeliosPoint {
-    pub x: u16, // 0 to 0xFFF for original model
-    pub y: u16, // 0 to 0xFFF for original model
-    pub r: u8,  // 0 to 0xFF
-    pub g: u8,  // 0 to 0xFF
-    pub b: u8,  // 0 to 0xFF
-    pub i: u8,  // Intensity, 0 to 0xFF
+    pub x: u16, // 0 to 0xFFF (4095) for 12-bit DAC
+    pub y: u16, // 0 to 0xFFF (4095) for 12-bit DAC
+    pub r: u8,  // 0 to 0xFF (255)
+    pub g: u8,  // 0 to 0xFF (255)
+    pub b: u8,  // 0 to 0xFF (255)
+    pub i: u8,  // Intensity, 0 to 0xFF (255)
 }
 
 impl HeliosPoint {
     pub fn new(x: u16, y: u16, r: u8, g: u8, b: u8, i: u8) -> Self {
         Self { x, y, r, g, b, i }
     }
+    
+    /// Create a blanked point (laser off) at the given position
+    pub fn blanked(x: u16, y: u16) -> Self {
+        Self { x, y, r: 0, g: 0, b: 0, i: 0 }
+    }
 }
+
+// Helios DAC coordinate limits
+pub const HELIOS_MAX_COORD: u16 = 0xFFF; // 4095 for 12-bit
+pub const HELIOS_CENTER_COORD: u16 = 2048; // Center point
 
 // Frame limits
 pub const HELIOS_MAX_POINTS: usize = 0xFFF;
@@ -82,8 +91,10 @@ struct HeliosLib {
 impl HeliosLib {
     fn load() -> Result<Self, String> {
         unsafe {
+            // The build script should have copied the DLL to the target directory
+            info!("Loading Helios DAC library: {}", LIB_NAME);
             let lib = libloading::Library::new(LIB_NAME)
-                .map_err(|e| format!("Failed to load library {}: {}", LIB_NAME, e))?;
+                .map_err(|e| format!("Failed to load Helios DAC library {}: {}", LIB_NAME, e))?;
 
             let open_devices = *lib
                 .get::<OpenDevicesFn>(b"OpenDevices")
@@ -153,6 +164,18 @@ impl HeliosDacController {
         }
     }
 
+    /// Get device status (returns true if ready to receive new frame)
+    pub fn get_status(&self, device_num: i32) -> Result<bool, String> {
+        unsafe {
+            let result = (self.lib.get_status)(device_num as c_uint);
+            if result >= 0 {
+                Ok(result == 1) // 1 = ready, 0 = busy
+            } else {
+                Err(format!("GetStatus failed with error: {}", result))
+            }
+        }
+    }
+
     /// Close all Helios DAC devices
     pub fn close_devices(&mut self) -> Result<(), String> {
         unsafe {
@@ -171,15 +194,36 @@ impl HeliosDacController {
         self.num_devices
     }
 
-    /// Get the status of the specified DAC
-    /// Returns true if ready to receive new frame, false otherwise
-    pub fn get_status(&self, dac_num: u32) -> Result<bool, String> {
+    /// Write frame data to the specified DAC with shift parameter (matches working example API)
+    pub fn write_frame(
+        &self,
+        device_num: i32,
+        pps: u32,
+        flags: u8,
+        points: &[HeliosPoint],
+    ) -> Result<(), String> {
+        if points.len() > HELIOS_MAX_POINTS {
+            return Err(format!("Too many points: {} (max: {})", points.len(), HELIOS_MAX_POINTS));
+        }
+        if pps > HELIOS_MAX_PPS {
+            return Err(format!("PPS too high: {} (max is {})", pps, HELIOS_MAX_PPS));
+        }
+        if pps < HELIOS_MIN_PPS {
+            return Err(format!("PPS too low: {} (min is {})", pps, HELIOS_MIN_PPS));
+        }
+
         unsafe {
-            let status = (self.lib.get_status)(dac_num);
-            match status {
-                1 => Ok(true),
-                0 => Ok(false),
-                err => Err(format!("Failed to get status: error {}", err)),
+            let result = (self.lib.write_frame)(
+                device_num as c_uint,
+                pps,
+                flags,
+                points.as_ptr(),
+                points.len() as c_uint,
+            );
+            if result != HELIOS_SUCCESS {
+                Err(format!("WriteFrame failed: error {}", result))
+            } else {
+                Ok(())
             }
         }
     }
@@ -228,8 +272,8 @@ impl HeliosDacController {
 
     /// Write a UniversalPath frame to the specified DAC
     /// Automatically handles coordinate conversion from path coordinates to DAC coordinates
-    /// Input coordinates are in Helios space centered at 0, output is [0, 4095] with center at 2048
-    pub fn write_frame(
+    /// Uses native Helios 4095x4095 range for better precision
+    pub fn write_frame_path(
         &self,
         dac_num: u32,
         pps: u32,
@@ -310,7 +354,7 @@ impl HeliosDacController {
     pub fn wait_for_ready(&self, dac_num: u32, max_attempts: u32) -> Result<bool, String> {
         let mut attempts = 0;
         loop {
-            match self.get_status(dac_num) {
+            match self.get_status(dac_num as i32) {
                 Ok(true) => return Ok(true),
                 Ok(false) => {
                     attempts += 1;
@@ -413,14 +457,14 @@ fn sample_cubic(start: Vec2, c1: Vec2, c2: Vec2, end: Vec2, tolerance: f32) -> V
 }
 
 /// Helper function to convert a PathPoint to a HeliosPoint
-/// Input coordinates are in Helios space centered at 0 (range: approx [-2048, 2047])
-/// Output is in Helios DAC space [0, 4095] with center at 2048
+/// Uses native Helios 12-bit coordinate space (0-4095)
+/// Input coordinates are normalized [-1, 1] and converted to unsigned [0, 4095]
 #[inline]
 fn path_point_to_helios(p: &PathPoint) -> HeliosPoint {
-    // Direct 1:1 scale conversion
-    // Add 2048 to center input coordinates in Helios 12-bit space
-    let x_helios = ((p.pos.x as i32) + 2048).clamp(0, 4095) as u16;
-    let y_helios = ((p.pos.y as i32) + 2048).clamp(0, 4095) as u16;
+    // Convert normalized coordinates [-1, 1] to Helios range [0, 4095]
+    // -1 maps to 0, 0 maps to 2048 (center), +1 maps to 4095
+    let x_helios = ((p.pos.x + 1.0) * (HELIOS_MAX_COORD as f32 / 2.0)).clamp(0.0, HELIOS_MAX_COORD as f32) as u16;
+    let y_helios = ((p.pos.y + 1.0) * (HELIOS_MAX_COORD as f32 / 2.0)).clamp(0.0, HELIOS_MAX_COORD as f32) as u16;
 
     // Extract color components - access linear color directly for performance
     let color_linear = p.color.to_linear();

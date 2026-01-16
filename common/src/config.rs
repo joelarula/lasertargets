@@ -35,7 +35,7 @@ pub struct SceneConfiguration {
 impl Default for SceneConfiguration {
     fn default() -> Self {
         Self {
-            scene_dimension: UVec2::new(10, 6), // Default to 1000x1000 world units
+            scene_dimension: UVec2::new(10, 6), 
             y_difference: 0.0, 
             origin: ConfigTransform {
                 translation: Vec3::new(0.0, 3.0, -10.0),
