@@ -62,6 +62,22 @@ pub enum NetworkMessage {
     ActorResponse(ActorMetaData),
     ActorError(String),
 
+    // Mouse Position
+    UpdateMousePosition(Option<bevy::prelude::Vec3>),
+
+    // Mouse Events
+    MouseButtonInput {
+        button: String,
+        pressed: bool,
+        position: Option<bevy::prelude::Vec3>,
+    },
+
+    // Keyboard Input
+    KeyboardInput {
+        key: String,
+        pressed: bool,
+    },
+
 }
 
 impl NetworkMessage {

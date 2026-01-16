@@ -109,7 +109,8 @@ fn test_update_scene_config_broadcast() {
 
     // Client 1 sends Update
     let mut new_config = SceneConfiguration::default();
-    new_config.scene_width = 42.0;
+    new_config.scene_dimension = UVec2::new(42, 42);
+    new_config.y_difference = 10.0;
 
     {
         let mut client = client1_app.world_mut().resource_mut::<QuinnetClient>();
@@ -129,7 +130,8 @@ fn test_update_scene_config_broadcast() {
     // Verify server update
     {
         let server_config = server_app.world().resource::<SceneConfiguration>();
-        assert_eq!(server_config.scene_width, 42.0);
+        assert_eq!(server_config.scene_dimension, UVec2::new(42, 42));
+        assert_eq!(server_config.y_difference, 10.0);
     }
 
     // Verify client 2 received broadcast
@@ -138,7 +140,7 @@ fn test_update_scene_config_broadcast() {
         assert!(!received.0.is_empty(), "Client 2 should receive broadcast");
         let found = received.0.iter().any(|m| {
             if let NetworkMessage::SceneConfigUpdate(received_config) = m {
-                received_config.scene_width == 42.0
+                received_config.scene_dimension == UVec2::new(42, 42) && received_config.y_difference == 10.0
             } else {
                 false
             }

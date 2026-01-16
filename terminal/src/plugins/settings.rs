@@ -11,8 +11,7 @@ use crate::plugins::{
 use bevy::prelude::*;
 use bevy_egui::{ EguiPrimaryContextPass};
 pub struct SettingsPlugin;
-use crate::plugins::scene::SceneData;
-use crate::plugins::scene::SceneTag;
+
 
 const BTN_NAME: &str = "settings";
 
@@ -78,7 +77,6 @@ fn handle_settings_button(
 
 pub fn overlay_ui_system(
     mut egui_context: EguiContexts,
-    scene_query: Query<&SceneData, With<SceneTag>>,
     overlay_visible: Res<OverlayVisible>,
     mut section_expanded: ResMut<SectionExpandedState>,
     mut display_mode: ResMut<DisplayMode>,
@@ -103,22 +101,13 @@ pub fn overlay_ui_system(
         let camera_config_ref = camera_configuration.bypass_change_detection();
         let projector_config_ref = projector_config.bypass_change_detection();
         
-        for scene_data in scene_query.iter() {
-            if let Ok(ctx) = egui_context.ctx_mut() {
-                if overlay_visible.0 {
+        if let Ok(ctx) = egui_context.ctx_mut() {
+            if overlay_visible.0 {
                 let overlay_size = [600.0, 500.0];
-                let viewport_size = scene_data.get_viewport_size();
-                let overlay_center_in_viewport = Vec2::new(
-                    (viewport_size.x as f32 - (overlay_size[0] / scene_data.scale_factor)) * 0.5,
-                    100.0,
-                );
-                let pos = scene_data.translate_viewport_coordinates_to_window_coordinates(
-                    overlay_center_in_viewport,
-                );
-
+                
                 egui::Window::new("Configuration Inspector")
                     .collapsible(false)
-                    .default_pos([pos.x, pos.y])
+                    .default_pos([100.0, 100.0])
                     .resizable(true)
                     .default_size(overlay_size)
                     .show(ctx, |ui| {
@@ -144,8 +133,8 @@ pub fn overlay_ui_system(
                                         }
                                     });
                                     property_row(ui, "Target Distance", |ui| {
-                                        // Edit the absolute value, store as negative Z
-                                        let mut distance = scene_config_ref.transform.translation.z.abs();
+                                        // The Z component of origin.translation is the target distance from camera (negative Z)
+                                        let mut distance = scene_config_ref.origin.translation.z.abs();
                                         let response = ui.add(
                                             egui::DragValue::new(&mut distance)
                                                 .range(0.0..=100.0)
@@ -153,36 +142,39 @@ pub fn overlay_ui_system(
                                                 .suffix(" m"),
                                         );
                                         if response.changed() {
-                                            scene_config_ref.transform.translation.z = -distance;
+                                            scene_config_ref.origin.translation.z = -distance;
                                         }
                                         response
                                     });
-                                    property_row(ui, "Scene Width", |ui| {
+                                    property_row(ui, "Scene Dimensions", |ui| {
+                                        ui.horizontal(|ui| {
+                                            ui.add(
+                                                egui::DragValue::new(&mut scene_config_ref.scene_dimension.x)
+                                                    .range(1..=4000)
+                                                    .speed(1.0)
+                                                    .prefix("W: "),
+                                            );
+                                            ui.add(
+                                                egui::DragValue::new(&mut scene_config_ref.scene_dimension.y)
+                                                    .range(1..=4000)
+                                                    .speed(1.0)
+                                                    .prefix("H: "),
+                                            );
+                                        });
+                                    });
+                                    property_row(ui, "Y-Difference from Origin", |ui| {
                                         ui.add(
-                                            egui::DragValue::new(&mut scene_config_ref.scene_width)
-                                                .range(0.0..=50.0)
+                                            egui::DragValue::new(&mut scene_config_ref.y_difference)
                                                 .speed(0.1)
                                                 .suffix(" m"),
                                         )
                                     });
-                                    property_row(ui, "Scene Position", |ui| {
-                                        ui.horizontal(|ui| {
-                                            ui.add(
-                                                egui::DragValue::new(&mut scene_config_ref.transform.translation.x)
-                                                    .speed(0.1)
-                                                    .prefix("X: "),
-                                            );
-                                            ui.add(
-                                                egui::DragValue::new(&mut scene_config_ref.transform.translation.y)
-                                                    .speed(0.1)
-                                                    .prefix("Y: "),
-                                            );
-                                            ui.add(
-                                                egui::DragValue::new(&mut scene_config_ref.transform.translation.z)
-                                                    .speed(0.1)
-                                                    .prefix("Z: "),
-                                            );
-                                        });
+                                    property_row(ui, "Scene Origin Y", |ui| {
+                                        ui.add(
+                                            egui::DragValue::new(&mut scene_config_ref.origin.translation.y)
+                                                .speed(0.1)
+                                                .prefix("Y: "),
+                                        )
                                     });
                                 });
                             if scene_response.header_response.clicked() {
@@ -216,20 +208,6 @@ pub fn overlay_ui_system(
                                             *display_mode = if mode == 0 { DisplayMode::Mode2D } else { DisplayMode::Mode3D };
                                         }
                                     });
-                                    property_row(ui, "Resolution", |ui| {
-                                        ui.horizontal(|ui| {
-                                            ui.add(
-                                                egui::DragValue::new(&mut camera_config_ref.resolution.x)
-                                                    .range(64..=2048)
-                                                    .prefix("W: "),
-                                            );
-                                            ui.add(
-                                                egui::DragValue::new(&mut camera_config_ref.resolution.y)
-                                                    .range(64..=2048)
-                                                    .prefix("H: "),
-                                            );
-                                        });
-                                    });
                                     property_row(ui, "Field of View", |ui| {
                                         ui.add(
                                             egui::DragValue::new(&mut camera_config_ref.angle)
@@ -238,25 +216,12 @@ pub fn overlay_ui_system(
                                                 .suffix("°"),
                                         )
                                     });
-                                    property_row(ui, "Lock to Scene", |ui| {
-                                        ui.checkbox(&mut camera_config_ref.locked_to_scene, "")
-                                    });
                                     property_row(ui, "Camera Position", |ui| {
                                         ui.horizontal(|ui| {
                                             ui.add(
-                                                egui::DragValue::new(&mut camera_config_ref.transform.translation.x)
-                                                    .speed(0.1)
-                                                    .prefix("X: "),
-                                            );
-                                            ui.add(
-                                                egui::DragValue::new(&mut camera_config_ref.transform.translation.y)
+                                                egui::DragValue::new(&mut camera_config_ref.origin.translation.y)
                                                     .speed(0.1)
                                                     .prefix("Y: "),
-                                            );
-                                            ui.add(
-                                                egui::DragValue::new(&mut camera_config_ref.transform.translation.z)
-                                                    .speed(0.1)
-                                                    .prefix("Z: "),
                                             );
                                         });
                                     });
@@ -280,51 +245,17 @@ pub fn overlay_ui_system(
                                     });
                                     property_row(ui, "Resolution", |ui| {
                                         ui.horizontal(|ui| {
-                                            ui.add(
-                                                egui::DragValue::new(&mut projector_config_ref.resolution.x)
-                                                    .range(256..=4096)
-                                                    .prefix("W: "),
-                                            );
-                                            ui.add(
-                                                egui::DragValue::new(&mut projector_config_ref.resolution.y)
-                                                    .range(256..=4096)
-                                                    .prefix("H: "),
-                                            );
+                                            ui.label(format!("W: {}", projector_config_ref.resolution.x));
+                                            ui.label(format!("H: {}", projector_config_ref.resolution.y));
                                         });
                                     });
-                                    property_row(ui, "Projection Angle", |ui| {
-                                        ui.add_enabled_ui(!projector_config_ref.locked_to_scene, |ui| {
-                                            ui.add(
-                                                egui::DragValue::new(&mut projector_config_ref.angle)
-                                                    .range(10.0..=90.0)
-                                                    .speed(0.5)
-                                                    .suffix("°"),
-                                            )
-                                        })
-                                    });
-                                    property_row(ui, "Lock to Scene", |ui| {
-                                        let mut locked = projector_config_ref.locked_to_scene;
-                                        let changed = ui.checkbox(&mut locked, "").changed();
-                                        if changed {
-                                            projector_config_ref.locked_to_scene = locked;
-                                        }
-                                    });
+
                                     property_row(ui, "Projector Position", |ui| {
                                         ui.horizontal(|ui| {
                                             ui.add(
-                                                egui::DragValue::new(&mut projector_config_ref.transform.translation.x)
-                                                    .speed(0.1)
-                                                    .prefix("X: "),
-                                            );
-                                            ui.add(
-                                                egui::DragValue::new(&mut projector_config_ref.transform.translation.y)
+                                                egui::DragValue::new(&mut projector_config_ref.origin.translation.y)
                                                     .speed(0.1)
                                                     .prefix("Y: "),
-                                            );
-                                            ui.add(
-                                                egui::DragValue::new(&mut projector_config_ref.transform.translation.z)
-                                                    .speed(0.1)
-                                                    .prefix("Z: "),
                                             );
                                         });
                                     });
@@ -364,5 +295,4 @@ fn property_row<R>(
         ui.add_sized([180.0, 0.0], egui::Label::new(label));
         add_contents(ui)
     }).inner
-}
 }

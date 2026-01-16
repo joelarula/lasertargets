@@ -2,7 +2,8 @@ use bevy::prelude::*;
 // Removed unused import: use bevy_prototype_lyon::prelude::*;
 use log::info;
 use common::path::{UniversalPath, PathProvider, PathRenderable};
-use crate::plugins::scene::{SceneData, SceneTag};
+use crate::plugins::scene::SceneData;
+use common::config::SceneConfiguration;
 
 #[derive(SystemSet, Debug, Hash, PartialEq, Eq, Clone)]
 pub struct BasicTargetSystemSet;
@@ -16,7 +17,7 @@ pub struct BasicTarget {
 impl Default for BasicTarget {
     fn default() -> Self {
         Self {
-            radius: 0.5,
+            radius: 0.25,
             color: Color::srgb(0.0, 0.5, 1.0),
         }
     }
@@ -52,17 +53,14 @@ fn draw_basic_targets(
 fn handle_basic_target_click(
     mut commands: Commands,
     mouse_button: Res<ButtonInput<MouseButton>>,
-    scene_query: Query<&SceneData, With<SceneTag>>,
+    scene_data: Res<SceneData>,
+    scene_config: Res<SceneConfiguration>,
     target_query: Query<(Entity, &GlobalTransform, &BasicTarget)>,
 ) {
     // Only check on mouse click
     if !mouse_button.just_pressed(MouseButton::Left) {
         return;
     }
-
-    let Ok(scene_data) = scene_query.single() else {
-        return;
-    };
 
     // Use prepared mouse world position from scene data
     let Some(mouse_world_pos) = scene_data.mouse_world_pos else {

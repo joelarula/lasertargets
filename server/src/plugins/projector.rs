@@ -20,12 +20,12 @@ fn update_projector(
     if projector_config.is_changed() || scene_setup.is_changed() {
         if projector_config.locked_to_scene {
             // Lock projector to scene center
-            let scene_center = scene_setup.scene.transform.translation;
-            let new_rotation = Transform::from_translation(projector_config.transform.translation)
+            let scene_center = scene_setup.scene.origin.translation;
+            let new_rotation = Transform::from_translation(projector_config.origin.translation)
                 .looking_at(scene_center, Vec3::Y).rotation;
             // Only update if rotation actually changed
-            if projector_config.transform.rotation != new_rotation {
-                projector_config.transform.rotation = new_rotation;
+            if projector_config.origin.rotation != new_rotation {
+                projector_config.origin.rotation = new_rotation;
             }
         }
     }

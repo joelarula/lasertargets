@@ -1,15 +1,16 @@
 use bevy::prelude::*;
+use common::scene::SceneSetup;
 use crate::plugins::camera::CameraSystemSet;
 use crate::plugins::camera::DisplayMode;
 use crate::plugins::scene::SceneData;
-use crate::plugins::scene::SceneTag;
 use common::config::{SceneConfiguration, ProjectorConfiguration};
 use std::f32::consts::PI;
 use bevy::color::palettes::css::DARK_GREY;
 use bevy::color::palettes::css::SILVER;
-// Removed unused imports: GREEN, RED, BLUE
 use bevy::color::palettes::css::YELLOW;
 use bevy::color::palettes::css::ORANGE;
+use bevy::color::palettes::css::RED;
+
 
 pub const DARK_GREY_THIRD: Srgba = Srgba::new(0.663, 0.663, 0.663, 0.3);
 
@@ -25,9 +26,9 @@ impl Plugin for CalibrationPlugin {
     fn build(&self, app: &mut App) {
         app
         .add_systems(Update, update_grid.in_set(CalibrationSystemSet).after(CameraSystemSet))
-        //.add_systems(Update, draw_axes.in_set(CalibrationSystemSet).after(CameraSystemSet))
         .add_systems(Update, draw_billboard_gizmos.in_set(CalibrationSystemSet).after(CameraSystemSet))
-        .add_systems(Update, draw_projector_billboard.in_set(CalibrationSystemSet).after(CameraSystemSet));
+        .add_systems(Update, draw_projector_billboard.in_set(CalibrationSystemSet).after(CameraSystemSet))
+        .add_systems(Update, draw_scene_crosshair.in_set(CalibrationSystemSet).after(CameraSystemSet));
     }
 }
 
@@ -37,7 +38,7 @@ fn update_grid(mut gizmos: Gizmos, scene_configuration: Res<SceneConfiguration>,
     if *display_mode == DisplayMode::Mode3D {
         gizmos.grid(
             Quat::from_rotation_x(PI / 2.),
-            UVec2::new((scene_configuration.scene_width * 4.) as u32, (scene_configuration.transform.translation.z.abs() * 4.) as u32),
+            UVec2::new((scene_configuration.scene_dimension.x as f32 * 4.) as u32, (scene_configuration.origin.translation.z.abs() * 4.) as u32),
             Vec2::new(GRID_SPACING, GRID_SPACING),
             DARK_GREY
         );  
@@ -48,35 +49,33 @@ fn update_grid(mut gizmos: Gizmos, scene_configuration: Res<SceneConfiguration>,
 fn draw_billboard_gizmos(
     mut gizmos: Gizmos,
     camera_query: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
-    scene_query: Query<(&GlobalTransform, &SceneData), With<SceneTag>>,
+    scene_data: Res<SceneData>,
+    scene_configuration: Res<SceneConfiguration>,
 ) {
     for(_camera, camera_transform) in camera_query.iter(){ // Prefixed with underscore to ignore unused camera variable
-        for (scene_transform, scene_data) in scene_query.iter() {
-            let billboard_position = scene_transform.translation();
-            let width = scene_data.projection_resolution.x as f32;
-            let height = scene_data.projection_resolution.y as f32;
-            
-            draw_billboard_grid(
-                &mut gizmos,
-                camera_transform,
-                billboard_position,
-                width,
-                height,
-                SILVER,
-                DARK_GREY_THIRD,
-                GRID_SPACING,
-            );
-            
-            // Calculate billboard orientation for crosshair
-            let mut camera_position_flat = camera_transform.translation();
-            camera_position_flat.y = billboard_position.y;
-            let billboard_rotation = Transform::from_translation(billboard_position)
-                .looking_at(camera_position_flat, Vec3::Y).rotation;
-            let billboard_up = billboard_rotation.mul_vec3(Vec3::Y);
-            let billboard_right = billboard_rotation.mul_vec3(Vec3::X);
-            
-            draw_crosshair(&mut gizmos, &scene_data, &billboard_right, &billboard_up);
-        }
+        let billboard_position = scene_configuration.origin.translation;
+        let width = scene_configuration.scene_dimension.x as f32;
+        let height = scene_configuration.scene_dimension.y as f32;
+        
+        // Get the scene plane rotation
+        let billboard_rotation = scene_configuration.origin.rotation;
+        
+        draw_billboard_grid(
+            &mut gizmos,
+            billboard_rotation,
+            billboard_position,
+            width,
+            height,
+            SILVER,
+            DARK_GREY_THIRD,
+            GRID_SPACING,
+        );
+        
+        // Calculate billboard orientation for crosshair
+        let billboard_up = billboard_rotation.mul_vec3(Vec3::Y);
+        let billboard_right = billboard_rotation.mul_vec3(Vec3::X);
+        
+        draw_crosshair(&mut gizmos, &scene_data, &billboard_right, &billboard_up);
     }
 }
 
@@ -108,44 +107,52 @@ fn draw_crosshair(
 
 fn draw_projector_billboard(
     mut gizmos: Gizmos,
-    camera_query: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
-    scene_query: Query<(&GlobalTransform, &SceneData), With<SceneTag>>,
+    scene_setup: Res<SceneSetup>,
     projector_config: Res<ProjectorConfiguration>,
-    scene_config: Res<SceneConfiguration>,
+    camera_query: Query<&GlobalTransform, With<Camera3d>>,
 ) {
-    for (_camera, camera_transform) in camera_query.iter() { // Prefixed with underscore to ignore unused camera variable
-        for (scene_transform, _scene_data) in scene_query.iter() {
-            let billboard_position = scene_transform.translation();
-            
-            // Calculate projected size based on angle and distance
-            let angle_rad = projector_config.angle.to_radians();
-            let distance = scene_config.transform.translation.z.abs();
-            let half_angle = angle_rad / 2.0;
-            let projected_size = 2.0 * distance * half_angle.tan();
-            
-            // Square dimensions for projector
-            let width = projected_size;
-            let height = projected_size;
-            
-            let orange_alpha = Srgba::new(1.0, 0.647, 0.0, 0.3);
-            
-            draw_billboard_grid(
-                &mut gizmos,
-                camera_transform,
-                billboard_position,
-                width,
-                height,
-                ORANGE,
-                orange_alpha,
-                GRID_SPACING * 2.0,
-            );
-        }
+    if !projector_config.enabled {
+        return;
     }
+
+    let billboard_position = scene_setup.scene.origin.translation;
+    
+    let (width, height) = {
+        let dims = scene_setup.get_projector_view_dimensions();
+        (dims.x, dims.y)
+    };
+
+    // Calculate camera-facing rotation for better 3D perspective
+    let billboard_rotation = if let Ok(camera_transform) = camera_query.single() {
+        // Make the projector billboard face the camera for better 3D visualization
+        let mut camera_position_flat = camera_transform.translation();
+        camera_position_flat.y = billboard_position.y;
+        Transform::from_translation(billboard_position)
+            .looking_at(camera_position_flat, Vec3::Y).rotation
+    } else {
+        // Fallback to projector configuration rotation
+        projector_config.origin.rotation
+    };
+
+    let orange_alpha = Srgba::new(1.0, 0.647, 0.0, 0.3);
+
+    draw_billboard_grid(
+        &mut gizmos,
+        billboard_rotation,
+        billboard_position,
+        width,
+        height,
+        ORANGE,
+        orange_alpha,
+        GRID_SPACING * 2.0,
+    );
+
 }
+
 
 fn draw_billboard_grid(
     gizmos: &mut Gizmos,
-    camera_transform: &GlobalTransform,
+    billboard_rotation: Quat,
     billboard_position: Vec3,
     width: f32,
     height: f32,
@@ -159,11 +166,6 @@ fn draw_billboard_grid(
     let frame_color: Color = Color::from(frame_color.into());
     let grid_color: Color = Color::from(grid_color.into());
 
-    // Make billboard face the camera (Y-axis locked)
-    let mut camera_position_flat = camera_transform.translation();
-    camera_position_flat.y = billboard_position.y;
-    let billboard_rotation = Transform::from_translation(billboard_position)
-        .looking_at(camera_position_flat, Vec3::Y).rotation;
     
     let billboard_up = billboard_rotation.mul_vec3(Vec3::Y);
     let billboard_right = billboard_rotation.mul_vec3(Vec3::X);
@@ -198,4 +200,14 @@ fn draw_billboard_grid(
         let end = billboard_position + billboard_up * offset_y + billboard_right * (width / 2.0);
         gizmos.line(start, end, grid_color);
     }
+}
+
+fn draw_scene_crosshair(
+    mut gizmos: Gizmos,
+    scene_setup: Res<SceneSetup>,
+) {
+    let center = scene_setup.scene.origin.translation;
+    let crosshair_size = GRID_SPACING * 2.0; // Larger crosshair for scene center
+    gizmos.line(center - Vec3::X * crosshair_size, center + Vec3::X * crosshair_size, RED);
+    gizmos.line(center - Vec3::Y * crosshair_size, center + Vec3::Y * crosshair_size, RED);
 }

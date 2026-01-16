@@ -76,9 +76,9 @@ impl SceneSetup {
     pub fn get_camera_view_dimensions(&self) -> Vec2 {
         let distance = self
             .camera
-            .transform
+            .origin
             .translation
-            .distance(self.scene.transform.translation);
+            .distance(self.scene.origin.translation);
         let half_angle_rad = self.camera.angle.to_radians() / 2.0;
         let width = 2.0 * distance * half_angle_rad.tan();
         let height = width;
@@ -90,9 +90,9 @@ impl SceneSetup {
     pub fn get_projector_view_dimensions(&self) -> Vec2 {
         let distance = self
             .projector
-            .transform
+            .origin
             .translation
-            .distance(self.scene.transform.translation);
+            .distance(self.scene.origin.translation);
         let half_angle_rad = self.projector.angle.to_radians() / 2.0;
         let width = 2.0 * distance * half_angle_rad.tan();
         let height = width;
@@ -116,14 +116,14 @@ impl SceneSetup {
 
         let distance = self
             .camera
-            .transform
+            .origin
             .translation
-            .distance(self.scene.transform.translation);
+            .distance(self.scene.origin.translation);
 
         // Assuming camera looks down -Z
         let local_pos = Vec3::new(local_x, local_y, -distance);
 
-        let t = &self.camera.transform;
+        let t = &self.camera.origin;
         t.rotation * (local_pos * t.scale) + t.translation
     }
 
@@ -141,13 +141,13 @@ impl SceneSetup {
 
         let distance = self
             .projector
-            .transform
+            .origin
             .translation
-            .distance(self.scene.transform.translation);
+            .distance(self.scene.origin.translation);
 
         let local_pos = Vec3::new(local_x, local_y, -distance);
 
-        let t = &self.projector.transform;
+        let t = &self.projector.origin;
         t.rotation * (local_pos * t.scale) + t.translation
     }
 
@@ -155,11 +155,10 @@ impl SceneSetup {
     /// with the plane defined by the scene's transform (assuming local Z is normal).
     /// Returns None if the ray is parallel to the plane.
     pub fn get_camera_center_on_scene_plane(&self) -> Option<Vec3> {
-        let ray_origin = self.camera.transform.translation;
-        let ray_dir = self.camera.transform.rotation * -Vec3::Z; // Camera looks down -Z
-
-        let plane_origin = self.scene.transform.translation;
-        let plane_normal = self.scene.transform.rotation * Vec3::Z; // Assuming scene plane is XY, so normal is Z
+        let ray_origin = self.camera.origin.translation;
+        let ray_dir = self.camera.origin.rotation * -Vec3::Z; // Camera looks down -Z
+        let plane_origin = self.scene.origin.translation;
+        let plane_normal = self.scene.origin.rotation * Vec3::Z; // Assuming scene plane is XY, so normal is Z
 
         let denominator = ray_dir.dot(plane_normal);
         if denominator.abs() < 1e-6 {
@@ -174,11 +173,11 @@ impl SceneSetup {
     /// with the plane defined by the scene's transform (assuming local Z is normal).
     /// Returns None if the ray is parallel to the plane.
     pub fn get_projector_center_on_scene_plane(&self) -> Option<Vec3> {
-        let ray_origin = self.projector.transform.translation;
-        let ray_dir = self.projector.transform.rotation * -Vec3::Z; // Projector looks down -Z
+        let ray_origin = self.projector.origin.translation;
+        let ray_dir = self.projector.origin.rotation * -Vec3::Z; // Projector looks down -Z
 
-        let plane_origin = self.scene.transform.translation;
-        let plane_normal = self.scene.transform.rotation * Vec3::Z; // Assuming scene plane is XY, so normal is Z
+        let plane_origin = self.scene.origin.translation;
+        let plane_normal = self.scene.origin.rotation * Vec3::Z; // Assuming scene plane is XY, so normal is Z
 
         let denominator = ray_dir.dot(plane_normal);
         if denominator.abs() < 1e-6 {
@@ -191,8 +190,8 @@ impl SceneSetup {
 
     /// Calculates the rotation required for the camera to look exactly at the scene's center.
     pub fn get_camera_look_at_scene_rotation(&self) -> Quat {
-        let eye = self.camera.transform.translation;
-        let target = self.scene.transform.translation;
+        let eye = self.camera.origin.translation;
+        let target = self.scene.origin.translation;
         let up = Vec3::Y;
         Transform::from_translation(eye)
             .looking_at(target, up)
@@ -201,8 +200,8 @@ impl SceneSetup {
 
     /// Calculates the rotation required for the projector to look exactly at the scene's center.
     pub fn get_projector_look_at_scene_rotation(&self) -> Quat {
-        let eye = self.projector.transform.translation;
-        let target = self.scene.transform.translation;
+        let eye = self.projector.origin.translation;
+        let target = self.scene.origin.translation;
         let up = Vec3::Y;
         Transform::from_translation(eye)
             .looking_at(target, up)
@@ -216,9 +215,9 @@ impl SceneSetup {
         let projector_center = self.get_projector_center_on_scene_plane()?;
 
         let transform = Transform {
-            translation: self.scene.transform.translation,
-            rotation: self.scene.transform.rotation,
-            scale: self.scene.transform.scale,
+            translation: self.scene.origin.translation,
+            rotation: self.scene.origin.rotation,
+            scale: self.scene.origin.scale,
         };
 
         let to_local = transform.compute_affine().inverse();

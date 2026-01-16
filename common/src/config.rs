@@ -1,5 +1,4 @@
 use bevy::{
-    asset::uuid::Uuid,
     ecs::resource::Resource,
     math::{Quat, UVec2, Vec3},
     transform::components::Transform,
@@ -25,18 +24,21 @@ impl Default for ConfigTransform {
 
 #[derive(Resource, Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SceneConfiguration {
-    /// Defines the width of the scene in meters.
-    pub scene_width: f32,
+    /// Defines the dimensions (width, height) of the scene in pixels.
+    pub scene_dimension: UVec2,
+    /// Defines the y-difference from the scene origin.
+    pub y_difference: f32,
     /// Defines the position and orientation of the scene in world space.
-    pub transform: ConfigTransform,
+    pub origin: ConfigTransform,
 }
 
 impl Default for SceneConfiguration {
     fn default() -> Self {
         Self {
-            scene_width: 10.0,
-            transform: ConfigTransform {
-                translation: Vec3::new(0.0, 0.0, -25.0),
+            scene_dimension: UVec2::new(10, 6), // Default to 1000x1000 world units
+            y_difference: 0.0, 
+            origin: ConfigTransform {
+                translation: Vec3::new(0.0, 3.0, -10.0),
                 rotation: Quat::IDENTITY,
                 scale: Vec3::ONE,
             },
@@ -49,7 +51,7 @@ pub struct ProjectorConfiguration {
     pub resolution: UVec2,
     // projection angle in degrees
     pub angle: f32,
-    pub transform: ConfigTransform,
+    pub origin: ConfigTransform,
     // enable or disable projector rendering
     pub enabled: bool,
     pub locked_to_scene: bool,
@@ -58,10 +60,10 @@ pub struct ProjectorConfiguration {
 impl Default for ProjectorConfiguration {
     fn default() -> Self {
         Self {
-            resolution: UVec2::new(800, 800),
-            angle: 25.0,
-            transform: ConfigTransform {
-                translation: bevy::prelude::Vec3::new(0.0, 1.5, 5.0),
+            resolution: UVec2::new(4095, 4095),
+            angle: 60.0,
+            origin: ConfigTransform {
+                translation: bevy::prelude::Vec3::new(0.0, 1.5, 0.0),
                 rotation: bevy::prelude::Transform::from_translation(bevy::prelude::Vec3::new(
                     0.0, 1.5, 5.0,
                 ))
@@ -73,7 +75,7 @@ impl Default for ProjectorConfiguration {
                 scale: bevy::prelude::Vec3::ONE,
             },
             enabled: false,
-            locked_to_scene: false,
+            locked_to_scene: true,
         }
     }
 }
@@ -83,7 +85,7 @@ pub struct CameraConfiguration {
     /// Defines the size of the thermal camera viewport in pixels.
     pub resolution: UVec2,
     /// Defines the camera's position and orientation in world space.
-    pub transform: ConfigTransform,
+    pub origin: ConfigTransform,
     // camera field of view angle in degrees
     pub angle: f32,
     // lock camera center to scene transform
@@ -94,7 +96,7 @@ impl Default for CameraConfiguration {
     fn default() -> Self {
         Self {
             resolution: UVec2::new(256, 192),
-            transform: ConfigTransform {
+            origin: ConfigTransform {
                 translation: Vec3::new(0.0, 1.5, 5.0),
                 rotation: Transform::from_translation(Vec3::new(0.0, 1.5, 5.0))
                     .looking_at(Vec3::new(0.0, 1.5, 0.0), Vec3::Y)
@@ -102,7 +104,7 @@ impl Default for CameraConfiguration {
                 scale: Vec3::ONE,
             },
             angle: 45.0,
-            locked_to_scene: false,
+            locked_to_scene: true,
         }
     }
 }

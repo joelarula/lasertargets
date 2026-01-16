@@ -19,6 +19,8 @@ use crate::plugins::settings::SettingsPlugin;
 use crate::plugins::target::TargetPlugin;
 use crate::plugins::basictarget::BasicTargetPlugin;
 use crate::plugins::network::NetworkPlugin; // Added NetworkPlugin
+use crate::plugins::keyboard::KeyboardPlugin;
+use crate::plugins::mouse::MousePlugin;
 use hunter::plugin::HunterGamePlugin;
 use snake::plugin::SnakeGamePlugin;
 
@@ -57,6 +59,8 @@ fn main() {
     .add_plugins(SettingsPlugin)
     .add_plugins(BasicTargetPlugin)
     .add_plugins(TargetPlugin)
+    .add_plugins(KeyboardPlugin)
+    .add_plugins(MousePlugin)
     .add_plugins(GameRegistryPlugin)
     .add_plugins(HunterGamePlugin)
     .add_plugins(SnakeGamePlugin);

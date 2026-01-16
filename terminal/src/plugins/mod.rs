@@ -9,3 +9,5 @@ pub mod settings;
 pub mod target;
 pub mod basictarget;
 pub mod network; // Added network module
+pub mod keyboard;
+pub mod mouse;

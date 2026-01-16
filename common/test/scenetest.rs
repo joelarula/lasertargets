@@ -10,8 +10,9 @@ use bevy::{
 #[test]
 fn test_get_camera_view_dimensions() {
     let scene_config = SceneConfiguration {
-        scene_width: 10.0,
-        transform: ConfigTransform {
+        scene_dimension: UVec2::new(10, 10),
+        y_difference: 0.0,
+        origin: ConfigTransform {
             translation: Vec3::ZERO,
             rotation: Quat::IDENTITY,
             scale: Vec3::ONE,
@@ -25,7 +26,7 @@ fn test_get_camera_view_dimensions() {
     // Width = 2 * 10 * 1 = 20.
     let camera_config = CameraConfiguration {
         resolution: UVec2::new(100, 100),
-        transform: ConfigTransform {
+        origin: ConfigTransform {
             translation: Vec3::new(0.0, 0.0, 10.0),
             rotation: Transform::from_translation(Vec3::new(0.0, 0.0, 10.0))
                 .looking_at(Vec3::ZERO, Vec3::Y)
@@ -48,8 +49,9 @@ fn test_get_camera_view_dimensions() {
 #[test]
 fn test_get_projector_view_dimensions() {
     let scene_config = SceneConfiguration {
-        scene_width: 10.0,
-        transform: ConfigTransform {
+        scene_dimension: UVec2::new(10, 10),
+        y_difference: 0.0,
+        origin: ConfigTransform {
             translation: Vec3::ZERO,
             rotation: Quat::IDENTITY,
             scale: Vec3::ONE,
@@ -65,7 +67,7 @@ fn test_get_projector_view_dimensions() {
     // Width = 2 * 5 * tan(30) = 10 * 0.57735 = 5.7735.
     let projector_config = ProjectorConfiguration {
         resolution: UVec2::new(100, 100),
-        transform: ConfigTransform {
+        origin: ConfigTransform {
             translation: Vec3::new(0.0, 0.0, 5.0),
             rotation: Transform::from_translation(Vec3::new(0.0, 0.0, 5.0))
                 .looking_at(Vec3::ZERO, Vec3::Y)
@@ -88,8 +90,9 @@ fn test_get_projector_view_dimensions() {
 #[test]
 fn test_get_camera_center_on_scene_plane() {
     let scene_config = SceneConfiguration {
-        scene_width: 10.0,
-        transform: ConfigTransform {
+        scene_dimension: UVec2::new(10, 10),
+        y_difference: 0.0,
+        origin: ConfigTransform {
             translation: Vec3::ZERO,
             rotation: Quat::IDENTITY,
             scale: Vec3::ONE,
@@ -99,7 +102,7 @@ fn test_get_camera_center_on_scene_plane() {
     // Camera at (0, 0, 10), looking directly at scene center.
     let camera_config = CameraConfiguration {
         resolution: UVec2::new(100, 100),
-        transform: ConfigTransform {
+        origin: ConfigTransform {
             translation: Vec3::new(0.0, 0.0, 10.0),
             rotation: Transform::from_translation(Vec3::new(0.0, 0.0, 10.0))
                 .looking_at(Vec3::ZERO, Vec3::Y)
@@ -124,8 +127,9 @@ fn test_get_camera_center_on_scene_plane() {
 #[test]
 fn test_get_common_viewport_stats_full_overlap() {
     let scene_config = SceneConfiguration {
-        scene_width: 10.0,
-        transform: ConfigTransform {
+        scene_dimension: UVec2::new(10, 10),
+        y_difference: 0.0,
+        origin: ConfigTransform {
             translation: Vec3::ZERO,
             rotation: Quat::IDENTITY,
             scale: Vec3::ONE,
@@ -136,7 +140,7 @@ fn test_get_common_viewport_stats_full_overlap() {
     // Camera at (0, 0, 10), angle 90 -> width 20
     let camera_config = CameraConfiguration {
         resolution: UVec2::new(100, 100),
-        transform: ConfigTransform {
+        origin: ConfigTransform {
             translation: Vec3::new(0.0, 0.0, 10.0),
             rotation: Transform::from_translation(Vec3::new(0.0, 0.0, 10.0))
                 .looking_at(Vec3::ZERO, Vec3::Y)
@@ -151,7 +155,7 @@ fn test_get_common_viewport_stats_full_overlap() {
     // Projector at (0, 0, 5), angle 90 -> width 10
     let projector_config = ProjectorConfiguration {
         resolution: UVec2::new(100, 100),
-        transform: ConfigTransform {
+        origin: ConfigTransform {
             translation: Vec3::new(0.0, 0.0, 5.0),
             rotation: Transform::from_translation(Vec3::new(0.0, 0.0, 5.0))
                 .looking_at(Vec3::ZERO, Vec3::Y)
@@ -178,8 +182,9 @@ fn test_get_common_viewport_stats_full_overlap() {
 #[test]
 fn test_get_common_viewport_stats_partial_overlap() {
     let scene_config = SceneConfiguration {
-        scene_width: 10.0,
-        transform: ConfigTransform {
+        scene_dimension: UVec2::new(10, 10),
+        y_difference: 0.0,
+        origin: ConfigTransform {
             translation: Vec3::ZERO,
             rotation: Quat::IDENTITY,
             scale: Vec3::ONE,
@@ -193,7 +198,7 @@ fn test_get_common_viewport_stats_partial_overlap() {
 
     let camera_config = CameraConfiguration {
         resolution: UVec2::new(100, 100),
-        transform: ConfigTransform {
+        origin: ConfigTransform {
             translation: Vec3::new(1.0, 0.0, 10.0),
             rotation: Transform::from_translation(Vec3::new(1.0, 0.0, 10.0))
                 .looking_at(Vec3::new(1.0, 0.0, 0.0), Vec3::Y)
@@ -210,7 +215,7 @@ fn test_get_common_viewport_stats_partial_overlap() {
 
     let projector_config = ProjectorConfiguration {
         resolution: UVec2::new(100, 100),
-        transform: ConfigTransform {
+        origin: ConfigTransform {
             translation: Vec3::new(-1.0, 0.0, 10.0),
             rotation: Transform::from_translation(Vec3::new(-1.0, 0.0, 10.0))
                 .looking_at(Vec3::new(-1.0, 0.0, 0.0), Vec3::Y)
@@ -233,7 +238,7 @@ fn test_get_common_viewport_stats_partial_overlap() {
 
     let camera_config_shifted = CameraConfiguration {
         resolution: UVec2::new(100, 100),
-        transform: ConfigTransform {
+        origin: ConfigTransform {
             translation: Vec3::new(0.5, 0.0, 10.0),
             rotation: Transform::from_translation(Vec3::new(0.5, 0.0, 10.0))
                 .looking_at(Vec3::new(0.5, 0.0, 0.0), Vec3::Y)
@@ -246,7 +251,7 @@ fn test_get_common_viewport_stats_partial_overlap() {
 
     let projector_config_shifted = ProjectorConfiguration {
         resolution: UVec2::new(100, 100),
-        transform: ConfigTransform {
+        origin: ConfigTransform {
             translation: Vec3::new(-0.5, 0.0, 10.0),
             rotation: Transform::from_translation(Vec3::new(-0.5, 0.0, 10.0))
                 .looking_at(Vec3::new(-0.5, 0.0, 0.0), Vec3::Y)

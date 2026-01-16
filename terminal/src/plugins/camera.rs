@@ -57,8 +57,8 @@ fn setup_camera(
                 ..default()
             },
         get_projection(*display_mode, scene_setup.camera.angle),
-        Transform::from_translation(config.transform.translation)
-            .looking_at(scene_setup.scene.transform.translation, Vec3::Y),
+        Transform::from_translation(config.origin.translation)
+            .looking_at(scene_setup.scene.origin.translation, Vec3::Y),
         ));
     
 
@@ -77,12 +77,12 @@ fn update_camera(
         if *display_mode == DisplayMode::Mode2D {
             // For 2D mode, ensure the camera is looking straight down the Z-axis by aligning it with the scene center.
             // This resets the camera's orientation and X/Y position for a clean top-down view, while preserving Z-distance.
-            let scene_center = scene_setup.scene.transform.translation;
+            let scene_center = scene_setup.scene.origin.translation;
             *transform = Transform::from_xyz(scene_center.x, scene_center.y, transform.translation.z)
                 .looking_at(scene_center, Vec3::Y);
         } else {
-            *transform = Transform::from_translation(config.transform.translation)
-                .looking_at(scene_setup.scene.transform.translation, Vec3::Y);
+            *transform = Transform::from_translation(config.origin.translation)
+                .looking_at(scene_setup.scene.origin.translation, Vec3::Y);
         }
 
         if config.is_changed() || scene_setup.is_changed() {
