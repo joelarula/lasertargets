@@ -5,6 +5,38 @@ use common::path::{UniversalPath, PathProvider, PathRenderable};
 use crate::plugins::scene::SceneData;
 use common::config::SceneConfiguration;
 
+/// Extension trait to add gizmo drawing to UniversalPath
+trait UniversalPathGizmos {
+    fn draw_with_gizmos(&self, gizmos: &mut Gizmos, transform: &GlobalTransform, tolerance: f32);
+}
+
+impl UniversalPathGizmos for UniversalPath {
+    fn draw_with_gizmos(&self, gizmos: &mut Gizmos, transform: &GlobalTransform, _tolerance: f32) {
+        for segment in &self.segments {
+            if segment.points.len() < 2 {
+                continue;
+            }
+            
+            // Draw lines between consecutive points
+            for i in 0..segment.points.len() - 1 {
+                let start_point = &segment.points[i];
+                let end_point = &segment.points[i + 1];
+                
+                let start = transform.transform_point(Vec3::new(start_point.x, start_point.y, 0.0));
+                let end = transform.transform_point(Vec3::new(end_point.x, end_point.y, 0.0));
+                
+                let color = Color::srgb(
+                    start_point.r as f32 / 255.0,
+                    start_point.g as f32 / 255.0,
+                    start_point.b as f32 / 255.0,
+                );
+                
+                gizmos.line(start, end, color);
+            }
+        }
+    }
+}
+
 #[derive(SystemSet, Debug, Hash, PartialEq, Eq, Clone)]
 pub struct BasicTargetSystemSet;
 
@@ -54,7 +86,6 @@ fn handle_basic_target_click(
     mut commands: Commands,
     mouse_button: Res<ButtonInput<MouseButton>>,
     scene_data: Res<SceneData>,
-    scene_config: Res<SceneConfiguration>,
     target_query: Query<(Entity, &GlobalTransform, &BasicTarget)>,
 ) {
     // Only check on mouse click

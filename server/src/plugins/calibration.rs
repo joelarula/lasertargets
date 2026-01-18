@@ -2,8 +2,6 @@ use bevy::prelude::*;
 use bevy_quinnet::server::ConnectionLostEvent;
 use common::path::{UniversalPath, PathSegment};
 use common::scene::SceneSetup;
-use lyon_tessellation::path::Path;
-use lyon_tessellation::math::point;
 use crate::plugins::network::{MousePositionEvent, KeyboardInputEvent};
 use crate::plugins::scene::SceneEntity;
 
@@ -68,7 +66,7 @@ fn initialize_calibration(
     }
     
     if let Some((scene_entity, scene_transform)) = scene_query.iter().next() {
-        info!("Found scene entity, spawning projection area rectangle and crosshair");
+        info!("Found scene entity, spawning projection area rectangle and center crosshair");
         spawn_projection_area_rectangle(&mut commands, &scene_setup, scene_entity, scene_transform);
         spawn_center_crosshair(&mut commands, &scene_setup);
     } else {
@@ -133,33 +131,16 @@ fn handle_mouse_position_updates(
 
 fn update_crosshair_positions(
     calibration_state: Res<CalibrationState>,
-    mut crosshair_query: Query<(&mut Transform, &CalibrationCrosshair), Without<SceneEntity>>,
-    scene_query: Query<&Transform, (With<SceneEntity>, Without<CalibrationCrosshair>)>,
+    mut crosshair_query: Query<(&mut Transform, &CalibrationCrosshair)>,
 ) {
     // Only update if calibration is enabled
     if !calibration_state.enabled {
         return;
     }
     
-    if let Ok(scene_transform) = scene_query.single() {
-        for (mut transform, crosshair) in crosshair_query.iter_mut() {
-            if let Some(world_pos) = calibration_state.mouse_positions.get(&crosshair.client_id) {
-                // Convert world position to local position relative to scene
-                let scene_matrix = Mat4::from_scale_rotation_translation(
-                    scene_transform.scale,
-                    scene_transform.rotation,
-                    scene_transform.translation
-                );
-                let local_position = scene_matrix.inverse().transform_point3(*world_pos);
-                transform.translation = local_position;
-            }
-        }
-    } else {
-        // Fallback: update crosshairs directly with world positions if no scene entity found
-        for (mut transform, crosshair) in crosshair_query.iter_mut() {
-            if let Some(world_pos) = calibration_state.mouse_positions.get(&crosshair.client_id) {
-                transform.translation = *world_pos;
-            }
+    for (mut transform, crosshair) in crosshair_query.iter_mut() {
+        if let Some(world_pos) = calibration_state.mouse_positions.get(&crosshair.client_id) {
+            transform.translation = *world_pos;
         }
     }
 }
@@ -217,54 +198,46 @@ fn spawn_calibration_elements(
 fn spawn_crosshair_at_position(
     commands: &mut Commands,
     client_id: u64,
-    local_position: Vec3,
-    parent_entity: Entity,
+    world_position: Vec3,
 ) {
-    let crosshair_size = 20.0;
-    let line_width = 2.0;
-    let crosshair_color = Color::srgb(1.0, 0.0, 0.0); // Red color
+    let crosshair_size = 0.3; // 0.3m crosshair
+    let half_size = crosshair_size / 2.0;
+    let red = Color::srgb(0.5, 0.0, 0.0); // Red color
+    let blank = Color::srgb(0.0, 0.0, 0.0); // Black for blanking
     
-    // Create a single path with both horizontal and vertical segments
-    let crosshair_path = {
-        use lyon_tessellation::math::point;
-        let mut builder = Path::builder();
-        
-        // Horizontal line segment
-        builder.begin(point(-crosshair_size / 2.0, 0.0));
-        builder.line_to(point(crosshair_size / 2.0, 0.0));
-        builder.end(false);
-        
-        // Vertical line segment
-        builder.begin(point(0.0, -crosshair_size / 2.0));
-        builder.line_to(point(0.0, crosshair_size / 2.0));
-        builder.end(false);
-        
-        builder.build()
+    // Create single segment with crosshair points
+    let mut segment = common::path::PathSegment::empty();
+    
+    // Draw full horizontal line: left through center to right
+    segment.push(-half_size, 0.0, red, 3);
+    segment.push(0.0, 0.0, red, 2); // Center point
+    segment.push(half_size, 0.0, red, 3);
+    segment.push(half_size, 0.0, blank, 3);
+    
+    segment.push(0.0, -half_size, blank, 3); // Blank transition
+    
+    // Draw full vertical line: bottom through center to top
+    segment.push(0.0, -half_size, red, 3);
+    segment.push(0.0, 0.0, red, 2); // Center point
+    segment.push(0.0, half_size, red, 3);
+    
+    let crosshair_universal_path = UniversalPath {
+        segments: vec![segment],
     };
     
-    // Create single UniversalPath for the crosshair
-    let crosshair_universal_path = UniversalPath::from_path(
-        crosshair_path, 
-        crosshair_color, 
-        line_width
-    );
+    // Spawn at world position in XY plane (flat, not rotated)
+    let transform = Transform::from_translation(world_position);
     
-    // Spawn single crosshair entity
-    let crosshair_entity = commands.spawn((
-        Transform::from_translation(local_position),
+    commands.spawn((
+        transform,
+        GlobalTransform::from(transform),
         Visibility::default(),
         CalibrationCrosshair { client_id },
-        crosshair_universal_path.clone(),
+        crosshair_universal_path,
         common::path::PathRenderable::default(),
-    )).id();
+    ));
     
-    info!("Spawned crosshair for client {} at position {:?} with {} segments", 
-          client_id, local_position, crosshair_universal_path.segments.len());
-    
-    // Parent crosshair entity to the scene entity if valid
-    if parent_entity != Entity::PLACEHOLDER {
-        commands.entity(parent_entity).add_child(crosshair_entity);
-    }
+    info!("Spawned mouse crosshair for client {} at world position {:?}", client_id, world_position);
 }
 
 /// Spawn a red crosshair at the scene center (projection surface)
@@ -273,35 +246,34 @@ fn spawn_center_crosshair(
     scene_setup: &SceneSetup,
 ) {
     let crosshair_size = 0.5; // 0.5m crosshair (0.25m in each direction)
+    let half_size = crosshair_size / 2.0;
     
     // Position at scene center - this is the billboard/projection surface
     let center_world_pos = scene_setup.scene.origin.translation;
     
     info!("Spawning center crosshair at scene center (projection surface) {:?}", center_world_pos);
     
-    // Create crosshair path (horizontal and vertical lines)
-    let mut builder = lyon_tessellation::path::Path::builder();
+    // Create single segment with crosshair points
+    let red = Color::srgb(0.5, 0.0, 0.0); // Reduced red intensity
+    let blank = Color::srgb(0.0, 0.0, 0.0); // Black for blanking
+    let mut segment = common::path::PathSegment::empty();
     
-    let half_size = crosshair_size / 2.0;
+    // Draw full horizontal line: left through center to right
+    segment.push(-half_size, 0.0, red, 5);
+    segment.push(0.0, 0.0, red, 3); // Center point
+    segment.push(half_size, 0.0, red, 5);
+    segment.push(half_size, 0.0, blank, 3);
+
+    segment.push(0.0, -half_size, blank, 5); // Blank at start of vertical
     
-    // Horizontal line
-    builder.begin(point(-half_size, 0.0));
-    builder.line_to(point(half_size, 0.0));
-    builder.end(false);
-    
-    // Vertical line
-    builder.begin(point(0.0, -half_size));
-    builder.line_to(point(0.0, half_size));
-    builder.end(false);
-    
-    let path = builder.build();
+    // Draw full vertical line: bottom through center to top
+    segment.push(0.0, -half_size, red, 5);
+    segment.push(0.0, 0.0, red, 3); // Center point
+    segment.push(0.0, half_size, red, 5);
+    segment.push(half_size, 0.0, blank, 3);
     
     let crosshair_universal_path = UniversalPath {
-        segments: vec![PathSegment {
-            path,
-            color: Color::srgb(1.0, 0.0, 0.0), // Red
-            line_width: 2.0,
-        }],
+        segments: vec![segment],
     };
     
     // Spawn at world position in XY plane (flat, not rotated)
@@ -315,7 +287,7 @@ fn spawn_center_crosshair(
         common::path::PathRenderable::default(),
     ));
     
-    info!("Spawned red crosshair ({}m length)", crosshair_size);
+    info!("Spawned red crosshair ({}m length) with 1 segment", crosshair_size);
 }
 
 /// Spawn projection area rectangle at scene center (projection surface)
@@ -336,7 +308,7 @@ fn spawn_projection_area_rectangle(
     let distance = projector_pos.distance(scene_pos);
     let half_fov_rad = (fov_degrees / 2.0).to_radians();
     let max_width = 2.0 * distance * half_fov_rad.tan();
-    let square_size = max_width * 0.6; // Use 60% of max for clear visibility with margins
+    let square_size = max_width * 0.7; // Use 80% of max for clear visibility with margins
     
     info!("Calculating projection area rectangle: distance={:.2}m, FOV={}°, max_width={:.2}m, using {:.2}m square", 
           distance, fov_degrees, max_width, square_size);
@@ -346,25 +318,31 @@ fn spawn_projection_area_rectangle(
     
     info!("Spawning projection area rectangle at scene center {:?}", center_world_pos);
     
-    // Create a simple square path
-    let mut builder = lyon_tessellation::path::Path::builder();
-    
-    // Square corners in local coordinates
+    // Create 4 separate corner segments with dwell 15 each
     let half_size = square_size / 2.0;
-    builder.begin(point(-half_size, -half_size));
-    builder.line_to(point(half_size, -half_size));
-    builder.line_to(point(half_size, half_size));
-    builder.line_to(point(-half_size, half_size));
-    builder.close();
+    let corners = [
+        Vec2::new(-half_size, -half_size), // Bottom-left
+        Vec2::new(half_size, -half_size),  // Bottom-right
+        Vec2::new(half_size, half_size),   // Top-right
+        Vec2::new(-half_size, half_size),  // Top-left
+    ];
     
-    let path = builder.build();
+    let green = Color::srgb(0.0, 1.0, 0.0);
+    let blank = Color::srgb(0.0, 0.0, 0.0);
+    let corner_dwell = 15; // High dwell for sharp, bright corners
+    
+    // Create one segment per corner point
+    let mut segments = Vec::new();
+    for corner in &corners {
+        let mut segment = common::path::PathSegment::empty();
+        segment.push(corner.x, corner.y, blank, 15);
+        segment.push(corner.x, corner.y, green, 25);
+        segment.push(corner.x, corner.y, blank, 15);
+        segments.push(segment);
+    }
     
     let rectangle_universal_path = UniversalPath {
-        segments: vec![PathSegment {
-            path,
-            color: Color::srgb(0.0, 1.0, 0.0), // Green
-            line_width: 2.0,
-        }],
+        segments,
     };
     
     // Spawn at world position in XY plane (flat, not rotated)
@@ -406,16 +384,17 @@ fn spawn_crosshairs_for_new_clients(
         let client_id = event.client_id;
         
         if !existing_clients.contains(&client_id) {
-            info!("New client {} detected, spawning crosshair. Calibration enabled: {}", 
-                  client_id, calibration_state.enabled);
+            info!("New client {} detected, spawning crosshair at {:?}", 
+                  client_id, event.position);
             
-            // Spawn crosshair for this new client
-            if let Ok((scene_entity, _scene_transform)) = scene_query.single() {
-                let local_position = Vec3::ZERO; // Start at origin
-                spawn_crosshair_at_position(&mut commands, client_id, local_position, scene_entity);
-            } else {
-                warn!("No scene entity found for client {} crosshair spawning", client_id);
-            }
+            // Spawn crosshair at the mouse position (or scene center if None)
+            let world_position = event.position.unwrap_or_else(|| {
+                scene_query.single()
+                    .map(|(_, transform)| transform.translation)
+                    .unwrap_or(Vec3::ZERO)
+            });
+            
+            spawn_crosshair_at_position(&mut commands, client_id, world_position);
         }
     }
 }

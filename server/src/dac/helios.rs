@@ -8,7 +8,6 @@ use std::os::raw::{c_int, c_uchar, c_uint};
 use std::sync::Arc;
 use common::path::UniversalPath;
 use bevy::prelude::*;
-use lyon_tessellation;
 
 // Point structures matching the working darkelf implementation
 #[repr(C)]
@@ -270,7 +269,7 @@ impl HeliosDacController {
         }
     }
 
-    /// Write a UniversalPath frame to the specified DAC
+    /// Write a PathSegment frame to the specified DAC
     /// Automatically handles coordinate conversion from path coordinates to DAC coordinates
     /// Uses native Helios 4095x4095 range for better precision
     pub fn write_frame_path(
@@ -278,36 +277,35 @@ impl HeliosDacController {
         dac_num: u32,
         pps: u32,
         flags: u8,
-        path: &UniversalPath,
+        segment: &common::path::PathSegment,
     ) -> Result<(), String> {
-        // Flatten the path to a series of points with tolerance
-        let tolerance = 1.0;
-        let flattened_points = path.flatten(tolerance);
-        
-        if flattened_points.is_empty() {
-            return Err("Path is empty".to_string());
-        }
-        
-        // Convert to Helios points with color from path segments
+        // Convert path segment points to Helios points
         let mut helios_points = Vec::new();
         
-        for segment in &path.segments {
-            let segment_points = flatten_segment(segment, tolerance);
-            for point in segment_points {
-                helios_points.push(PathPoint {
-                    pos: point,
-                    color: segment.color,
-                });
+        for path_point in &segment.points {
+            // Convert world coordinates to Helios coordinates
+            let x_helios = ((path_point.x + 1.0) * (HELIOS_MAX_COORD as f32 / 2.0)) as u16;
+            let y_helios = ((path_point.y + 1.0) * (HELIOS_MAX_COORD as f32 / 2.0)) as u16;
+            
+            // Use point's color and apply dwell
+            let dwell_count = if path_point.dwell == 0 { 1 } else { path_point.dwell as usize };
+            for _ in 0..dwell_count {
+                helios_points.push(HeliosPoint::new(
+                    x_helios,
+                    y_helios,
+                    path_point.r,
+                    path_point.g,
+                    path_point.b,
+                    255, // Full intensity
+                ));
             }
         }
         
-        // Convert to HeliosPoint format
-        let points: Vec<HeliosPoint> = helios_points
-            .iter()
-            .map(path_point_to_helios)
-            .collect();
+        if helios_points.is_empty() {
+            return Err("Segment is empty".to_string());
+        }
 
-        self.write_frame_native(dac_num, pps, flags, &points)
+        self.write_frame_native(dac_num, pps, flags, &helios_points)
     }
 
     /// Stop output on the specified DAC
@@ -375,104 +373,4 @@ impl Drop for HeliosDacController {
             let _ = self.close_devices();
         }
     }
-}
-
-/// Internal point structure with position and color
-struct PathPoint {
-    pos: Vec2,
-    color: Color,
-}
-
-/// Helper function to flatten a path segment into points
-fn flatten_segment(segment: &common::path::PathSegment, tolerance: f32) -> Vec<Vec2> {
-    use lyon_tessellation::path::PathEvent;
-    let mut points = Vec::new();
-    
-    for event in segment.path.iter() {
-        match event {
-            PathEvent::Begin { at } => {
-                points.push(Vec2::new(at.x, at.y));
-            }
-            PathEvent::Line { to, .. } => {
-                points.push(Vec2::new(to.x, to.y));
-            }
-            PathEvent::Quadratic { ctrl, to, .. } => {
-                let from = points.last().copied().unwrap_or(Vec2::ZERO);
-                let control = Vec2::new(ctrl.x, ctrl.y);
-                let end = Vec2::new(to.x, to.y);
-                let samples = sample_quadratic(from, control, end, tolerance);
-                points.extend(samples);
-            }
-            PathEvent::Cubic { ctrl1, ctrl2, to, .. } => {
-                let from = points.last().copied().unwrap_or(Vec2::ZERO);
-                let c1 = Vec2::new(ctrl1.x, ctrl1.y);
-                let c2 = Vec2::new(ctrl2.x, ctrl2.y);
-                let end = Vec2::new(to.x, to.y);
-                let samples = sample_cubic(from, c1, c2, end, tolerance);
-                points.extend(samples);
-            }
-            PathEvent::End { close, .. } => {
-                if close && !points.is_empty() {
-                    points.push(points[0]);
-                }
-            }
-        }
-    }
-    points
-}
-
-fn sample_quadratic(start: Vec2, control: Vec2, end: Vec2, tolerance: f32) -> Vec<Vec2> {
-    let mut points = Vec::new();
-    let steps = ((start.distance(control) + control.distance(end)) / tolerance)
-        .ceil()
-        .max(2.0) as usize;
-
-    for i in 1..=steps {
-        let t = i as f32 / steps as f32;
-        let mt = 1.0 - t;
-        let point = start * mt * mt + control * 2.0 * mt * t + end * t * t;
-        points.push(point);
-    }
-    points
-}
-
-fn sample_cubic(start: Vec2, c1: Vec2, c2: Vec2, end: Vec2, tolerance: f32) -> Vec<Vec2> {
-    let mut points = Vec::new();
-    let steps = ((start.distance(c1) + c1.distance(c2) + c2.distance(end)) / tolerance)
-        .ceil()
-        .max(2.0) as usize;
-
-    for i in 1..=steps {
-        let t = i as f32 / steps as f32;
-        let t2 = t * t;
-        let t3 = t2 * t;
-        let mt = 1.0 - t;
-        let mt2 = mt * mt;
-        let mt3 = mt2 * mt;
-
-        let point = start * mt3 + c1 * 3.0 * mt2 * t + c2 * 3.0 * mt * t2 + end * t3;
-        points.push(point);
-    }
-    points
-}
-
-/// Helper function to convert a PathPoint to a HeliosPoint
-/// Uses native Helios 12-bit coordinate space (0-4095)
-/// Input coordinates are normalized [-1, 1] and converted to unsigned [0, 4095]
-#[inline]
-fn path_point_to_helios(p: &PathPoint) -> HeliosPoint {
-    // Convert normalized coordinates [-1, 1] to Helios range [0, 4095]
-    // -1 maps to 0, 0 maps to 2048 (center), +1 maps to 4095
-    let x_helios = ((p.pos.x + 1.0) * (HELIOS_MAX_COORD as f32 / 2.0)).clamp(0.0, HELIOS_MAX_COORD as f32) as u16;
-    let y_helios = ((p.pos.y + 1.0) * (HELIOS_MAX_COORD as f32 / 2.0)).clamp(0.0, HELIOS_MAX_COORD as f32) as u16;
-
-    // Extract color components - access linear color directly for performance
-    let color_linear = p.color.to_linear();
-    
-    // Fast float-to-u8 conversion
-    let r = (color_linear.red * 255.0).min(255.0).max(0.0) as u8;
-    let g = (color_linear.green * 255.0).min(255.0).max(0.0) as u8;
-    let b = (color_linear.blue * 255.0).min(255.0).max(0.0) as u8;
-
-    HeliosPoint::new(x_helios, y_helios, r, g, b, 255)
 }

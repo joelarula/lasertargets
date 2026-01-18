@@ -1,21 +1,182 @@
 use bevy::prelude::*;
-use lyon_tessellation::path::{Path, PathEvent};
+use lyon_path::{Path, PathEvent};
 use serde::{Deserialize, Serialize};
 
-/// A segment of a path with its own rendering properties
-#[derive(Clone, Debug,Serialize, Deserialize)]
+/// A single point in a path with color and dwell information
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PathPoint {
+    pub x: f32,
+    pub y: f32,
+    pub r: u8,
+    pub g: u8,
+    pub b: u8,
+    pub dwell: u8, // 0 = normal, 1-7 = dwell count
+}
+
+impl PathPoint {
+    pub fn new(x: f32, y: f32, r: u8, g: u8, b: u8, dwell: u8) -> Self {
+        Self { x, y, r, g, b, dwell }
+    }
+    
+    /// Convert Bevy Color to RGB u8 tuple
+    pub fn color_to_rgb(color: Color) -> (u8, u8, u8) {
+        let srgba = color.to_srgba();
+        (
+            (srgba.red * 255.0) as u8,
+            (srgba.green * 255.0) as u8,
+            (srgba.blue * 255.0) as u8,
+        )
+    }
+    
+    pub fn from_vec2_color(pos: Vec2, color: Color, dwell: u8) -> Self {
+        let (r, g, b) = Self::color_to_rgb(color);
+        Self {
+            x: pos.x,
+            y: pos.y,
+            r,
+            g,
+            b,
+            dwell,
+        }
+    }
+}
+
+/// A segment of a path with simple point representation
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PathSegment {
-    pub path: Path,
-    pub color: Color,
-    pub line_width: f32,
+    pub points: Vec<PathPoint>,
 }
 
 impl PathSegment {
-    pub fn new(path: Path, color: Color, line_width: f32) -> Self {
+    pub fn new(points: Vec<PathPoint>) -> Self {
+        Self { points }
+    }
+    
+    pub fn empty() -> Self {
+        Self { points: Vec::new() }
+    }
+    
+    /// Create a builder for constructing path segments point by point
+    pub fn builder() -> PathSegmentBuilder {
+        PathSegmentBuilder {
+            points: Vec::new(),
+        }
+    }
+    
+    /// Add a point to this segment
+    pub fn push_point(&mut self, point: PathPoint) {
+        self.points.push(point);
+    }
+    
+    /// Add a point with position, color, and dwell
+    pub fn push(&mut self, x: f32, y: f32, color: Color, dwell: u8) {
+        let (r, g, b) = PathPoint::color_to_rgb(color);
+        self.points.push(PathPoint::new(x, y, r, g, b, dwell));
+    }
+    
+    /// Add a point from Vec2
+    pub fn push_vec2(&mut self, pos: Vec2, color: Color, dwell: u8) {
+        let (r, g, b) = PathPoint::color_to_rgb(color);
+        self.points.push(PathPoint::new(pos.x, pos.y, r, g, b, dwell));
+    }
+    
+    /// Create a line segment from start to end with color
+    pub fn line(start: Vec2, end: Vec2, color: Color, dwell: u8) -> Self {
+        let (r, g, b) = PathPoint::color_to_rgb(color);
         Self {
-            path,
-            color,
-            line_width,
+            points: vec![
+                PathPoint::new(start.x, start.y, r, g, b, dwell),
+                PathPoint::new(end.x, end.y, r, g, b, dwell),
+            ],
+        }
+    }
+    
+    /// Create multiple connected line segments (polyline)
+    pub fn polyline(points: &[Vec2], color: Color, dwell: u8) -> Self {
+        let (r, g, b) = PathPoint::color_to_rgb(color);
+        let path_points = points
+            .iter()
+            .map(|p| PathPoint::new(p.x, p.y, r, g, b, dwell))
+            .collect();
+        Self { points: path_points }
+    }
+    
+    /// Create a closed polygon (last point connects to first)
+    pub fn polygon(points: &[Vec2], color: Color, dwell: u8) -> Self {
+        let (r, g, b) = PathPoint::color_to_rgb(color);
+        let mut path_points: Vec<PathPoint> = points
+            .iter()
+            .map(|p| PathPoint::new(p.x, p.y, r, g, b, dwell))
+            .collect();
+        
+        // Add first point again to close the loop
+        if !points.is_empty() {
+            path_points.push(PathPoint::new(points[0].x, points[0].y, r, g, b, dwell));
+        }
+        
+        Self { points: path_points }
+    }
+    
+    /// Create from Lyon path (for backward compatibility)
+    pub fn from_lyon_path(path: &Path, color: Color, _line_width: f32) -> Self {
+        let mut points = Vec::new();
+        let (r, g, b) = PathPoint::color_to_rgb(color);
+        
+        for event in path.iter() {
+            match event {
+                PathEvent::Begin { at } => {
+                    points.push(PathPoint::new(at.x, at.y, r, g, b, 0));
+                }
+                PathEvent::Line { to, .. } => {
+                    points.push(PathPoint::new(to.x, to.y, r, g, b, 0));
+                }
+                PathEvent::Quadratic { ctrl, to, .. } => {
+                    points.push(PathPoint::new(ctrl.x, ctrl.y, r, g, b, 0));
+                    points.push(PathPoint::new(to.x, to.y, r, g, b, 0));
+                }
+                PathEvent::Cubic { ctrl1, ctrl2, to, .. } => {
+                    points.push(PathPoint::new(ctrl1.x, ctrl1.y, r, g, b, 0));
+                    points.push(PathPoint::new(ctrl2.x, ctrl2.y, r, g, b, 0));
+                    points.push(PathPoint::new(to.x, to.y, r, g, b, 0));
+                }
+                PathEvent::End { .. } => {}
+            }
+        }
+        
+        Self { points }
+    }
+}
+
+/// Builder for creating PathSegments point by point
+pub struct PathSegmentBuilder {
+    points: Vec<PathPoint>,
+}
+
+impl PathSegmentBuilder {
+    /// Add a point with full control
+    pub fn point(mut self, x: f32, y: f32, r: u8, g: u8, b: u8, dwell: u8) -> Self {
+        self.points.push(PathPoint::new(x, y, r, g, b, dwell));
+        self
+    }
+    
+    /// Add a point with position and color
+    pub fn add(mut self, x: f32, y: f32, color: Color, dwell: u8) -> Self {
+        let (r, g, b) = PathPoint::color_to_rgb(color);
+        self.points.push(PathPoint::new(x, y, r, g, b, dwell));
+        self
+    }
+    
+    /// Add a point from Vec2
+    pub fn add_vec2(mut self, pos: Vec2, color: Color, dwell: u8) -> Self {
+        let (r, g, b) = PathPoint::color_to_rgb(color);
+        self.points.push(PathPoint::new(pos.x, pos.y, r, g, b, dwell));
+        self
+    }
+    
+    /// Build the final PathSegment
+    pub fn build(self) -> PathSegment {
+        PathSegment {
+            points: self.points,
         }
     }
 }
@@ -39,9 +200,10 @@ impl UniversalPath {
         }
     }
 
+    /// Create from Lyon path (for backward compatibility)
     pub fn from_path(path: Path, color: Color, line_width: f32) -> Self {
         Self {
-            segments: vec![PathSegment::new(path, color, line_width)],
+            segments: vec![PathSegment::from_lyon_path(&path, color, line_width)],
         }
     }
 
@@ -49,9 +211,10 @@ impl UniversalPath {
         self.segments.push(segment);
     }
 
+    /// Add Lyon path (for backward compatibility)
     pub fn add_path(&mut self, path: Path, color: Color, line_width: f32) {
         self.segments
-            .push(PathSegment::new(path, color, line_width));
+            .push(PathSegment::from_lyon_path(&path, color, line_width));
     }
 
     /// Create a circle path
@@ -77,7 +240,7 @@ impl UniversalPath {
         builder.end(true);
 
         Self {
-            segments: vec![PathSegment::new(builder.build(), color, 1.0)],
+            segments: vec![PathSegment::from_lyon_path(&builder.build(), color, 1.0)],
         }
     }
 
@@ -92,138 +255,21 @@ impl UniversalPath {
         builder.close();
 
         Self {
-            segments: vec![PathSegment::new(builder.build(), color, 1.0)],
+            segments: vec![PathSegment::from_lyon_path(&builder.build(), color, 1.0)],
         }
     }
 
     /// Flatten path to line segments for gizmo rendering
     pub fn flatten(&self, tolerance: f32) -> Vec<Vec2> {
-        let mut points = Vec::new();
-
+        let mut result = Vec::new();
+        
         for segment in &self.segments {
-            for event in segment.path.iter() {
-                match event {
-                    PathEvent::Begin { at } => {
-                        points.push(Vec2::new(at.x, at.y));
-                    }
-                    PathEvent::Line { to, .. } => {
-                        points.push(Vec2::new(to.x, to.y));
-                    }
-                    PathEvent::Quadratic { ctrl, to, .. } => {
-                        // Sample quadratic curve
-                        let from = points.last().copied().unwrap_or(Vec2::ZERO);
-                        let control = Vec2::new(ctrl.x, ctrl.y);
-                        let end = Vec2::new(to.x, to.y);
-                        let samples = Self::sample_quadratic(from, control, end, tolerance);
-                        points.extend(samples);
-                    }
-                    PathEvent::Cubic {
-                        ctrl1, ctrl2, to, ..
-                    } => {
-                        // Sample cubic curve
-                        let from = points.last().copied().unwrap_or(Vec2::ZERO);
-                        let c1 = Vec2::new(ctrl1.x, ctrl1.y);
-                        let c2 = Vec2::new(ctrl2.x, ctrl2.y);
-                        let end = Vec2::new(to.x, to.y);
-                        let samples = Self::sample_cubic(from, c1, c2, end, tolerance);
-                        points.extend(samples);
-                    }
-                    PathEvent::End { close, .. } => {
-                        if close && !points.is_empty() {
-                            points.push(points[0]);
-                        }
-                    }
-                }
+            for point in &segment.points {
+                result.push(Vec2::new(point.x, point.y));
             }
         }
-
-        points
-    }
-
-    fn sample_quadratic(start: Vec2, control: Vec2, end: Vec2, tolerance: f32) -> Vec<Vec2> {
-        let mut points = Vec::new();
-        let steps = ((start.distance(control) + control.distance(end)) / tolerance)
-            .ceil()
-            .max(2.0) as usize;
-
-        for i in 1..=steps {
-            let t = i as f32 / steps as f32;
-            let mt = 1.0 - t;
-            let point = start * mt * mt + control * 2.0 * mt * t + end * t * t;
-            points.push(point);
-        }
-        points
-    }
-
-    fn sample_cubic(start: Vec2, c1: Vec2, c2: Vec2, end: Vec2, tolerance: f32) -> Vec<Vec2> {
-        let mut points = Vec::new();
-        let steps = ((start.distance(c1) + c1.distance(c2) + c2.distance(end)) / tolerance)
-            .ceil()
-            .max(2.0) as usize;
-
-        for i in 1..=steps {
-            let t = i as f32 / steps as f32;
-            let t2 = t * t;
-            let t3 = t2 * t;
-            let mt = 1.0 - t;
-            let mt2 = mt * mt;
-            let mt3 = mt2 * mt;
-
-            let point = start * mt3 + c1 * 3.0 * mt2 * t + c2 * 3.0 * mt * t2 + end * t3;
-            points.push(point);
-        }
-        points
-    }
-
-    /// Draw path using gizmos
-    pub fn draw_with_gizmos(
-        &self,
-        gizmos: &mut Gizmos,
-        transform: &GlobalTransform,
-        tolerance: f32,
-    ) {
-        for segment in &self.segments {
-            let mut points = Vec::new();
-            for event in segment.path.iter() {
-                match event {
-                    PathEvent::Begin { at } => {
-                        points.push(Vec2::new(at.x, at.y));
-                    }
-                    PathEvent::Line { to, .. } => {
-                        points.push(Vec2::new(to.x, to.y));
-                    }
-                    PathEvent::Quadratic { ctrl, to, .. } => {
-                        let from = points.last().copied().unwrap_or(Vec2::ZERO);
-                        let control = Vec2::new(ctrl.x, ctrl.y);
-                        let end = Vec2::new(to.x, to.y);
-                        let samples = Self::sample_quadratic(from, control, end, tolerance);
-                        points.extend(samples);
-                    }
-                    PathEvent::Cubic {
-                        ctrl1, ctrl2, to, ..
-                    } => {
-                        let from = points.last().copied().unwrap_or(Vec2::ZERO);
-                        let c1 = Vec2::new(ctrl1.x, ctrl1.y);
-                        let c2 = Vec2::new(ctrl2.x, ctrl2.y);
-                        let end = Vec2::new(to.x, to.y);
-                        let samples = Self::sample_cubic(from, c1, c2, end, tolerance);
-                        points.extend(samples);
-                    }
-                    PathEvent::End { close, .. } => {
-                        if close && !points.is_empty() {
-                            points.push(points[0]);
-                        }
-                    }
-                }
-            }
-            let world_points: Vec<Vec3> = points
-                .iter()
-                .map(|p| transform.transform_point(Vec3::new(p.x, p.y, 0.0)))
-                .collect();
-            if world_points.len() >= 2 {
-                gizmos.linestrip(world_points, segment.color);
-            }
-        }
+        
+        result
     }
 }
 
