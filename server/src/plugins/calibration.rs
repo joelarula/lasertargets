@@ -131,16 +131,22 @@ fn handle_mouse_position_updates(
 
 fn update_crosshair_positions(
     calibration_state: Res<CalibrationState>,
-    mut crosshair_query: Query<(&mut Transform, &CalibrationCrosshair)>,
+    scene_setup: Res<SceneSetup>,
+    mut crosshair_query: Query<(&mut Transform, &mut GlobalTransform, &CalibrationCrosshair)>,
 ) {
     // Only update if calibration is enabled
     if !calibration_state.enabled {
         return;
     }
     
-    for (mut transform, crosshair) in crosshair_query.iter_mut() {
+    let scene_y = scene_setup.scene.origin.translation.y;
+    
+    for (mut transform, mut global_transform, crosshair) in crosshair_query.iter_mut() {
         if let Some(world_pos) = calibration_state.mouse_positions.get(&crosshair.client_id) {
-            transform.translation = *world_pos;
+            // Invert Y axis around the scene center Y position
+            let corrected_pos = Vec3::new(world_pos.x, 2.0 * scene_y - world_pos.y, world_pos.z);
+            transform.translation = corrected_pos;
+            *global_transform = GlobalTransform::from(Transform::from_translation(corrected_pos));
         }
     }
 }
@@ -178,7 +184,7 @@ fn spawn_calibration_elements(
         
         // Spawn crosshairs for all currently connected clients
         for &client_id in calibration_state.mouse_positions.keys() {
-            spawn_crosshair_at_position(commands, client_id, local_position, scene_entity);
+            spawn_crosshair_at_position(commands, client_id, local_position);
         }
         
         // Spawn single projection area rectangle (shared for all clients)
@@ -188,7 +194,7 @@ fn spawn_calibration_elements(
         
         // Fallback: spawn without parenting
         for &client_id in calibration_state.mouse_positions.keys() {
-            spawn_crosshair_at_position(commands, client_id, world_position, Entity::PLACEHOLDER);
+            spawn_crosshair_at_position(commands, client_id, world_position);
         }
         spawn_projection_area_rectangle(commands, &scene_setup, Entity::PLACEHOLDER, &Transform::IDENTITY);
     }
@@ -200,26 +206,26 @@ fn spawn_crosshair_at_position(
     client_id: u64,
     world_position: Vec3,
 ) {
-    let crosshair_size = 0.3; // 0.3m crosshair
+    let crosshair_size = 0.5; // 0.5m crosshair (same as center)
     let half_size = crosshair_size / 2.0;
-    let red = Color::srgb(0.5, 0.0, 0.0); // Red color
+    let blue = Color::srgb(0.0, 0.0, 0.5); // Blue color to distinguish from red center
     let blank = Color::srgb(0.0, 0.0, 0.0); // Black for blanking
     
     // Create single segment with crosshair points
     let mut segment = common::path::PathSegment::empty();
     
     // Draw full horizontal line: left through center to right
-    segment.push(-half_size, 0.0, red, 3);
-    segment.push(0.0, 0.0, red, 2); // Center point
-    segment.push(half_size, 0.0, red, 3);
+    segment.push(-half_size, 0.0, blue, 3);
+    segment.push(0.0, 0.0, blue, 2); // Center point
+    segment.push(half_size, 0.0, blue, 3);
     segment.push(half_size, 0.0, blank, 3);
     
     segment.push(0.0, -half_size, blank, 3); // Blank transition
     
     // Draw full vertical line: bottom through center to top
-    segment.push(0.0, -half_size, red, 3);
-    segment.push(0.0, 0.0, red, 2); // Center point
-    segment.push(0.0, half_size, red, 3);
+    segment.push(0.0, -half_size, blue, 3);
+    segment.push(0.0, 0.0, blue, 2); // Center point
+    segment.push(0.0, half_size, blue, 3);
     
     let crosshair_universal_path = UniversalPath {
         segments: vec![segment],
@@ -252,7 +258,7 @@ fn spawn_center_crosshair(
     let center_world_pos = scene_setup.scene.origin.translation;
     
     info!("Spawning center crosshair at scene center (projection surface) {:?}", center_world_pos);
-    
+                                                   
     // Create single segment with crosshair points
     let red = Color::srgb(0.5, 0.0, 0.0); // Reduced red intensity
     let blank = Color::srgb(0.0, 0.0, 0.0); // Black for blanking

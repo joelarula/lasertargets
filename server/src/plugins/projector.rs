@@ -4,6 +4,7 @@ use common::scene::SceneSetup;
 use common::path::{UniversalPath, PathSegment};
 use crate::dac::helios::{HeliosDacController, HeliosPoint, HELIOS_FLAGS_DEFAULT, HELIOS_MAX_COORD};
 use std::sync::{Arc, Mutex};
+use std::sync::mpsc::{self, Sender};
 use std::thread;
 
 /// Shared buffer for laser points - double buffered for smooth rendering
@@ -26,6 +27,7 @@ pub struct ProjectorDacController {
     pub controller: Option<HeliosDacController>,
     initialized: bool,
     thread_running: bool,
+    shutdown_sender: Option<Sender<()>>,
 }
 
 impl Default for ProjectorDacController {
@@ -34,6 +36,7 @@ impl Default for ProjectorDacController {
             controller: None,
             initialized: false,
             thread_running: false,
+            shutdown_sender: None,
         }
     }
 }
@@ -50,7 +53,8 @@ impl Plugin for ProjectorPlugin {
             .insert_resource(LaserPointBuffer::default())
             .add_systems(Startup, initialize_projector_dac)
             .add_systems(Update, update_projector)
-            .add_systems(Update, update_point_buffer);
+            .add_systems(Update, update_point_buffer)
+            .add_systems(Last, shutdown_projector_dac.run_if(on_message::<AppExit>));
     }
 }
 
@@ -123,14 +127,12 @@ fn initialize_projector_dac(
             
             // Start background thread for continuous DAC output
             info!("✓ Starting DAC output thread...");
-            start_dac_output_thread(controller, point_buffer.clone());
+            let shutdown_sender = start_dac_output_thread(controller, point_buffer.clone());
             
             dac_controller.thread_running = true;
             dac_controller.initialized = true;
+            dac_controller.shutdown_sender = Some(shutdown_sender);
             info!("✓ Projector initialization complete");
-        }
-        Err(e) => {
-            error!("✗ Failed to initialize Helios DAC controller: {}", e);
         }
         Err(e) => {
             error!("✗ Failed to initialize Helios DAC controller: {}", e);
@@ -139,7 +141,10 @@ fn initialize_projector_dac(
 }
 
 /// Start background thread that continuously sends frames to the DAC
-fn start_dac_output_thread(controller: HeliosDacController, point_buffer: LaserPointBuffer) {
+fn start_dac_output_thread(controller: HeliosDacController, point_buffer: LaserPointBuffer) -> Sender<()> {
+    let (shutdown_tx, shutdown_rx) = mpsc::channel();
+    let shutdown_tx_clone = shutdown_tx.clone();
+    
     thread::spawn(move || {
         info!("DAC output thread started");
         let pps = 15000; // Points per second - reduced for better galvo control
@@ -151,6 +156,15 @@ fn start_dac_output_thread(controller: HeliosDacController, point_buffer: LaserP
         let max_write_failures = 50;
         
         loop {
+            // Check for shutdown signal
+            if shutdown_rx.try_recv().is_ok() {
+                info!("✓ DAC output thread received shutdown signal, cleaning up...");
+                // Controller will be dropped here, calling close_devices()
+                drop(controller);
+                info!("✓ DAC output thread terminated cleanly");
+                break;
+            }
+            
             // Get current points from buffer first
             let points = {
                 let buffer = point_buffer.points.lock().unwrap();
@@ -235,6 +249,28 @@ fn start_dac_output_thread(controller: HeliosDacController, point_buffer: LaserP
         
         error!("✗ DAC output thread terminated due to connection failure.");
     });
+    
+    shutdown_tx_clone
+}
+
+/// Shutdown the DAC cleanly on app exit
+fn shutdown_projector_dac(
+    mut dac_controller: ResMut<ProjectorDacController>,
+) {
+    info!("Shutting down projector DAC...");
+    
+    if let Some(sender) = dac_controller.shutdown_sender.take() {
+        // Signal the thread to shutdown
+        if sender.send(()).is_ok() {
+            info!("✓ Shutdown signal sent to DAC thread");
+        } else {
+            warn!("DAC thread already terminated");
+        }
+    }
+    
+    dac_controller.thread_running = false;
+    dac_controller.initialized = false;
+    info!("✓ Projector shutdown complete");
 }
 
 fn update_projector(
@@ -265,14 +301,14 @@ fn update_point_buffer(
     
     let path_count = path_query.iter().count();
     if path_count > 0 {
-        info!("Update buffer: Found {} UniversalPath entities", path_count);
+        debug!("Update buffer: Found {} UniversalPath entities", path_count);
     }
     
     // Convert all paths to Helios points
     let mut helios_points = Vec::new();
     
     for (universal_path, global_transform) in path_query.iter() {
-        info!("Converting path with {} segments at {:?}", 
+        debug!("Converting path with {} segments at {:?}", 
               universal_path.segments.len(), global_transform.translation());
         
         let points = convert_universal_path_to_helios_points(
@@ -281,7 +317,7 @@ fn update_point_buffer(
             &projector_config,
         );
         
-        info!("Generated {} points from path", points.len());
+        debug!("Generated {} points from path", points.len());
         
         // Add transition blanking between shapes (if not the first shape)
         if !helios_points.is_empty() && !points.is_empty() {
@@ -320,7 +356,7 @@ fn update_point_buffer(
         helios_points.extend(points);
     }
     
-    info!("Total points collected: {}", helios_points.len());
+    debug!("Total points collected: {}", helios_points.len());
     
     // Update the shared buffer - background thread will continuously send it to DAC
     if let Ok(mut buffer) = point_buffer.points.lock() {
@@ -336,7 +372,7 @@ fn convert_universal_path_to_helios_points(
 ) -> Vec<HeliosPoint> {
     let mut points = Vec::new();
     
-    info!("Converting UniversalPath with {} segments at position {:?}", 
+    debug!("Converting UniversalPath with {} segments at position {:?}", 
           universal_path.segments.len(), global_transform.translation());
     
     for (i, segment) in universal_path.segments.iter().enumerate() {
@@ -345,7 +381,7 @@ fn convert_universal_path_to_helios_points(
             global_transform,
             projector_config,
         );
-        info!("Segment {}: {} points", i, segment_points.len());
+        debug!("Segment {}: {} points", i, segment_points.len());
         
         // Add smooth blanked galvo transition between segments
         if !points.is_empty() && !segment_points.is_empty() {
@@ -382,7 +418,7 @@ fn convert_universal_path_to_helios_points(
         points.extend(segment_points);
     }
     
-    info!("Total points from UniversalPath: {}", points.len());
+    debug!("Total points from UniversalPath: {}", points.len());
     points
 }
 
