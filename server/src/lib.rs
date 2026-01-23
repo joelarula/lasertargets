@@ -12,7 +12,7 @@ use bevy_quinnet::server::QuinnetServerPlugin;
 use common::game::GameRegistryPlugin;
 use common::scene::SceneSetupPlugin;
 use common::state::{GameState, ServerState};
-use hunter::plugin::HunterGamePlugin;
+use hunter::common::HunterGamePlugin;
 use snake::plugin::SnakeGamePlugin;
 
 pub mod plugins;

@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-// Removed unused imports: use bevy::color::palettes::css::{ STEEL_BLUE, LIGHT_SEA_GREEN};
+use common::toolbar::{Docking, ToolbarItem};
 use std::collections::HashMap;
 
 // Button color palette - traditional mild scheme for black background
@@ -23,65 +23,19 @@ pub struct ToolabarButton {
     pub name: String,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Docking {
-    Left,
-    Right,
-    Top,
-    Bottom,
-}
-
-#[derive(Clone)]
-pub struct ToolbarItem {
-    pub name: String,
-    pub label: String,
-    pub icon: Option<String>,
-    pub is_active: bool,
-    pub docking: Docking,
-    pub button_size: f32,
-}
 
 #[derive(Resource)]
 struct NerdFont(Handle<Font>);
 
-#[derive(Resource, Default)]
-pub struct ToolbarRegistry {
-    buttons: HashMap<String, ToolbarItem>
-}
-
-impl ToolbarRegistry {
- 
-    pub fn register_button(&mut self, item: ToolbarItem) {
-        self.buttons.insert(item.name.clone(), item);
-    }
-    
-    pub fn update_button_state(&mut self, name: &str, is_active: bool) {
-        if let Some(handler) = self.buttons.get_mut(name) {
-            handler.is_active = is_active;
-        }
-    }
-
-    pub fn update_button_icon(&mut self, name: &str, icon: Option<String>) {
-        if let Some(handler) = self.buttons.get_mut(name) {
-            handler.icon = icon;
-        }
-    }
-    
-    pub fn get_buttons(&self) -> &HashMap<String, ToolbarItem> {
-        &self.buttons
-    }
-}
-
 impl Plugin for ToolbarPlugin {
     fn build(&self, app: &mut App) {
         app
-            .insert_resource(ToolbarRegistry::default())
             .add_systems(Startup, load_nerd_font)
             .add_systems(PostStartup, setup_toolbar)
             .add_systems(Update, (
                 update_button_states,
                 update_button_text,
-                update_toolbar,
+                rebuild_toolbar,
             ).chain());
     }
 }
@@ -91,60 +45,75 @@ fn load_nerd_font(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands.insert_resource(NerdFont(nerd_font));
 }
 
-fn setup_toolbar(mut commands: Commands, registry: Res<ToolbarRegistry>, nerd_font: Option<Res<NerdFont>>) {
+fn setup_toolbar(
+    mut commands: Commands,
+    items_query: Query<&ToolbarItem>,
+    nerd_font: Option<Res<NerdFont>>
+) {
     if let Some(font) = nerd_font {
-        create_toolbar_ui(&mut commands, &registry, Some(&font.0));
+        create_toolbar_ui(&mut commands, &items_query, Some(&font.0));
     } else {
-        create_toolbar_ui(&mut commands, &registry, None);
+        create_toolbar_ui(&mut commands, &items_query, None);
     }
 }
 
-fn update_toolbar(
+fn rebuild_toolbar(
     mut commands: Commands,
-    registry: Res<ToolbarRegistry>,
+    items_query: Query<&ToolbarItem>,
     toolbar_query: Query<Entity, With<ToolbarContainer>>,
     nerd_font: Option<Res<NerdFont>>,
+    // Detect changes to ToolbarItem entities
+    changed_items: Query<(), Or<(Changed<ToolbarItem>, Added<ToolbarItem>)>>,
 ) {
-    if registry.is_changed() {
-        // Despawn all toolbar containers (one for each docking position)
-        for toolbar_entity in toolbar_query.iter() {
-            commands.entity(toolbar_entity).despawn();
-        }
-        if let Some(font) = nerd_font {
-            create_toolbar_ui(&mut commands, &registry, Some(&font.0));
-        } else {
-            create_toolbar_ui(&mut commands, &registry, None);
-        }
+    // Only rebuild if toolbar items have changed
+    if changed_items.is_empty() {
+        return;
+    }
+
+    // Despawn all toolbar containers and their children
+    for toolbar_entity in toolbar_query.iter() {
+        commands.entity(toolbar_entity).despawn();
+    }
+    
+    if let Some(font) = nerd_font {
+        create_toolbar_ui(&mut commands, &items_query, Some(&font.0));
+    } else {
+        create_toolbar_ui(&mut commands, &items_query, None);
     }
 }
 
-fn create_toolbar_ui(commands: &mut Commands, registry: &ToolbarRegistry, nerd_font: Option<&Handle<Font>>) {
-  
+fn create_toolbar_ui(
+    commands: &mut Commands,
+    items_query: &Query<&ToolbarItem>,
+    nerd_font: Option<&Handle<Font>>
+) {
     let mut left_buttons = Vec::new();
     let mut right_buttons = Vec::new();
     let mut top_buttons = Vec::new();
     let mut bottom_buttons = Vec::new();
     
-    for button_name in registry.buttons.keys() {
-        if let Some(handler) = registry.buttons.get(button_name) {
-            match handler.docking {
-                Docking::Left => left_buttons.push(button_name.clone()),
-                Docking::Right => right_buttons.push(button_name.clone()),
-                Docking::Top => top_buttons.push(button_name.clone()),
-                Docking::Bottom => bottom_buttons.push(button_name.clone()),
-            }
+    // Build a hashmap for quick lookup
+    let mut buttons_map = HashMap::new();
+    for item in items_query.iter() {
+        buttons_map.insert(item.name.clone(), item.clone());
+        
+        match item.docking {
+            Docking::Left => left_buttons.push(item.name.clone()),
+            Docking::Right => right_buttons.push(item.name.clone()),
+            Docking::Top => top_buttons.push(item.name.clone()),
+            Docking::Bottom => bottom_buttons.push(item.name.clone()),
         }
     }
     
-    create_docked_toolbar(commands, registry, nerd_font, &left_buttons, Docking::Left);
-    create_docked_toolbar(commands, registry, nerd_font, &right_buttons, Docking::Right);
-    create_docked_toolbar(commands, registry, nerd_font, &top_buttons, Docking::Top);
-    create_docked_toolbar(commands, registry, nerd_font, &bottom_buttons, Docking::Bottom);
+    create_docked_toolbar(commands, &buttons_map, nerd_font, &left_buttons, Docking::Left);
+    create_docked_toolbar(commands, &buttons_map, nerd_font, &right_buttons, Docking::Right);
+    create_docked_toolbar(commands, &buttons_map, nerd_font, &top_buttons, Docking::Top);
+    create_docked_toolbar(commands, &buttons_map, nerd_font, &bottom_buttons, Docking::Bottom);
 }
 
 fn create_docked_toolbar(
     commands: &mut Commands,
-    registry: &ToolbarRegistry,
+    buttons_map: &HashMap<String, ToolbarItem>,
     nerd_font: Option<&Handle<Font>>,
     button_names: &[String],
     docking: Docking,
@@ -153,51 +122,39 @@ fn create_docked_toolbar(
         return;
     }
     
-    let (position_style, _flex_direction) = match docking { // Prefixed with underscore to ignore unused flex_direction variable
-        Docking::Left => (
-            Node {
-                position_type: PositionType::Absolute,
-                left: Val::Px(10.0),
-                top: Val::Px(10.0),
-                flex_direction: FlexDirection::Column,
-                row_gap: Val::Px(10.0),
-                ..default()
-            },
-            FlexDirection::Column
-        ),
-        Docking::Right => (
-            Node {
-                position_type: PositionType::Absolute,
-                right: Val::Px(10.0),
-                top: Val::Px(10.0),
-                flex_direction: FlexDirection::Column,
-                row_gap: Val::Px(10.0),
-                ..default()
-            },
-            FlexDirection::Column
-        ),
-        Docking::Top => (
-            Node {
-                position_type: PositionType::Absolute,
-                left: Val::Px(10.0),
-                top: Val::Px(10.0),
-                flex_direction: FlexDirection::Row,
-                column_gap: Val::Px(10.0),
-                ..default()
-            },
-            FlexDirection::Row
-        ),
-        Docking::Bottom => (
-            Node {
-                position_type: PositionType::Absolute,
-                left: Val::Px(10.0),
-                bottom: Val::Px(10.0),
-                flex_direction: FlexDirection::Row,
-                column_gap: Val::Px(10.0),
-                ..default()
-            },
-            FlexDirection::Row
-        ),
+    let position_style = match docking {
+        Docking::Left => Node {
+            position_type: PositionType::Absolute,
+            left: Val::Px(10.0),
+            top: Val::Px(10.0),
+            flex_direction: FlexDirection::Column,
+            row_gap: Val::Px(10.0),
+            ..default()
+        },
+        Docking::Right => Node {
+            position_type: PositionType::Absolute,
+            right: Val::Px(10.0),
+            top: Val::Px(10.0),
+            flex_direction: FlexDirection::Column,
+            row_gap: Val::Px(10.0),
+            ..default()
+        },
+        Docking::Top => Node {
+            position_type: PositionType::Absolute,
+            left: Val::Px(10.0),
+            top: Val::Px(10.0),
+            flex_direction: FlexDirection::Row,
+            column_gap: Val::Px(10.0),
+            ..default()
+        },
+        Docking::Bottom => Node {
+            position_type: PositionType::Absolute,
+            left: Val::Px(10.0),
+            bottom: Val::Px(10.0),
+            flex_direction: FlexDirection::Row,
+            column_gap: Val::Px(10.0),
+            ..default()
+        },
     };
     
     commands
@@ -209,7 +166,7 @@ fn create_docked_toolbar(
         ))
         .with_children(|parent| {
             for button_name in button_names {
-                if let Some(button_handler) = registry.buttons.get(button_name) {
+                if let Some(button_handler) = buttons_map.get(button_name) {
                     let initial_color = if button_handler.is_active {
                         button_colors::ACTIVE
                     } else {
@@ -243,31 +200,29 @@ fn create_docked_toolbar(
                                 } else { 
                                     default() 
                                 },
-                                font_size: 24.0 ,
+                                font_size: 24.0,
                                 ..default()
                             },
                             TextColor(Color::WHITE)
                         ));
-                    
                 }
             }
         });
 }
 
-
-
-
-
-
 fn update_button_states(
     mut button_query: Query<(&ToolabarButton, &Interaction, &mut BackgroundColor)>,
-    registry: Res<ToolbarRegistry>,
+    items_query: Query<&ToolbarItem>,
 ) {
-    // Update button colors based on handler state
+    // Build a quick lookup map
+    let mut items_map = HashMap::new();
+    for item in items_query.iter() {
+        items_map.insert(item.name.clone(), item.is_active);
+    }
+
+    // Update button colors based on item state
     for (button, interaction, mut background_color) in &mut button_query {
-        let is_active = registry.buttons.get(&button.name)
-            .map(|h| h.is_active)
-            .unwrap_or(false);
+        let is_active = items_map.get(&button.name).copied().unwrap_or(false);
 
         match *interaction {
             Interaction::Pressed => {
@@ -292,16 +247,22 @@ fn update_button_states(
 }
 
 fn update_button_text(
-    registry: Res<ToolbarRegistry>,
+    items_query: Query<&ToolbarItem, Changed<ToolbarItem>>,
     button_query: Query<(&ToolabarButton, &Children)>,
     mut text_query: Query<&mut Text>,
 ) {
-    if !registry.is_changed() {
+    if items_query.is_empty() {
         return;
     }
     
+    // Build a map of changed items
+    let mut items_map = HashMap::new();
+    for item in items_query.iter() {
+        items_map.insert(item.name.clone(), item);
+    }
+    
     for (button, children) in &button_query {
-        if let Some(button_data) = registry.buttons.get(&button.name) {
+        if let Some(button_data) = items_map.get(&button.name) {
             for child_entity in children.iter() {
                 if let Ok(mut text) = text_query.get_mut(child_entity) {
                     let new_text = button_data.icon.as_ref()

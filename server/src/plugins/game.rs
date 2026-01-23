@@ -75,7 +75,7 @@ fn handle_init_game(
         new_game_session.start();
         commands.spawn(new_game_session.clone());
 
-        next_state.set(GameState::InGame(event.game_id));
+        next_state.set(GameState::InGame);
         game_session_created.write(GameSessionCreated {
             game_session: new_game_session,
         });
@@ -89,7 +89,7 @@ fn handle_start_game(
 ) {
     for event in start_game_events.read() {
         if let Some((_, mut game_session)) = game_sessions.iter_mut().find(|(_, gs)| gs.uuid == event.game_session_uuid) {
-            next_state.set(GameState::InGame(game_session.id));
+            next_state.set(GameState::InGame);
             game_session.start();
        }
     }
@@ -102,7 +102,7 @@ fn handle_pause_game(
 ) {
     for event in pause_game_events.read() {
         if let Some((_, mut game_session)) = game_sessions.iter_mut().find(|(_, gs)| gs.uuid == event.game_session_uuid) {
-            next_state.set(GameState::Paused(game_session.id));
+            next_state.set(GameState::Paused);
             game_session.pause();
         }
     }
@@ -115,7 +115,7 @@ fn handle_resume_game(
 ) {
     for event in resume_game_events.read() {
         if let Some((_, mut game_session)) = game_sessions.iter_mut().find(|(_, gs)| gs.uuid == event.game_session_uuid) {
-            next_state.set(GameState::InGame(game_session.id));
+            next_state.set(GameState::InGame);
             game_session.resume();
         }
     }
@@ -132,7 +132,7 @@ fn handle_stop_game(
            
             game_session.stop();
             commands.entity(entity).despawn();
-            next_state.set(GameState::Finished(game_session.id));
+            next_state.set(GameState::Finished);
         }
     }
 }

@@ -1,7 +1,8 @@
 use bevy::prelude::*;
+use common::toolbar::{Docking, ToolbarItem};
 // Removed unused import: use log::info;
 use crate::plugins::calibration::CalibrationSystemSet;
-use crate::plugins::toolbar::{ToolbarRegistry, ToolbarItem, Docking, ToolabarButton};
+use crate::plugins::toolbar::{ ToolabarButton};
 use crate::plugins::instructions::InstructionState;
 use common::config::{ProjectorConfiguration};
 
@@ -25,10 +26,10 @@ impl Plugin for ProjectorPlugin {
     }
 }
 
-fn register_projector(mut toolbar: ResMut<ToolbarRegistry>) {
-    toolbar.register_button(ToolbarItem {
+fn register_projector(mut commands: Commands) {
+    commands.spawn(ToolbarItem {
         name: BTN_NAME.to_string(),
-        label: "Projector".to_string(),
+        text: Some("Projector".to_string()),
         icon: Some("\u{f0eb}".to_string()), // Laser icon
         is_active: false,
         docking: Docking::Left,
@@ -43,28 +44,36 @@ fn register_projector_instructions(mut instructions: ResMut<InstructionState>) {
 fn handle_projector_button(
     button_query: Query<(&Interaction, &ToolabarButton), Changed<Interaction>>,
     mut projector_config: ResMut<ProjectorConfiguration>,
-    mut toolbar_registry: ResMut<ToolbarRegistry>,
+    mut items_query: Query<&mut ToolbarItem>,
 ) {
     for (interaction, button) in &button_query {
         if button.name == BTN_NAME && *interaction == Interaction::Pressed {
             projector_config.enabled = !projector_config.enabled;
-            toolbar_registry.update_button_state(BTN_NAME, projector_config.enabled);
+            
+            for mut item in items_query.iter_mut() {
+                if item.name == BTN_NAME {
+                    item.is_active = projector_config.enabled;
+                }
+            }
         }
     }
 }
 
 fn update_projector_system(
     mut projector_config: ResMut<ProjectorConfiguration>,
-    mut toolbar_registry: ResMut<ToolbarRegistry>,
+    mut items_query: Query<&mut ToolbarItem>,
     keyboard: Res<ButtonInput<KeyCode>>,
 ) {
     let prev_enabled = projector_config.enabled;
     
     configure_projector(&mut projector_config, &keyboard);
     if prev_enabled != projector_config.enabled {
-        toolbar_registry.update_button_state(BTN_NAME, projector_config.enabled);
+        for mut item in items_query.iter_mut() {
+            if item.name == BTN_NAME {
+                item.is_active = projector_config.enabled;
+            }
+        }
     }
-    
 }
 
 fn configure_projector(

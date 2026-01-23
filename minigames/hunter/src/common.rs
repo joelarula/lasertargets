@@ -8,12 +8,20 @@ pub struct HunterGamePlugin;
 
 impl Plugin for HunterGamePlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, |mut registry: ResMut<GameRegistry>| {
-            let game = Game {
-                name: GAME_NAME.to_string(),
-                id: GAME_ID,
-            };
-            registry.register_game(game);
-        });
+        app.add_systems(Startup, fun_name);
     }
+}
+
+fn fun_name(mut registry: ResMut<GameRegistry>) {
+    
+    let game = Game {
+        name: GAME_NAME.to_string(),
+        id: GAME_ID,
+    };
+    registry.register_game(game);
+
+
+
+
+
 }

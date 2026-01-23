@@ -2,11 +2,13 @@
 use bevy_egui::EguiContexts;
 use bevy_egui::egui;
 use common::config::{SceneConfiguration, ProjectorConfiguration};
+use common::toolbar::Docking;
+use common::toolbar::ToolbarItem;
 
 use crate::plugins::camera::DisplayMode;
 use crate::plugins::{
     calibration::CalibrationSystemSet, 
-    toolbar::{ToolbarRegistry, ToolbarItem, Docking, ToolabarButton},
+    toolbar::{ToolabarButton},
 };
 use bevy::prelude::*;
 use bevy_egui::{ EguiPrimaryContextPass};
@@ -50,10 +52,10 @@ impl Plugin for SettingsPlugin {
     }
 }
 
-fn register_settings_button(mut toolbar: ResMut<ToolbarRegistry>) {
-    toolbar.register_button(ToolbarItem {
+fn register_settings_button(mut commands: Commands) {
+    commands.spawn(ToolbarItem {
         name: BTN_NAME.to_string(),
-        label: "Settings".to_string(),
+        text: Some("Settings".to_string()),
         icon: Some("\u{f04fe}".to_string()),
         is_active: false,
         docking: Docking::Left,
@@ -64,12 +66,17 @@ fn register_settings_button(mut toolbar: ResMut<ToolbarRegistry>) {
 fn handle_settings_button(
     button_query: Query<(&Interaction, &ToolabarButton), Changed<Interaction>>,
     mut overlay_visible: ResMut<OverlayVisible>,
-    mut toolbar_registry: ResMut<ToolbarRegistry>,
+    mut items_query: Query<&mut ToolbarItem>,
 ) {
     for (interaction, button) in &button_query {
         if button.name == BTN_NAME && *interaction == Interaction::Pressed {
             overlay_visible.0 = !overlay_visible.0;
-            toolbar_registry.update_button_state(BTN_NAME, overlay_visible.0);
+            
+            for mut item in items_query.iter_mut() {
+                if item.name == BTN_NAME {
+                    item.is_active = overlay_visible.0;
+                }
+            }
         }
     }
 }

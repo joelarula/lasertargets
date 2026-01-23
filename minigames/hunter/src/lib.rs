@@ -1,4 +1,5 @@
 pub mod model;
-pub mod plugin;
-
+pub mod common;
+pub mod server;
+pub mod terminal;
  

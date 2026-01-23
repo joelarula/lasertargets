@@ -21,7 +21,7 @@ use crate::plugins::basictarget::BasicTargetPlugin;
 use crate::plugins::network::NetworkPlugin; // Added NetworkPlugin
 use crate::plugins::keyboard::KeyboardPlugin;
 use crate::plugins::mouse::MousePlugin;
-use hunter::plugin::HunterGamePlugin;
+use hunter::common::HunterGamePlugin;
 use snake::plugin::SnakeGamePlugin;
 
 

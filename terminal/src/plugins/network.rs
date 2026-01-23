@@ -4,8 +4,8 @@ use bevy_quinnet::client::{certificate::CertificateVerificationMode, connection:
 use common::config::{CameraConfiguration, ProjectorConfiguration, SceneConfiguration};
 use common::network::{NetworkMessage, SERVER_PORT};
 use common::state::TerminalState;
+use common::toolbar::{Docking, ToolbarItem};
 use std::net::{IpAddr, Ipv6Addr};
-use crate::plugins::toolbar::{ToolbarRegistry, ToolbarItem, Docking};
 
 #[derive(Resource, Debug, Clone)]
 pub struct NetworkingConfiguration {
@@ -100,10 +100,10 @@ fn handle_client_connection_events(
 
 const CONN_BTN_NAME: &str = "connection_status";
 
-fn register_connection_toolbar_button(mut toolbar: ResMut<ToolbarRegistry>) {
-    toolbar.register_button(ToolbarItem {
+fn register_connection_toolbar_button(mut commands: Commands) {
+    commands.spawn(ToolbarItem {
         name: CONN_BTN_NAME.to_string(),
-        label: "Connection".to_string(),
+        text: Some("Connection".to_string()),
         icon: Some("\u{f057}".to_string()), // times-circle icon for disconnected/connecting
         is_active: false,
         docking: Docking::Left,
@@ -113,15 +113,20 @@ fn register_connection_toolbar_button(mut toolbar: ResMut<ToolbarRegistry>) {
 
 fn update_connection_toolbar_button(
     terminal_state: Res<State<TerminalState>>,
-    mut toolbar: ResMut<ToolbarRegistry>,
+    mut items_query: Query<&mut ToolbarItem>,
 ) {
     if terminal_state.is_changed() {
         let (icon, is_active) = match *terminal_state.get() {
             TerminalState::Connected => ("\u{f058}".to_string(), true), // check-circle icon for connected
             TerminalState::Connecting => ("\u{f057}".to_string(), false), // times-circle icon for connecting
         };
-        toolbar.update_button_state(CONN_BTN_NAME, is_active);
-        toolbar.update_button_icon(CONN_BTN_NAME, Some(icon));
+        
+        for mut item in items_query.iter_mut() {
+            if item.name == CONN_BTN_NAME {
+                item.is_active = is_active;
+                item.icon = Some(icon.clone());
+            }
+        }
     }
 }
 

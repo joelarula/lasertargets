@@ -5,17 +5,17 @@ use serde::{Deserialize, Serialize};
 pub enum ServerState {
     #[default]
     Menu,
-    InGame(u16),
+    InGame,
 }
 
 #[derive(States, Debug, Clone, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 pub enum GameState {
     #[default]
     Off,
-    Menu(u16),
-    InGame(u16),
-    Paused(u16),
-    Finished(u16),
+    Menu,
+    InGame,
+    Paused,
+    Finished,
 }
 
 #[derive(States, Debug, Clone, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
