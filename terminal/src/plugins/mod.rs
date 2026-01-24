@@ -8,6 +8,7 @@ pub mod projector;
 pub mod settings;
 pub mod target;
 pub mod basictarget;
-pub mod network; // Added network module
+pub mod network; 
 pub mod keyboard;
 pub mod mouse;
+pub mod game;

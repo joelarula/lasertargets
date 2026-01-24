@@ -3,12 +3,13 @@ use bevy_egui::EguiContexts;
 use bevy_egui::egui;
 use common::config::{SceneConfiguration, ProjectorConfiguration};
 use common::toolbar::Docking;
+use common::toolbar::ItemState;
+use common::toolbar::ToolabarButton;
 use common::toolbar::ToolbarItem;
 
 use crate::plugins::camera::DisplayMode;
 use crate::plugins::{
     calibration::CalibrationSystemSet, 
-    toolbar::{ToolabarButton},
 };
 use bevy::prelude::*;
 use bevy_egui::{ EguiPrimaryContextPass};
@@ -16,6 +17,10 @@ pub struct SettingsPlugin;
 
 
 const BTN_NAME: &str = "settings";
+
+/// Marker component for the settings toolbar button
+#[derive(Component)]
+struct SettingsButton;
 
 #[derive(Resource, Default)]
 pub struct OverlayVisible(pub bool);
@@ -53,29 +58,32 @@ impl Plugin for SettingsPlugin {
 }
 
 fn register_settings_button(mut commands: Commands) {
-    commands.spawn(ToolbarItem {
-        name: BTN_NAME.to_string(),
-        text: Some("Settings".to_string()),
-        icon: Some("\u{f04fe}".to_string()),
-        is_active: false,
-        docking: Docking::Left,
-        button_size: 36.0,
-    });
+    commands.spawn((
+        ToolbarItem {
+            name: BTN_NAME.to_string(),
+            order: 2,
+            text: Some("Settings".to_string()),
+            icon: Some("\u{f04fe}".to_string()),
+            state: ItemState::Off,
+            docking: Docking::Right,
+            button_size: 36.0,
+            ..default()
+        },
+        SettingsButton,
+    ));
 }
 
 fn handle_settings_button(
     button_query: Query<(&Interaction, &ToolabarButton), Changed<Interaction>>,
     mut overlay_visible: ResMut<OverlayVisible>,
-    mut items_query: Query<&mut ToolbarItem>,
+    mut settings_button_query: Query<&mut ToolbarItem, With<SettingsButton>>,
 ) {
     for (interaction, button) in &button_query {
         if button.name == BTN_NAME && *interaction == Interaction::Pressed {
             overlay_visible.0 = !overlay_visible.0;
             
-            for mut item in items_query.iter_mut() {
-                if item.name == BTN_NAME {
-                    item.is_active = overlay_visible.0;
-                }
+            if let Ok(mut item) = settings_button_query.single_mut() {
+                item.state = if overlay_visible.0 { ItemState::On } else { ItemState::Off };
             }
         }
     }
@@ -248,7 +256,7 @@ pub fn overlay_ui_system(
                                         }
                                     });
                                     property_row(ui, "Enabled", |ui| {
-                                        ui.checkbox(&mut projector_config_ref.enabled, "")
+                                        ui.checkbox(&mut projector_config_ref.switched_on, "")
                                     });
                                     property_row(ui, "Resolution", |ui| {
                                         ui.horizontal(|ui| {

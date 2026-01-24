@@ -18,7 +18,7 @@ pub struct ActorLink{
 #[derive(Message)]
 pub struct RegisterActorEvent {
     pub client_id: ClientId,
-    pub game_id: Uuid,
+    pub game_session_id: Uuid,
     pub actor: Actor,
 }
 
@@ -76,7 +76,7 @@ fn handle_register_actor_event(
 ) {
     for event in register_actor_events.read() {
         
-        if let Some((game_entity, _, maybe_children)) = game_sessions.iter().find(|(_, gs, _)| gs.uuid == event.game_id) {
+        if let Some((game_entity, _, maybe_children)) = game_sessions.iter().find(|(_, gs, _)| gs.session_id == event.game_session_id) {
             let actor_link = ActorLink {
                 client_id: event.client_id,
                 actor: event.actor.clone(),
@@ -92,19 +92,19 @@ fn handle_register_actor_event(
             }
 
             actor_updates.write(GameActorUpdateEvent {
-                game_uuid: event.game_id,
+                game_uuid: event.game_session_id,
                 actors,
             });
 
             actor_reg_results.write(ActorRegistrationResultEvent {
                 client_id: event.client_id,
-                game_uuid: event.game_id,
+                game_uuid: event.game_session_id,
                 result: Ok(event.actor.clone()),
             });
         }  else {
             actor_reg_results.write(ActorRegistrationResultEvent {
                 client_id: event.client_id,
-                game_uuid: event.game_id,
+                game_uuid: event.game_session_id,
                 result: Err("Game session not found".to_string()),
             });
         }
@@ -121,7 +121,7 @@ fn handle_unregister_actor_event(
 ) {
     for event in unregister_actor_events.read() {
 
-        if let Some((game_entity, _, maybe_children)) = game_sessions.iter().find(|(_, gs, _)| gs.uuid == event.game_uuid) {
+        if let Some((game_entity, _, maybe_children)) = game_sessions.iter().find(|(_, gs, _)| gs.session_id == event.game_uuid) {
 
             let mut remaining: Vec<ActorLink> = Vec::new();
             let mut removed_actor: Option<Actor> = None;

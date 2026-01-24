@@ -1,6 +1,6 @@
 use bevy::prelude::*;
-use common::toolbar::{Docking, ToolbarItem};
-use log::info;use crate::plugins::toolbar::{ToolabarButton};
+use common::toolbar::{Docking, ItemState, ToolabarButton, ToolbarItem};
+use log::info;
 use crate::plugins::scene::SceneData;
 use crate::plugins::basictarget::BasicTarget;
 use common::path::PathRenderable;
@@ -34,11 +34,13 @@ impl Plugin for TargetPlugin {
 fn register_target(mut commands: Commands) {
     commands.spawn(ToolbarItem {
         name: BTN_NAME.to_string(),
+        order: 0,
         text: Some("Target".to_string()),
         icon: Some("\u{f140}".to_string()), // Target/crosshairs icon
-        is_active: false,
+        state: ItemState::Off,
         docking: Docking::Bottom,
         button_size: 36.0,
+        ..default()
     });
 }
 

@@ -75,8 +75,9 @@ fn test_get_projector_view_dimensions() {
             scale: Vec3::ONE,
         },
         angle: 60.0,
-        enabled: true,
+        switched_on: true,
         locked_to_scene: false,
+        connected: false
     };
 
     let scene_setup = SceneSetup::new(scene_config, camera_config, projector_config);
@@ -163,8 +164,9 @@ fn test_get_common_viewport_stats_full_overlap() {
             scale: Vec3::ONE,
         },
         angle: 90.0,
-        enabled: true,
+        switched_on: true,
         locked_to_scene: false,
+        connected: false
     };
 
     let scene_setup = SceneSetup::new(scene_config, camera_config, projector_config);
@@ -223,8 +225,9 @@ fn test_get_common_viewport_stats_partial_overlap() {
             scale: Vec3::ONE,
         },
         angle: projector_angle,
-        enabled: true,
+        switched_on: true,
         locked_to_scene: false,
+        connected: false
     };
 
     // Camera range x: [0, 2]
@@ -259,8 +262,9 @@ fn test_get_common_viewport_stats_partial_overlap() {
             scale: Vec3::ONE,
         },
         angle: projector_angle,
-        enabled: true,
+        switched_on: true,
         locked_to_scene: false,
+        connected: false
     };
 
     let scene_setup = SceneSetup::new(

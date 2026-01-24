@@ -53,7 +53,8 @@ pub struct ProjectorConfiguration {
     pub angle: f32,
     pub origin: ConfigTransform,
     // enable or disable projector rendering
-    pub enabled: bool,
+    pub switched_on: bool,
+    pub connected: bool,
     pub locked_to_scene: bool,
 }
 
@@ -72,10 +73,11 @@ impl Default for ProjectorConfiguration {
                     bevy::prelude::Vec3::Y,
                 )
                 .rotation,
-                scale: bevy::prelude::Vec3::ONE,
+                scale: bevy::prelude::Vec3::ONE,      
             },
-            enabled: false,
+            switched_on: false,
             locked_to_scene: true,
+            connected: false
         }
     }
 }

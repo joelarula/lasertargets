@@ -9,6 +9,7 @@ path = "src/lib.rs"
 [dependencies]
 bevy = { workspace = true }
 log = { workspace = true }
+bevy_quinnet = { workspace = true }
 common = { path = "../../common" }
 serde = { workspace = true }
 seldom_state = { workspace = true }

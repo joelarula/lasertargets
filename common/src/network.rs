@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
 
-    actor::ActorMetaData, config::{CameraConfiguration, ProjectorConfiguration, SceneConfiguration}, game::GameSession, scene::SceneSetup
+    actor::ActorMetaData, config::{CameraConfiguration, ProjectorConfiguration, SceneConfiguration}, game::GameSession, scene::SceneSetup, state::GameState
 };
 
 /// Network messages exchanged between server and terminal
@@ -47,12 +47,15 @@ pub enum NetworkMessage {
 
     // Game Configuration
     QueryGameSession,
-    GameSessionResponse(GameSession),
-    InitGameSession(u16,String),
+    GameSessionCreated( GameSession),
+    GameSessionUpdate(GameSession),
+    ExitGameSession(Uuid),
+    /// Initialize a new game session with session_id, game_id, and initial GameState
+    InitGameSession(Uuid, u16, GameState),
     StartGameSession(Uuid),
     PauseGameSession(Uuid),
     ResumeGameSession(Uuid),
-    StopGameSession(Uuid),
+    FinishGameSession(Uuid),
     ReplyGameSession(Uuid),
 
     // Actor 

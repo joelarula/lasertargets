@@ -153,7 +153,7 @@ fn draw_projector_billboard(
     camera_query: Query<&GlobalTransform, With<Camera3d>>,
     calibration_visible: Res<CalibrationVisible>,
 ) {
-    if !calibration_visible.0 || !projector_config.enabled {
+    if !calibration_visible.0 || !projector_config.switched_on {
         return;
     }
 

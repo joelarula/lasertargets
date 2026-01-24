@@ -3006,6 +3006,7 @@ name = "hunter"
 version = "0.1.0"
 dependencies = [
  "bevy",
+ "bevy_quinnet",
  "common",
  "log",
  "seldom_state",

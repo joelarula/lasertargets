@@ -7,7 +7,6 @@ use std::sync::{Arc, Mutex};
 use std::sync::mpsc::{self, Sender};
 use std::thread;
 
-/// Shared buffer for laser points - double buffered for smooth rendering
 #[derive(Resource, Clone)]
 pub struct LaserPointBuffer {
     points: Arc<Mutex<Vec<HeliosPoint>>>,
@@ -26,6 +25,7 @@ impl Default for LaserPointBuffer {
 pub struct ProjectorDacController {
     pub controller: Option<HeliosDacController>,
     initialized: bool,
+    switched_on: bool,
     thread_running: bool,
     shutdown_sender: Option<Sender<()>>,
 }
@@ -35,6 +35,7 @@ impl Default for ProjectorDacController {
         Self {
             controller: None,
             initialized: false,
+            switched_on: false,
             thread_running: false,
             shutdown_sender: None,
         }
@@ -46,7 +47,7 @@ pub struct ProjectorPlugin;
 impl Plugin for ProjectorPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(ProjectorConfiguration {
-            enabled: true, // Enable by default for testing
+            switched_on: true, // Enable by default for testing
             ..Default::default()
         })
             .insert_resource(ProjectorDacController::default())
@@ -62,19 +63,20 @@ impl Plugin for ProjectorPlugin {
 fn initialize_projector_dac(
     mut dac_controller: ResMut<ProjectorDacController>,
     point_buffer: Res<LaserPointBuffer>,
+    projector_config: Res<ProjectorConfiguration>,
 ) {
     info!("Initializing Helios DAC controller...");
     match HeliosDacController::new() {
         Ok(mut controller) => {
             info!("Helios DAC library loaded successfully");
-            
+
             // Try to open devices with retries
             let max_retries = 3;
             let mut devices_opened = false;
-            
+
             for attempt in 1..=max_retries {
                 info!("Attempting to open Helios DAC devices (attempt {}/{})", attempt, max_retries);
-                
+
                 match controller.open_devices() {
                     Ok(num_devices) if num_devices > 0 => {
                         info!("✓ Helios DAC initialized: {} devices found and opened", num_devices);
@@ -101,12 +103,12 @@ fn initialize_projector_dac(
                     }
                 }
             }
-            
+
             if !devices_opened {
                 error!("✗ Failed to open Helios DAC after {} attempts. Is the device connected?", max_retries);
                 return;
             }
-            
+
             // Verify device is actually responding with a status check
             match controller.get_status(0) {
                 Ok(_) => {
@@ -117,21 +119,28 @@ fn initialize_projector_dac(
                     error!("   Attempting to continue anyway, but laser output may not work.");
                 }
             }
-            
+
             // Open the shutter to enable laser output
             if let Err(e) = controller.set_shutter(0, true) {
                 warn!("Failed to open laser shutter: {}", e);
             } else {
                 info!("✓ Laser shutter opened");
             }
-            
+
+            // Create shared switched_on flag for thread
+            let switched_on_flag = Arc::new(Mutex::new(projector_config.switched_on));
             // Start background thread for continuous DAC output
             info!("✓ Starting DAC output thread...");
-            let shutdown_sender = start_dac_output_thread(controller, point_buffer.clone());
-            
+            let shutdown_sender = start_dac_output_thread(controller, point_buffer.clone(), switched_on_flag.clone());
+
             dac_controller.thread_running = true;
             dac_controller.initialized = true;
             dac_controller.shutdown_sender = Some(shutdown_sender);
+            dac_controller.switched_on = projector_config.switched_on;
+            // Store the Arc in the controller for update_projector to use
+            // (add a new field if needed, or use a static/global if you want to avoid changing the struct)
+            // For now, we will use a static for demonstration (not best practice for multi-projector, but works for single instance)
+            set_switched_on_arc(switched_on_flag);
             info!("✓ Projector initialization complete");
         }
         Err(e) => {
@@ -141,43 +150,49 @@ fn initialize_projector_dac(
 }
 
 /// Start background thread that continuously sends frames to the DAC
-fn start_dac_output_thread(controller: HeliosDacController, point_buffer: LaserPointBuffer) -> Sender<()> {
+fn start_dac_output_thread(
+    controller: HeliosDacController,
+    point_buffer: LaserPointBuffer,
+    switched_on: Arc<Mutex<bool>>,
+) -> Sender<()> {
     let (shutdown_tx, shutdown_rx) = mpsc::channel();
     let shutdown_tx_clone = shutdown_tx.clone();
-    
+
     thread::spawn(move || {
         info!("DAC output thread started");
-        let pps = 15000; // Points per second - reduced for better galvo control
-        let flags = 0; // Default looping mode - frame plays continuously until new frame arrives
+        let pps = 15000;
+        let flags = 0;
         let mut frame_count = 0;
         let mut consecutive_errors = 0;
         let mut consecutive_write_failures = 0;
         let max_consecutive_errors = 100;
         let max_write_failures = 50;
-        
+
         loop {
-            // Check for shutdown signal
             if shutdown_rx.try_recv().is_ok() {
                 info!("✓ DAC output thread received shutdown signal, cleaning up...");
-                // Controller will be dropped here, calling close_devices()
                 drop(controller);
                 info!("✓ DAC output thread terminated cleanly");
                 break;
             }
-            
+
             // Get current points from buffer first
             let points = {
                 let buffer = point_buffer.points.lock().unwrap();
                 buffer.clone()
             };
-            
-            // Wait for DAC to be ready
+
+            // Explicitly check switched_on flag
+            let laser_enabled = {
+                let on = switched_on.lock().unwrap();
+                *on
+            } && !points.is_empty() && points.iter().any(|p| p.r > 0 || p.g > 0 || p.b > 0);
+
             match controller.get_status(0) {
                 Ok(true) => {
-                    consecutive_errors = 0; // Reset error counter on success
-                    
-                    if !points.is_empty() {
-                        // Send frame to DAC immediately when ready
+                    consecutive_errors = 0;
+
+                    if laser_enabled {
                         match controller.write_frame_native(0, pps, flags, &points) {
                             Ok(_) => {
                                 consecutive_write_failures = 0;
@@ -191,18 +206,16 @@ fn start_dac_output_thread(controller: HeliosDacController, point_buffer: LaserP
                                 if consecutive_write_failures == 1 || consecutive_write_failures % 10 == 0 {
                                     error!("✗ DAC write failed (failure #{}): {}. DAC may not be responding.", consecutive_write_failures, e);
                                 }
-                                
                                 if consecutive_write_failures >= max_write_failures {
                                     error!("✗ CRITICAL: {} consecutive write failures. DAC connection appears dead. Thread exiting.", consecutive_write_failures);
                                     error!("   Please restart the server to reinitialize the DAC.");
                                     break;
                                 }
-                                
                                 thread::sleep(std::time::Duration::from_millis(50));
                             }
                         }
                     } else {
-                        // No points, send a blank frame to center
+                        // Projector is switched off: always send a blanked frame
                         let blank = vec![HeliosPoint::blanked(2048, 2048)];
                         if let Err(e) = controller.write_frame_native(0, pps, flags, &blank) {
                             consecutive_write_failures += 1;
@@ -216,8 +229,7 @@ fn start_dac_output_thread(controller: HeliosDacController, point_buffer: LaserP
                     }
                 }
                 Ok(false) => {
-                    consecutive_errors = 0; // Reset on busy (not an error)
-                    // DAC not ready yet - actively wait with minimal sleep
+                    consecutive_errors = 0;
                     thread::sleep(std::time::Duration::from_micros(100));
                 }
                 Err(e) => {
@@ -229,15 +241,11 @@ fn start_dac_output_thread(controller: HeliosDacController, point_buffer: LaserP
                     } else if consecutive_errors % 100 == 0 {
                         error!("✗ DAC status check failed {} times. Connection appears dead.", consecutive_errors);
                     }
-                    
-                    // If too many consecutive errors, the DAC is probably not connected
                     if consecutive_errors >= max_consecutive_errors * 5 {
                         error!("✗ CRITICAL: {} consecutive status check failures. DAC appears disconnected. Thread exiting.", consecutive_errors);
                         error!("   Please check USB connection and restart the server.");
                         break;
                     }
-                    
-                    // Slow down polling on errors
                     if consecutive_errors > max_consecutive_errors {
                         thread::sleep(std::time::Duration::from_millis(100));
                     } else {
@@ -246,10 +254,9 @@ fn start_dac_output_thread(controller: HeliosDacController, point_buffer: LaserP
                 }
             }
         }
-        
         error!("✗ DAC output thread terminated due to connection failure.");
     });
-    
+
     shutdown_tx_clone
 }
 
@@ -276,15 +283,36 @@ fn shutdown_projector_dac(
 fn update_projector(
     mut projector_config: ResMut<ProjectorConfiguration>,
     scene_setup: Res<SceneSetup>,
+    mut dac_controller: ResMut<ProjectorDacController>,
 ) {
+    // Synchronize DAC controller switched_on with projector_config.switched_on
+    if projector_config.is_changed() {
+        dac_controller.switched_on = projector_config.switched_on;
+        // Update the shared Arc<bool> for the DAC thread
+        if let Some(flag) = get_switched_on_arc() {
+            let mut on = flag.lock().unwrap();
+            *on = projector_config.switched_on;
+        }
+    }
+
     if projector_config.is_changed() || scene_setup.is_changed() {
         if projector_config.locked_to_scene {
             // Lock projector to scene center
             let scene_center = scene_setup.scene.origin.translation;
-            let new_rotation = Transform::from_translation(projector_config.origin.translation)
+            let _new_rotation = Transform::from_translation(projector_config.origin.translation)
                 .looking_at(scene_center, Vec3::Y).rotation;
         }
     }
+}
+
+// --- Static for sharing switched_on Arc between systems and thread (single projector only) ---
+use std::sync::OnceLock;
+static SWITCHED_ON_ARC: OnceLock<Arc<Mutex<bool>>> = OnceLock::new();
+fn set_switched_on_arc(flag: Arc<Mutex<bool>>) {
+    let _ = SWITCHED_ON_ARC.set(flag);
+}
+fn get_switched_on_arc() -> Option<Arc<Mutex<bool>>> {
+    SWITCHED_ON_ARC.get().cloned()
 }
 
 /// Update the point buffer with current UniversalPath entities
@@ -295,7 +323,7 @@ fn update_point_buffer(
     path_query: Query<(&UniversalPath, &GlobalTransform)>,
 ) {
     // Only update buffer if projector is enabled
-    if !projector_config.enabled {
+    if !projector_config.switched_on {
         return;
     }
     

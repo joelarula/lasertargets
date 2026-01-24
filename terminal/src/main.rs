@@ -3,11 +3,13 @@ use bevy::prelude::*;
 use bevy_egui::EguiPlugin;
 use common::game::GameRegistryPlugin;
 use common::scene::SceneSetupPlugin;
-use common::state::TerminalState;
+use common::state::{ServerState, TerminalState};
+use hunter::terminal::HunterTerminalPlugin;
 // Removed unused import: use log::info;
 
 mod plugins;
 mod util;
+use crate::plugins::game::GamePlugin;
 use crate::plugins::instructions::InstructionsPlugin;
 use crate::plugins::config::ConfigPlugin;
 use crate::plugins::camera::CameraPlugin;
@@ -44,6 +46,7 @@ fn main() {
             ..Default::default()
         })
     )
+    .init_state::<ServerState>()
     .init_state::<TerminalState>()
     .add_plugins(NetworkPlugin) // Add our new network plugin
     .add_plugins(EguiPlugin::default())
@@ -62,7 +65,9 @@ fn main() {
     .add_plugins(KeyboardPlugin)
     .add_plugins(MousePlugin)
     .add_plugins(GameRegistryPlugin)
+    .add_plugins(GamePlugin)
     .add_plugins(HunterGamePlugin)
+    .add_plugins(HunterTerminalPlugin)
     .add_plugins(SnakeGamePlugin);
 
     app.run();

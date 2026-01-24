@@ -8,7 +8,7 @@ use bevy_quinnet::server::{
 use bevy_quinnet::shared::ClientId;
 use common::actor::{Actor, ActorMetaData};
 use common::config::{CameraConfiguration, ProjectorConfiguration, SceneConfiguration};
-use common::game::GameSession;
+use common::game::{ExitGameEvent, GameSession, GameSessionCreated, GameSessionUpdate};
 use common::network::{NetworkMessage, SERVER_HOST, SERVER_PORT};
 use common::scene::SceneSetup;
 use common::state::{GameState, ServerState};
@@ -20,8 +20,8 @@ use crate::plugins::actor::{
     RegisterActorEvent, UnregisterActorEvent,
 };
 use crate::plugins::game::{
-    GameSessionCreated, InitGameSessionEvent, PauseGameEvent, ResumeGameEvent, StartGameEvent,
-    StopGameEvent,
+    InitGameSessionEvent, PauseGameEvent, ResumeGameEvent, StartGameEvent,
+    FinishGameEvent,
 };
 
 #[derive(Resource, Debug, Clone)]
@@ -225,7 +225,7 @@ fn handle_actor_messages(
                 };
                 register_actor_events.write(RegisterActorEvent {
                     client_id: msg.client_id,
-                    game_id: *game,
+                    game_session_id: *game,
                     actor,
                 });
             }
@@ -248,16 +248,20 @@ fn handle_game_session_messages(
     mut init_game_session_events: MessageWriter<InitGameSessionEvent>,
     mut pause_game_events: MessageWriter<PauseGameEvent>,
     mut resume_game_events: MessageWriter<ResumeGameEvent>,
-    mut stop_game_events: MessageWriter<StopGameEvent>,
+    mut finish_game_events: MessageWriter<FinishGameEvent>,
+    mut exit_game_events: MessageWriter<ExitGameEvent>,
+    mut next_server_state: ResMut<NextState<ServerState>>,
+    mut game_sessions: Query<&mut GameSession>,
+    mut broadcast_events: MessageWriter<GameSessionUpdate>,
 ) {
     for msg in messages.read() {
         match &msg.message {
-            NetworkMessage::InitGameSession(game_id, game_name) => {
-                info!("Received InitGameSession for: {}", game_id);
+            NetworkMessage::InitGameSession(session_uuid, game_id, initial_state) => {
+                info!("Received InitGameSession for game ID: {} with initial state: {:?}", game_id, initial_state);
                 init_game_session_events.write(InitGameSessionEvent {
                     game_id: *game_id,
-                    game_name: game_name.clone(),
-                    game_session_uuid: Uuid::new_v4(),
+                    game_session_uuid: *session_uuid,
+                    initial_state: initial_state.clone(),
                 });
             }
             NetworkMessage::StartGameSession(uuid) => {
@@ -278,9 +282,16 @@ fn handle_game_session_messages(
                     game_session_uuid: *uuid,
                 });
             }
-            NetworkMessage::StopGameSession(uuid) => {
-                info!("Received StopGameSession for: {}", uuid);
-                stop_game_events.write(StopGameEvent {
+            NetworkMessage::FinishGameSession(uuid) => {
+                info!("Received FinishGameSession for: {}", uuid);
+                finish_game_events.write(FinishGameEvent {
+                    game_session_uuid: *uuid,
+                });
+            }
+            NetworkMessage::ExitGameSession(uuid) => {
+                info!("Received ExitGameSession for: {}", uuid);
+                // Set server state to Menu and session to Finished
+                exit_game_events.write(ExitGameEvent {
                     game_session_uuid: *uuid,
                 });
             }
@@ -465,7 +476,7 @@ fn send_game_session_updates(
 
         // If no actors are registered yet, broadcast to all clients
         if recipients.is_empty() {
-            let message = NetworkMessage::GameSessionResponse(game_session.clone());
+            let message = NetworkMessage::GameSessionUpdate(game_session.clone());
             let payload = message.to_bytes().expect("Serialize GameSessionResponse");
             broadcast_payload_and_log_error(
                 endpoint,
@@ -475,7 +486,7 @@ fn send_game_session_updates(
             continue;
         }
 
-        let message = NetworkMessage::GameSessionResponse(game_session.clone());
+        let message = NetworkMessage::GameSessionUpdate(game_session.clone());
         let payload = message.to_bytes().expect("Serialize GameSessionResponse");
 
         // Send only to clients that have actors in this session
@@ -529,7 +540,7 @@ fn handle_game_session_created(
     };
 
     for created in game_sessions.read() {
-        let message = NetworkMessage::GameSessionResponse(created.game_session.clone());
+        let message = NetworkMessage::GameSessionCreated(created.game_session.clone());
         let payload = message
             .to_bytes()
             .expect("Serialize GameSessionResponse (created)");

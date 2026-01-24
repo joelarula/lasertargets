@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use common::toolbar::{Docking, ToolbarItem};
+use common::toolbar::{Docking, ItemState, ToolabarButton, ToolbarItem};
 use std::collections::HashMap;
 
 // Button color palette - traditional mild scheme for black background
@@ -18,10 +18,6 @@ pub struct ToolbarPlugin;
 #[derive(Component)]
 struct ToolbarContainer;
 
-#[derive(Component)]
-pub struct ToolabarButton {
-    pub name: String,
-}
 
 
 #[derive(Resource)]
@@ -62,15 +58,13 @@ fn rebuild_toolbar(
     items_query: Query<&ToolbarItem>,
     toolbar_query: Query<Entity, With<ToolbarContainer>>,
     nerd_font: Option<Res<NerdFont>>,
-    // Detect changes to ToolbarItem entities
     changed_items: Query<(), Or<(Changed<ToolbarItem>, Added<ToolbarItem>)>>,
 ) {
-    // Only rebuild if toolbar items have changed
+
     if changed_items.is_empty() {
         return;
     }
 
-    // Despawn all toolbar containers and their children
     for toolbar_entity in toolbar_query.iter() {
         commands.entity(toolbar_entity).despawn();
     }
@@ -91,6 +85,7 @@ fn create_toolbar_ui(
     let mut right_buttons = Vec::new();
     let mut top_buttons = Vec::new();
     let mut bottom_buttons = Vec::new();
+    let mut statusbar_buttons = Vec::new();
     
     // Build a hashmap for quick lookup
     let mut buttons_map = HashMap::new();
@@ -102,6 +97,7 @@ fn create_toolbar_ui(
             Docking::Right => right_buttons.push(item.name.clone()),
             Docking::Top => top_buttons.push(item.name.clone()),
             Docking::Bottom => bottom_buttons.push(item.name.clone()),
+            Docking::StatusBar => statusbar_buttons.push(item.name.clone()),
         }
     }
     
@@ -109,6 +105,7 @@ fn create_toolbar_ui(
     create_docked_toolbar(commands, &buttons_map, nerd_font, &right_buttons, Docking::Right);
     create_docked_toolbar(commands, &buttons_map, nerd_font, &top_buttons, Docking::Top);
     create_docked_toolbar(commands, &buttons_map, nerd_font, &bottom_buttons, Docking::Bottom);
+    create_docked_toolbar(commands, &buttons_map, nerd_font, &statusbar_buttons, Docking::StatusBar);
 }
 
 fn create_docked_toolbar(
@@ -155,6 +152,19 @@ fn create_docked_toolbar(
             column_gap: Val::Px(10.0),
             ..default()
         },
+        Docking::StatusBar => Node {
+            position_type: PositionType::Absolute,
+            left: Val::Px(0.0),
+            right: Val::Px(0.0),
+            bottom: Val::Px(0.0),
+            height: Val::Px(28.0),
+            flex_direction: FlexDirection::Row,
+            justify_content: JustifyContent::SpaceBetween,
+            align_items: AlignItems::Center,
+            padding: UiRect::horizontal(Val::Px(10.0)),
+            column_gap: Val::Px(8.0),
+            ..default()
+        },
     };
     
     commands
@@ -167,7 +177,7 @@ fn create_docked_toolbar(
         .with_children(|parent| {
             for button_name in button_names {
                 if let Some(button_handler) = buttons_map.get(button_name) {
-                    let initial_color = if button_handler.is_active {
+                    let initial_color = if button_handler.state == ItemState::On {
                         button_colors::ACTIVE
                     } else {
                         button_colors::INACTIVE
@@ -217,7 +227,7 @@ fn update_button_states(
     // Build a quick lookup map
     let mut items_map = HashMap::new();
     for item in items_query.iter() {
-        items_map.insert(item.name.clone(), item.is_active);
+        items_map.insert(item.name.clone(), item.state == ItemState::On);
     }
 
     // Update button colors based on item state
@@ -274,4 +284,3 @@ fn update_button_text(
         }
     }
 }
-

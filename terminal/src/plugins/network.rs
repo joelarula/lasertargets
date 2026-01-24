@@ -1,17 +1,27 @@
+use common::state::{GameState, ServerState};
 use bevy::prelude::*;
 use bevy_quinnet::client::connection::ClientSideConnection;
 use bevy_quinnet::client::{certificate::CertificateVerificationMode, connection::ClientAddrConfiguration, ClientConnectionConfiguration, QuinnetClient, QuinnetClientPlugin};
 use common::config::{CameraConfiguration, ProjectorConfiguration, SceneConfiguration};
 use common::network::{NetworkMessage, SERVER_PORT};
 use common::state::TerminalState;
-use common::toolbar::{Docking, ToolbarItem};
+use common::toolbar::{Docking, ItemState, ToolbarItem};
 use std::net::{IpAddr, Ipv6Addr};
+use common::game::{GameSessionUpdate, GameSessionCreated};
+
+const CONN_BTN_NAME: &str = "connection_status";
+
+/// Marker component for the connection status toolbar button
+#[derive(Component)]
+struct ConnectionButton;
 
 #[derive(Resource, Debug, Clone)]
 pub struct NetworkingConfiguration {
     pub ip: IpAddr,
     pub port: u16,
 }
+
+
 
 impl Default for NetworkingConfiguration {
     fn default() -> Self {
@@ -30,15 +40,41 @@ impl Plugin for NetworkPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(QuinnetClientPlugin::default())
             .init_resource::<NetworkingConfiguration>()
-            .add_systems(Startup, (start_client, register_connection_toolbar_button))
-            .add_systems(Update, (
-                handle_client_connection_events, 
-                update_connection_toolbar_button,
-                receive_server_messages,
-                send_projector_config_updates,
-                send_camera_config_updates,
-                send_scene_config_updates,
-            ));
+            .add_systems(Startup, start_client)
+            .add_systems(Startup, register_connection_toolbar_button)
+            .add_systems(Update, handle_client_connection_events)
+            .add_systems(Update, update_connection_toolbar_button)
+            .add_systems(Update, receive_server_messages)
+            .add_systems(Update, send_projector_config_updates)
+            .add_systems(Update, send_camera_config_updates)
+            .add_systems(Update, send_scene_config_updates)
+            .add_systems(Update, handle_game_session_created_network)
+            .add_systems(Update, handle_game_session_update_network)
+            .add_systems(Update, handle_server_and_game_state_update_network);
+    }
+}
+/// Listen for ServerStateUpdate and GameStateUpdate messages and update local state/resources
+fn handle_server_and_game_state_update_network(
+    mut client: ResMut<QuinnetClient>,
+    mut next_server_state: ResMut<NextState<ServerState>>,
+    mut next_game_state: ResMut<NextState<GameState>>,
+) {
+    if let Some(connection) = client.get_connection_mut() {
+        if let Some(channel_id) = connection.default_channel() {
+            while let Some(bytes) = connection.try_receive_payload(channel_id) {
+                if let Ok(msg) = NetworkMessage::from_bytes(&bytes) {
+                    match msg {
+                        NetworkMessage::ServerStateUpdate(server_state) => {
+                            next_server_state.set(server_state);
+                        }
+                        NetworkMessage::GameStateUpdate(game_state) => {
+                            next_game_state.set(game_state);
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -98,34 +134,36 @@ fn handle_client_connection_events(
     }
 }
 
-const CONN_BTN_NAME: &str = "connection_status";
 
 fn register_connection_toolbar_button(mut commands: Commands) {
-    commands.spawn(ToolbarItem {
-        name: CONN_BTN_NAME.to_string(),
-        text: Some("Connection".to_string()),
-        icon: Some("\u{f057}".to_string()), // times-circle icon for disconnected/connecting
-        is_active: false,
-        docking: Docking::Left,
-        button_size: 36.0,
-    });
+    commands.spawn((
+        ToolbarItem {
+            name: CONN_BTN_NAME.to_string(),
+            order: 0,
+            text: Some("Connection".to_string()),
+            icon: Some("\u{f057}".to_string()), // times-circle icon for disconnected/connecting
+            state: ItemState::Disabled,
+            docking: Docking::Right,
+            button_size: 36.0,
+            ..default()
+        },
+        ConnectionButton,
+    ));
 }
 
 fn update_connection_toolbar_button(
     terminal_state: Res<State<TerminalState>>,
-    mut items_query: Query<&mut ToolbarItem>,
+    mut button_query: Query<&mut ToolbarItem, With<ConnectionButton>>,
 ) {
     if terminal_state.is_changed() {
-        let (icon, is_active) = match *terminal_state.get() {
-            TerminalState::Connected => ("\u{f058}".to_string(), true), // check-circle icon for connected
-            TerminalState::Connecting => ("\u{f057}".to_string(), false), // times-circle icon for connecting
+        let (icon, state) = match *terminal_state.get() {
+            TerminalState::Connected => ("\u{f058}".to_string(), ItemState::On), // check-circle icon for connected
+            TerminalState::Connecting => ("\u{f057}".to_string(), ItemState::Disabled), // times-circle icon for connecting
         };
         
-        for mut item in items_query.iter_mut() {
-            if item.name == CONN_BTN_NAME {
-                item.is_active = is_active;
-                item.icon = Some(icon.clone());
-            }
+        if let Ok(mut item) = button_query.single_mut() {
+            item.state = state;
+            item.icon = Some(icon);
         }
     }
 }
@@ -190,18 +228,6 @@ fn receive_server_messages(
     }
 }
 
-/// Helper function to send a payload and log an error if it fails.
-fn send_payload_and_log_error(
-    connection: &mut ClientSideConnection,
-    payload: Vec<u8>,
-    error_context: &str,
-) {
-    if let Err(e) = connection.send_payload(payload) {
-        warn!("Failed to send {}: {:?}", error_context, e);
-    } else {
-        debug!("Sent {}", error_context);
-    }
-}
 
 fn send_projector_config_updates(
     projector_config: Res<ProjectorConfiguration>,
@@ -251,3 +277,45 @@ fn send_scene_config_updates(
     }
 }
 
+fn handle_game_session_created_network(
+    mut client: ResMut<QuinnetClient>,
+    mut writer: MessageWriter<GameSessionCreated>,
+) {
+    if let Some(connection) = client.get_connection_mut() {
+        if let Some(channel_id) = connection.default_channel() {
+            while let Some(bytes) = connection.try_receive_payload(channel_id) {
+                if let Ok(NetworkMessage::GameSessionCreated(session)) = NetworkMessage::from_bytes(&bytes) {
+                    writer.write(GameSessionCreated { game_session: session });
+                }
+            }
+        }
+    }
+}
+
+fn handle_game_session_update_network(
+    mut client: ResMut<QuinnetClient>,
+    mut writer: MessageWriter<GameSessionUpdate>,
+) {
+    if let Some(connection) = client.get_connection_mut() {
+        if let Some(channel_id) = connection.default_channel() {
+            while let Some(bytes) = connection.try_receive_payload(channel_id) {
+                if let Ok(NetworkMessage::GameSessionUpdate(session)) = NetworkMessage::from_bytes(&bytes) {
+                    writer.write(GameSessionUpdate { game_session: session });
+                }
+            }
+        }
+    }
+}
+
+/// Helper function to send a payload and log an error if it fails.
+fn send_payload_and_log_error(
+    connection: &mut ClientSideConnection,
+    payload: Vec<u8>,
+    error_context: &str,
+) {
+    if let Err(e) = connection.send_payload(payload) {
+        warn!("Failed to send {}: {:?}", error_context, e);
+    } else {
+        debug!("Sent {}", error_context);
+    }
+}
