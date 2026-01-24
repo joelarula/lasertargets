@@ -6,6 +6,12 @@ use crate::dac::helios::{HeliosDacController, HeliosPoint, HELIOS_FLAGS_DEFAULT,
 use std::sync::{Arc, Mutex};
 use std::sync::mpsc::{self, Sender};
 use std::thread;
+use std::sync::OnceLock;
+
+
+static CONNECTED_ARC: OnceLock<Arc<Mutex<bool>>> = OnceLock::new();
+
+static SWITCHED_ON_ARC: OnceLock<Arc<Mutex<bool>>> = OnceLock::new();
 
 #[derive(Resource, Clone)]
 pub struct LaserPointBuffer {
@@ -63,7 +69,7 @@ impl Plugin for ProjectorPlugin {
 fn initialize_projector_dac(
     mut dac_controller: ResMut<ProjectorDacController>,
     point_buffer: Res<LaserPointBuffer>,
-    projector_config: Res<ProjectorConfiguration>,
+    mut projector_config: ResMut<ProjectorConfiguration>,
 ) {
     info!("Initializing Helios DAC controller...");
     match HeliosDacController::new() {
@@ -127,20 +133,26 @@ fn initialize_projector_dac(
                 info!("✓ Laser shutter opened");
             }
 
-            // Create shared switched_on flag for thread
+            // Create shared switched_on and connected flags for thread
             let switched_on_flag = Arc::new(Mutex::new(projector_config.switched_on));
+            let connected_flag = Arc::new(Mutex::new(true));
             // Start background thread for continuous DAC output
             info!("✓ Starting DAC output thread...");
-            let shutdown_sender = start_dac_output_thread(controller, point_buffer.clone(), switched_on_flag.clone());
+            let shutdown_sender = start_dac_output_thread(
+                controller,
+                point_buffer.clone(),
+                switched_on_flag.clone(),
+                connected_flag.clone(),
+            );
 
             dac_controller.thread_running = true;
             dac_controller.initialized = true;
             dac_controller.shutdown_sender = Some(shutdown_sender);
             dac_controller.switched_on = projector_config.switched_on;
-            // Store the Arc in the controller for update_projector to use
-            // (add a new field if needed, or use a static/global if you want to avoid changing the struct)
-            // For now, we will use a static for demonstration (not best practice for multi-projector, but works for single instance)
             set_switched_on_arc(switched_on_flag);
+            set_connected_arc(connected_flag);
+            // Set ProjectorConfiguration.connected to match initialized
+            projector_config.connected = dac_controller.initialized;
             info!("✓ Projector initialization complete");
         }
         Err(e) => {
@@ -154,6 +166,7 @@ fn start_dac_output_thread(
     controller: HeliosDacController,
     point_buffer: LaserPointBuffer,
     switched_on: Arc<Mutex<bool>>,
+    connected: Arc<Mutex<bool>>,
 ) -> Sender<()> {
     let (shutdown_tx, shutdown_rx) = mpsc::channel();
     let shutdown_tx_clone = shutdown_tx.clone();
@@ -173,6 +186,8 @@ fn start_dac_output_thread(
                 info!("✓ DAC output thread received shutdown signal, cleaning up...");
                 drop(controller);
                 info!("✓ DAC output thread terminated cleanly");
+                let mut connected = connected.lock().unwrap();
+                *connected = false;
                 break;
             }
 
@@ -209,6 +224,8 @@ fn start_dac_output_thread(
                                 if consecutive_write_failures >= max_write_failures {
                                     error!("✗ CRITICAL: {} consecutive write failures. DAC connection appears dead. Thread exiting.", consecutive_write_failures);
                                     error!("   Please restart the server to reinitialize the DAC.");
+                                    let mut connected = connected.lock().unwrap();
+                                    *connected = false;
                                     break;
                                 }
                                 thread::sleep(std::time::Duration::from_millis(50));
@@ -221,6 +238,8 @@ fn start_dac_output_thread(
                             consecutive_write_failures += 1;
                             if consecutive_write_failures >= max_write_failures {
                                 error!("✗ CRITICAL: DAC write failures on blank frames. Thread exiting.");
+                                let mut connected = connected.lock().unwrap();
+                                *connected = false;
                                 break;
                             }
                         } else {
@@ -244,6 +263,8 @@ fn start_dac_output_thread(
                     if consecutive_errors >= max_consecutive_errors * 5 {
                         error!("✗ CRITICAL: {} consecutive status check failures. DAC appears disconnected. Thread exiting.", consecutive_errors);
                         error!("   Please check USB connection and restart the server.");
+                        let mut connected = connected.lock().unwrap();
+                        *connected = false;
                         break;
                     }
                     if consecutive_errors > max_consecutive_errors {
@@ -294,6 +315,13 @@ fn update_projector(
             *on = projector_config.switched_on;
         }
     }
+    // Always keep ProjectorConfiguration.connected in sync with thread connection status
+    if let Some(flag) = get_connected_arc() {
+        let connected = flag.lock().unwrap();
+        projector_config.connected = *connected;
+    } else {
+        projector_config.connected = dac_controller.initialized;
+    }
 
     if projector_config.is_changed() || scene_setup.is_changed() {
         if projector_config.locked_to_scene {
@@ -305,15 +333,6 @@ fn update_projector(
     }
 }
 
-// --- Static for sharing switched_on Arc between systems and thread (single projector only) ---
-use std::sync::OnceLock;
-static SWITCHED_ON_ARC: OnceLock<Arc<Mutex<bool>>> = OnceLock::new();
-fn set_switched_on_arc(flag: Arc<Mutex<bool>>) {
-    let _ = SWITCHED_ON_ARC.set(flag);
-}
-fn get_switched_on_arc() -> Option<Arc<Mutex<bool>>> {
-    SWITCHED_ON_ARC.get().cloned()
-}
 
 /// Update the point buffer with current UniversalPath entities
 /// Background thread will continuously send these points to the DAC
@@ -592,4 +611,17 @@ fn world_to_projector_coordinates(
     let y = ((projected_y + 1.0) * (HELIOS_MAX_COORD as f32 / 2.0)) as u16;
     
     Some((x, y))
+}
+
+fn set_switched_on_arc(flag: Arc<Mutex<bool>>) {
+    let _ = SWITCHED_ON_ARC.set(flag);
+}
+fn get_switched_on_arc() -> Option<Arc<Mutex<bool>>> {
+    SWITCHED_ON_ARC.get().cloned()
+}
+fn set_connected_arc(flag: Arc<Mutex<bool>>) {
+    let _ = CONNECTED_ARC.set(flag);
+}
+fn get_connected_arc() -> Option<Arc<Mutex<bool>>> {
+    CONNECTED_ARC.get().cloned()
 }
