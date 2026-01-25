@@ -47,7 +47,7 @@ pub enum NetworkMessage {
 
     // Game Configuration
     QueryGameSession,
-    GameSessionCreated( GameSession),
+    GameSessionCreated(GameSession),
     GameSessionUpdate(GameSession),
     ExitGameSession(Uuid),
     /// Initialize a new game session with session_id, game_id, and initial GameState

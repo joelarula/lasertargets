@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use common::toolbar::{Docking, ItemState, ToolabarButton, ToolbarItem};
+use common::toolbar::{Docking, ItemState, ToolbarButton, ToolbarItem};
 use crate::plugins::calibration::CalibrationSystemSet;
 
 use crate::plugins::instructions::InstructionState;
@@ -66,7 +66,7 @@ fn update_toolbar_state(
 }
 
 fn handle_projector_button(
-    button_query: Query<(&Interaction, &ToolabarButton), Changed<Interaction>>,
+    button_query: Query<(&Interaction, &ToolbarButton), Changed<Interaction>>,
     mut projector_config: ResMut<ProjectorConfiguration>,
     mut item_query: Query<&mut ToolbarItem, With<ProjectorButton>>,
 ) {
@@ -108,5 +108,3 @@ fn configure_projector(
         projector_config.switched_on = !projector_config.switched_on;
     }
 }
-
-

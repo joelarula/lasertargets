@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use common::toolbar::{Docking, ItemState, ToolabarButton, ToolbarItem};
+use common::toolbar::{Docking, ItemState, ToolbarButton, ToolbarItem};
 use log::info;
 use crate::plugins::scene::SceneData;
 use crate::plugins::basictarget::BasicTarget;
@@ -32,16 +32,16 @@ impl Plugin for TargetPlugin {
 }
 
 fn register_target(mut commands: Commands) {
-    commands.spawn(ToolbarItem {
-        name: BTN_NAME.to_string(),
-        order: 0,
-        text: Some("Target".to_string()),
-        icon: Some("\u{f140}".to_string()), // Target/crosshairs icon
-        state: ItemState::Off,
-        docking: Docking::Bottom,
-        button_size: 36.0,
-        ..default()
-    });
+  //  commands.spawn(ToolbarItem {
+  //      name: BTN_NAME.to_string(),
+  //      order: 0,
+  //      text: Some("Target".to_string()),
+  //      icon: Some("\u{f140}".to_string()), // Target/crosshairs icon
+   //     state: ItemState::Off,
+  //      docking: Docking::Bottom,
+  //      button_size: 36.0,
+  //      ..default()
+  //  });
 }
 
 
@@ -49,7 +49,7 @@ fn register_target(mut commands: Commands) {
 fn handle_target_drag(
     mut commands: Commands,
     mut drag_state: ResMut<DragState>,
-    button_query: Query<( &Interaction, &ToolabarButton)>,
+    button_query: Query<( &Interaction, &ToolbarButton)>,
     scene_data: Res<SceneData>,
     scene_config: Res<SceneConfiguration>,
     mouse_button: Res<ButtonInput<MouseButton>>,

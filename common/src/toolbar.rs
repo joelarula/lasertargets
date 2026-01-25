@@ -4,7 +4,7 @@ pub struct ToolbarPlugin;
 
 
 #[derive(Component)]
-pub struct ToolabarButton {
+pub struct ToolbarButton {
     pub name: String,
 }
 

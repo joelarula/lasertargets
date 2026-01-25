@@ -40,43 +40,22 @@ impl Plugin for NetworkPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(QuinnetClientPlugin::default())
             .init_resource::<NetworkingConfiguration>()
+            .add_message::<GameSessionCreated>()
+            .add_message::<GameSessionUpdate>()
+            .init_resource::<ReconnectTimer>()
             .add_systems(Startup, start_client)
             .add_systems(Startup, register_connection_toolbar_button)
             .add_systems(Update, handle_client_connection_events)
+            .add_systems(Update, reconnect_if_needed)
             .add_systems(Update, update_connection_toolbar_button)
             .add_systems(Update, receive_server_messages)
             .add_systems(Update, send_projector_config_updates)
             .add_systems(Update, send_camera_config_updates)
-            .add_systems(Update, send_scene_config_updates)
-            .add_systems(Update, handle_game_session_created_network)
-            .add_systems(Update, handle_game_session_update_network)
-            .add_systems(Update, handle_server_and_game_state_update_network);
+            .add_systems(Update, send_scene_config_updates);
+
     }
 }
-/// Listen for ServerStateUpdate and GameStateUpdate messages and update local state/resources
-fn handle_server_and_game_state_update_network(
-    mut client: ResMut<QuinnetClient>,
-    mut next_server_state: ResMut<NextState<ServerState>>,
-    mut next_game_state: ResMut<NextState<GameState>>,
-) {
-    if let Some(connection) = client.get_connection_mut() {
-        if let Some(channel_id) = connection.default_channel() {
-            while let Some(bytes) = connection.try_receive_payload(channel_id) {
-                if let Ok(msg) = NetworkMessage::from_bytes(&bytes) {
-                    match msg {
-                        NetworkMessage::ServerStateUpdate(server_state) => {
-                            next_server_state.set(server_state);
-                        }
-                        NetworkMessage::GameStateUpdate(game_state) => {
-                            next_game_state.set(game_state);
-                        }
-                        _ => {}
-                    }
-                }
-            }
-        }
-    }
-}
+
 
 fn start_client(
     mut client: ResMut<QuinnetClient>,
@@ -108,6 +87,19 @@ fn handle_client_connection_events(
         if *current_state.get() != TerminalState::Connected {
             info!("Connected to server!");
             next_state.set(TerminalState::Connected);
+
+            // Query server and game state
+            if let Some(connection) = client.get_connection_mut() {
+                let query_server = NetworkMessage::QueryServerState;
+                let query_game = NetworkMessage::QueryGameState;
+                if let Err(e) = connection.send_payload(query_server.to_bytes().unwrap()) {
+                    warn!("Failed to send QueryServerState: {e}");
+                }
+                if let Err(e) = connection.send_payload(query_game.to_bytes().unwrap()) {
+                    warn!("Failed to send QueryGameState: {e}");
+                }
+                info!("Sent QueryServerState and QueryGameState to server");
+            }
         }
     } else {
         if *current_state.get() != TerminalState::Connecting {
@@ -173,51 +165,86 @@ fn receive_server_messages(
     mut projector_config: ResMut<ProjectorConfiguration>,
     mut camera_config: ResMut<CameraConfiguration>,
     mut scene_config: ResMut<SceneConfiguration>,
+    mut game_session_created_writer: MessageWriter<GameSessionCreated>,
+    mut game_session_update_writer: MessageWriter<GameSessionUpdate>,
+    mut next_server_state: ResMut<NextState<ServerState>>,
+    mut next_game_state: ResMut<NextState<GameState>>,
 ) {
-    if let Some(connection) = client.get_connection_mut() {
+
+    if let Some(mut connection) = client.get_connection_mut() {
         if let Some(channel_id) = connection.default_channel() {
+            let mut messages = Vec::new();
             while let Some(bytes) = connection.try_receive_payload(channel_id) {
+                messages.push(bytes);
+            }
+            drop(connection); // Release mutable borrow
+
+            for bytes in messages {
                 match NetworkMessage::from_bytes(&bytes) {
                     Ok(msg) => {
+                        info!("[Network] Incoming message: {:?}", msg);
                         match msg {
                             NetworkMessage::ProjectorConfigUpdate(config)  => {
-                                // Only update if content is different to prevent feedback loop
                                 if *projector_config != config {
-                                    // Use bypass_change_detection to prevent triggering send systems
                                     *projector_config.bypass_change_detection() = config;
-                                    debug!("Updated projector configuration from server");
+                                    info!("Updated projector configuration from server");
                                 }
                             }
                             NetworkMessage::CameraConfigUpdate(config) => {
-                                // Only update if content is different to prevent feedback loop
                                 if *camera_config != config {
-                                    // Use bypass_change_detection to prevent triggering send systems
                                     *camera_config.bypass_change_detection() = config;
-                                    debug!("Updated camera configuration from server");
+                                    info!("Updated camera configuration from server");
                                 }
                             }
                             NetworkMessage::SceneConfigUpdate(config) => {
-                                // Only update if content is different to prevent feedback loop
                                 if *scene_config != config {
-                                    // Use bypass_change_detection to prevent triggering send systems
                                     *scene_config.bypass_change_detection() = config;
-                                    debug!("Updated scene configuration from server");
+                                    info!("Updated scene configuration from server");
                                 }
                             }
                             NetworkMessage::SceneSetupUpdate(setup) => {
-                                // Update individual configs from SceneSetup without triggering change detection
                                 if *camera_config != setup.camera {
                                     *camera_config.bypass_change_detection() = setup.camera;
-                                    debug!("Updated camera configuration from SceneSetup");
+                                    info!("Updated camera configuration from SceneSetup");
                                 }
                                 if *projector_config != setup.projector {
                                     *projector_config.bypass_change_detection() = setup.projector;
-                                    debug!("Updated projector configuration from SceneSetup");
+                                    info!("Updated projector configuration from SceneSetup");
+                                }
+                            }
+                            NetworkMessage::GameSessionCreated(session) => {
+                                info!("Received GameSessionCreated from server: {:?}", session);
+                                game_session_created_writer.write(GameSessionCreated { game_session: session });
+                            }
+                            NetworkMessage::GameSessionUpdate(session) => {
+                                info!("Received GameSessionUpdate from server: {:?}", session);
+                                game_session_update_writer.write(GameSessionUpdate { game_session: session });
+                            }
+                            NetworkMessage::ServerStateUpdate(server_state) => {
+                                info!("Received ServerStateUpdate from server: {:?}", server_state);
+                                next_server_state.set(server_state);
+                            }
+                            NetworkMessage::GameStateUpdate(game_state) => {
+                                info!("Received GameStateUpdate from server: {:?}", game_state);
+                                next_game_state.set(game_state);
+                            }
+                            NetworkMessage::ExitGameSession(uuid) => {
+                                info!("Received ExitGameSession from server for session: {:?}", uuid);
+                                
+                            }
+                            NetworkMessage::Ping { timestamp } => {
+                                info!("Received Ping from server: timestamp={}", timestamp);
+                                if let Some(mut connection) = client.get_connection_mut() {
+                                    let pong = NetworkMessage::Pong { timestamp };
+                                    if let Err(e) = connection.send_payload(pong.to_bytes().unwrap()) {
+                                        warn!("Failed to send Pong: {e}");
+                                    } else {
+                                        info!("Sent Pong in response to Ping");
+                                    }
                                 }
                             }
                             _ => {
-                                // Other messages can be handled by other systems if needed
-                                debug!("Received unhandled message: {:?}", msg);
+                                info!("Received unhandled message: {:?}", msg);
                             }
                         }
                     }
@@ -277,35 +304,6 @@ fn send_scene_config_updates(
     }
 }
 
-fn handle_game_session_created_network(
-    mut client: ResMut<QuinnetClient>,
-    mut writer: MessageWriter<GameSessionCreated>,
-) {
-    if let Some(connection) = client.get_connection_mut() {
-        if let Some(channel_id) = connection.default_channel() {
-            while let Some(bytes) = connection.try_receive_payload(channel_id) {
-                if let Ok(NetworkMessage::GameSessionCreated(session)) = NetworkMessage::from_bytes(&bytes) {
-                    writer.write(GameSessionCreated { game_session: session });
-                }
-            }
-        }
-    }
-}
-
-fn handle_game_session_update_network(
-    mut client: ResMut<QuinnetClient>,
-    mut writer: MessageWriter<GameSessionUpdate>,
-) {
-    if let Some(connection) = client.get_connection_mut() {
-        if let Some(channel_id) = connection.default_channel() {
-            while let Some(bytes) = connection.try_receive_payload(channel_id) {
-                if let Ok(NetworkMessage::GameSessionUpdate(session)) = NetworkMessage::from_bytes(&bytes) {
-                    writer.write(GameSessionUpdate { game_session: session });
-                }
-            }
-        }
-    }
-}
 
 /// Helper function to send a payload and log an error if it fails.
 fn send_payload_and_log_error(
@@ -319,3 +317,44 @@ fn send_payload_and_log_error(
         debug!("Sent {}", error_context);
     }
 }
+
+
+    /// Resource for reconnection timer
+    #[derive(Resource, Default)]
+    struct ReconnectTimer(Timer);
+
+    /// System to periodically attempt reconnection if not connected
+    fn reconnect_if_needed(
+        mut client: ResMut<QuinnetClient>,
+        config: Res<NetworkingConfiguration>,
+        mut timer: ResMut<ReconnectTimer>,
+        time: Res<Time>,
+        current_state: Res<State<TerminalState>>,
+    ) {
+        // Only try to reconnect if not connected
+        if !client.is_connected() {
+            // Initialize timer if needed
+            if timer.0.duration().as_secs_f32() == 0.0 {
+                timer.0 = Timer::from_seconds(2.0, TimerMode::Repeating);
+            }
+            timer.0.tick(time.delta());
+            if timer.0.just_finished() && *current_state.get() == TerminalState::Connecting {
+                match client.open_connection(ClientConnectionConfiguration {
+                    addr_config: ClientAddrConfiguration::from_ips(
+                        config.ip,
+                        config.port,
+                        IpAddr::V6(Ipv6Addr::UNSPECIFIED),
+                        0,
+                    ),
+                    cert_mode: CertificateVerificationMode::SkipVerification,
+                    defaultables: Default::default(),
+                }) {
+                    Ok(_) => info!("[Reconnect] Reconnection attempt initiated"),
+                    Err(e) => debug!("[Reconnect] Reconnection attempt failed: {:?}", e),
+                }
+            }
+        } else {
+            // Reset timer if connected
+            timer.0 = Timer::from_seconds(0.0, TimerMode::Once);
+        }
+    }

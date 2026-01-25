@@ -1,7 +1,9 @@
 
-use common::toolbar::{ToolbarItem, Docking, ItemState};
+use common::toolbar::{ToolbarItem, Docking, ItemState,ToolbarButton};
 use bevy::prelude::*;
 use common::{game::{GameSessionUpdate as GameSessionUpdate, GameSessionCreated}, state::{GameState, ServerState}};
+
+const BTN_NAME: &str = "exit_game";
 
 #[derive(Component)]
 struct ExitGameButton;
@@ -28,12 +30,14 @@ fn spawn_gamesession_entity(
     query: Query<Entity, With<GameSessionMarker>>,
 ) {
     for event in events.read() {
+        info!("[GamePlugin] Listener: Received GameSessionCreated: {:?}", event.game_session);
         // Despawn any existing GameSession entity
         for entity in query.iter() {
             commands.entity(entity).despawn();
         }
         // Spawn new GameSession entity
         commands.spawn((event.game_session.clone(), GameSessionMarker));
+        info!("[GamePlugin] Spawned new GameSession entity");
     }
 }
 
@@ -43,6 +47,7 @@ fn update_gamesession_entity(
     mut query: Query<&mut common::game::GameSession, With<GameSessionMarker>>,
 ) {
     for update in updates.read() {
+        info!("[GamePlugin] Listener: Received GameSessionUpdate: {:?}", update.game_session);
         if let Ok(mut session) = query.single_mut() {
             *session = update.game_session.clone();
         }
@@ -51,17 +56,13 @@ fn update_gamesession_entity(
 /// Spawns the Exit Game toolbar item when ServerState is InGame
 fn spawn_exit_game_toolbar_item(
     mut commands: Commands,
-    server_state: Res<State<ServerState>>,
-    query: Query<Entity, With<ExitGameButton>>,
 ) {
-    if server_state.get() == &ServerState::InGame {
-        // Only spawn if not already present
-        if query.is_empty() {
-            commands.spawn((
+
+          commands.spawn((
                 ToolbarItem {
-                    name: "exit_game".to_string(),
+                    name: BTN_NAME.to_string(),
                     order: 1,
-                    icon: Some("󰗼".to_string()), // Example NerdFont icon
+                    icon: Some("\u{f060}".to_string()), // NerdFont arrow back icon (U+F060)
                     state: ItemState::On,
                     docking: Docking::Left,
                     button_size: 36.0,
@@ -69,13 +70,7 @@ fn spawn_exit_game_toolbar_item(
                 },
                 ExitGameButton,
             ));
-        }
-    } else {
-        // Despawn if not in InGame state
-        for entity in query.iter() {
-            commands.entity(entity).despawn();
-        }
-    }
+        
 }
 
 /// Despawns the Exit Game toolbar item when leaving InGame state
@@ -91,17 +86,15 @@ fn despawn_exit_game_toolbar_item(
 
 /// Handles ExitGameButton presses and sends ExitGameSession message to the server
 fn handle_exit_game_button(
-    mut interaction_query: Query<(&Interaction, &ToolbarItem), (Changed<Interaction>, With<ExitGameButton>)>,
+    interaction_query: Query<(&ToolbarButton, &Interaction), Changed<Interaction>>,
     mut client: ResMut<bevy_quinnet::client::QuinnetClient>,
     session_query: Query<&common::game::GameSession, With<GameSessionMarker>>,
-    terminal_state: Res<State<common::state::TerminalState>>,
 ) {
-    if *terminal_state.get() != common::state::TerminalState::Connected {
-        return;
-    }
-    for (interaction, _toolbar_item) in &mut interaction_query {
-        if let Interaction::Pressed = interaction {
-            // Get the current session id
+
+    for (toolbar_item, interaction) in &interaction_query {
+        info!("Handling interaction for toolbar item: {}", toolbar_item.name);
+        if toolbar_item.name == BTN_NAME && *interaction == Interaction::Pressed {
+            info!("[GamePlugin] Exit Game button pressed");
             if let Ok(session) = session_query.single() {
                 if let Some(connection) = client.get_connection_mut() {
                     let payload = common::network::NetworkMessage::ExitGameSession(session.session_id)

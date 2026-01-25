@@ -35,6 +35,33 @@ pub struct ExitGameEvent{
     pub game_session_uuid: Uuid,
 }
 
+#[derive(Message)]
+pub struct InitGameSessionEvent {
+    pub game_id: u16,
+    pub game_session_uuid: Uuid,
+    pub initial_state: GameState,
+}
+
+#[derive(Message)]
+pub struct StartGameEvent {
+    pub game_session_uuid: Uuid,
+}
+
+#[derive(Message)]
+pub struct PauseGameEvent {
+    pub game_session_uuid: Uuid,
+}
+
+#[derive(Message)]
+pub struct ResumeGameEvent {
+    pub game_session_uuid: Uuid,
+}
+
+#[derive(Message)]
+pub struct FinishGameEvent {
+    pub game_session_uuid: Uuid,
+}
+
 impl GameSession {
     pub fn start(&mut self) {
         if self.start_timestamp.is_none() {
@@ -90,9 +117,14 @@ pub struct GameRegistryPlugin;
 impl Plugin for GameRegistryPlugin {
     fn build(&self, app: &mut App) {
         app.init_state::<GameState>();
-        app.add_message::<ExitGameEvent>();
-        app.add_message::<GameSessionUpdate>();
-        app.add_message::<GameSessionCreated>();
+        app.add_message::<InitGameSessionEvent>()
+            .add_message::<StartGameEvent>()
+            .add_message::<PauseGameEvent>()
+            .add_message::<ResumeGameEvent>()
+            .add_message::<FinishGameEvent>()
+            .add_message::<ExitGameEvent>()
+            .add_message::<GameSessionUpdate>()
+            .add_message::<GameSessionCreated>();
         app.insert_resource(GameRegistry {
             games: HashMap::new(),
         });

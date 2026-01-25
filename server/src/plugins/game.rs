@@ -1,38 +1,8 @@
 use bevy::{asset::uuid::Uuid, prelude::*};
-use common::{game::{GameSessionUpdate, Game, GameRegistry, GameSession, GameSessionCreated}, state::GameState};
+use common::{game::{ExitGameEvent, FinishGameEvent, Game, GameRegistry, GameSession, GameSessionCreated, GameSessionUpdate, InitGameSessionEvent, PauseGameEvent, ResumeGameEvent, StartGameEvent}, state::{GameState, ServerState}};
 use bevy_quinnet::shared::ClientId;
 
-#[derive(Message)]
-pub struct InitGameSessionEvent {
-    pub game_id: u16,
-    pub game_session_uuid: Uuid,
-    pub initial_state: GameState,
-}
 
-#[derive(Message)]
-pub struct StartGameEvent {
-    pub game_session_uuid: Uuid,
-}
-
-#[derive(Message)]
-pub struct PauseGameEvent {
-    pub game_session_uuid: Uuid,
-}
-
-#[derive(Message)]
-pub struct ResumeGameEvent {
-    pub game_session_uuid: Uuid,
-}
-
-#[derive(Message)]
-pub struct FinishGameEvent {
-    pub game_session_uuid: Uuid,
-}
-
-#[derive(Message)]
-pub struct ExitGameEvent {
-    pub game_session_uuid: Uuid,
-}
 
 
 
@@ -40,14 +10,7 @@ pub struct GamePlugin;
 
 impl Plugin for GamePlugin {
     fn build(&self, app: &mut App) {
-        app.add_message::<InitGameSessionEvent>()
-            .add_message::<StartGameEvent>()
-            .add_message::<PauseGameEvent>()
-            .add_message::<ResumeGameEvent>()
-            .add_message::<FinishGameEvent>()
-            .add_message::<ExitGameEvent>()
-            .add_message::<GameSessionCreated>()
-            .add_systems(Update, handle_init_game)
+        app.add_systems(Update, handle_init_game)
             .add_systems(Update, handle_start_game)
             .add_systems(Update, handle_pause_game)
             .add_systems(Update, handle_resume_game)
@@ -64,20 +27,26 @@ fn handle_exit_game(
     mut broadcast_events: MessageWriter<GameSessionUpdate>,
 ) {
     for event in exit_game_events.read() {
+        info!("[handle_exit_game] Received ExitGameEvent for session: {}", event.game_session_uuid);
         if let Some((entity, mut game_session)) = game_sessions.iter_mut().find(|(_, gs)| gs.session_id == event.game_session_uuid) {
+            info!("[handle_exit_game] Found GameSession entity, setting state to Finished and despawning");
             game_session.state = GameState::Finished;
             broadcast_events.write(GameSessionUpdate { game_session: game_session.clone() });
             commands.entity(entity).despawn();
-            next_game_state.set(GameState::Finished);
-            next_server_state.set(common::state::ServerState::Menu);
+        } else {
+            warn!("[handle_exit_game] No GameSession entity found for session: {}", event.game_session_uuid);
         }
+        info!("[handle_exit_game] Setting GameState to Finished and ServerState to Menu");
+        next_game_state.set(GameState::Finished);
+        next_server_state.set(common::state::ServerState::Menu);
+        info!("[handle_exit_game] After set: next_game_state={:?}, next_server_state={:?}", next_game_state, next_server_state);
     }
 }
 
 fn handle_init_game(
     mut commands: Commands,
     mut next_state: ResMut<NextState<GameState>>,
-    _current_state: Res<State<GameState>>,
+    mut next_server_state: ResMut<NextState<common::state::ServerState>>,
     mut init_game_events: MessageReader<InitGameSessionEvent>,
     mut game_session_created: MessageWriter<GameSessionCreated>,
     game_registry: Res<GameRegistry>,
@@ -107,11 +76,12 @@ fn handle_init_game(
         let session = new_game_session.clone();
         commands.spawn(session.clone());
 
+        next_server_state.set(ServerState::InGame);
         next_state.set(GameState::InGame);
+  
         game_session_created.write(GameSessionCreated {
             game_session: session.clone(),
         });
-
     }
 }
 

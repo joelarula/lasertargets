@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use common::toolbar::{Docking, ItemState, ToolabarButton, ToolbarItem};
+use common::toolbar::{Docking, ItemState, ToolbarButton, ToolbarItem};
 use std::collections::HashMap;
 
 // Button color palette - traditional mild scheme for black background
@@ -17,8 +17,6 @@ pub struct ToolbarPlugin;
 
 #[derive(Component)]
 struct ToolbarContainer;
-
-
 
 #[derive(Resource)]
 struct NerdFont(Handle<Font>);
@@ -185,7 +183,7 @@ fn create_docked_toolbar(
     
                     parent
                         .spawn((
-                            ToolabarButton { name: button_name.clone() },
+                            ToolbarButton { name: button_name.clone() },
                             Button,
                             Node {
                                 width: Val::Px(button_handler.button_size),
@@ -221,7 +219,7 @@ fn create_docked_toolbar(
 }
 
 fn update_button_states(
-    mut button_query: Query<(&ToolabarButton, &Interaction, &mut BackgroundColor)>,
+    mut button_query: Query<(&ToolbarButton, &Interaction, &mut BackgroundColor)>,
     items_query: Query<&ToolbarItem>,
 ) {
     // Build a quick lookup map
@@ -258,7 +256,7 @@ fn update_button_states(
 
 fn update_button_text(
     items_query: Query<&ToolbarItem, Changed<ToolbarItem>>,
-    button_query: Query<(&ToolabarButton, &Children)>,
+    button_query: Query<(&ToolbarButton, &Children)>,
     mut text_query: Query<&mut Text>,
 ) {
     if items_query.is_empty() {

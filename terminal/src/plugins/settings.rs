@@ -4,7 +4,7 @@ use bevy_egui::egui;
 use common::config::{SceneConfiguration, ProjectorConfiguration};
 use common::toolbar::Docking;
 use common::toolbar::ItemState;
-use common::toolbar::ToolabarButton;
+use common::toolbar::ToolbarButton;
 use common::toolbar::ToolbarItem;
 
 use crate::plugins::camera::DisplayMode;
@@ -74,7 +74,7 @@ fn register_settings_button(mut commands: Commands) {
 }
 
 fn handle_settings_button(
-    button_query: Query<(&Interaction, &ToolabarButton), Changed<Interaction>>,
+    button_query: Query<(&Interaction, &ToolbarButton), Changed<Interaction>>,
     mut overlay_visible: ResMut<OverlayVisible>,
     mut settings_button_query: Query<&mut ToolbarItem, With<SettingsButton>>,
 ) {

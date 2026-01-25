@@ -316,12 +316,12 @@ fn update_projector(
         }
     }
     // Always keep ProjectorConfiguration.connected in sync with thread connection status
-    if let Some(flag) = get_connected_arc() {
-        let connected = flag.lock().unwrap();
-        projector_config.connected = *connected;
-    } else {
-        projector_config.connected = dac_controller.initialized;
-    }
+    //if let Some(flag) = get_connected_arc() {
+    //    let connected = flag.lock().unwrap();
+    //    projector_config.connected = *connected;
+    //} else {
+    //    projector_config.connected = dac_controller.initialized;
+    //}
 
     if projector_config.is_changed() || scene_setup.is_changed() {
         if projector_config.locked_to_scene {

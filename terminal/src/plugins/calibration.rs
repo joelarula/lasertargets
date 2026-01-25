@@ -103,6 +103,7 @@ fn draw_billboard_gizmos(
             SILVER,
             DARK_GREY_THIRD,
             GRID_SPACING,
+            true
         );
     }
 }
@@ -187,6 +188,7 @@ fn draw_projector_billboard(
         ORANGE,
         orange_alpha,
         GRID_SPACING * 2.0,
+        false
     );
 
 }
@@ -201,6 +203,7 @@ fn draw_billboard_grid(
     frame_color: impl Into<LinearRgba>,
     grid_color: impl Into<LinearRgba>,
     grid_size: f32,
+    draw_grid: bool,
 ) {
     use bevy::prelude::Color;
 
@@ -223,6 +226,10 @@ fn draw_billboard_grid(
     gizmos.line(p3, p4, frame_color);
     gizmos.line(p4, p1, frame_color);
     
+    if !draw_grid {
+        return;
+    }
+
     // Draw grid lines
     let num_x_lines = (width / grid_size) as usize;
     let num_y_lines = (height / grid_size) as usize;

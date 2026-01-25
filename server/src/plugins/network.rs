@@ -8,7 +8,7 @@ use bevy_quinnet::server::{
 use bevy_quinnet::shared::ClientId;
 use common::actor::{Actor, ActorMetaData};
 use common::config::{CameraConfiguration, ProjectorConfiguration, SceneConfiguration};
-use common::game::{ExitGameEvent, GameSession, GameSessionCreated, GameSessionUpdate};
+use common::game::{ExitGameEvent, FinishGameEvent, GameSession, GameSessionCreated, GameSessionUpdate, InitGameSessionEvent, PauseGameEvent, ResumeGameEvent, StartGameEvent};
 use common::network::{NetworkMessage, SERVER_HOST, SERVER_PORT};
 use common::scene::SceneSetup;
 use common::state::{GameState, ServerState};
@@ -18,10 +18,6 @@ use std::net::{IpAddr, Ipv6Addr};
 use crate::plugins::actor::{
     ActorLink, ActorRegistrationResultEvent, ActorUnregistrationResultEvent, GameActorUpdateEvent,
     RegisterActorEvent, UnregisterActorEvent,
-};
-use crate::plugins::game::{
-    InitGameSessionEvent, PauseGameEvent, ResumeGameEvent, StartGameEvent,
-    FinishGameEvent,
 };
 
 #[derive(Resource, Debug, Clone)]
@@ -263,6 +259,7 @@ fn handle_game_session_messages(
                     game_session_uuid: *session_uuid,
                     initial_state: initial_state.clone(),
                 });
+
             }
             NetworkMessage::StartGameSession(uuid) => {
                 info!("Received StartGameSession for: {}", uuid);
@@ -334,7 +331,7 @@ fn send_ping_periodically(
 ) {
     // Initialize timer on first run
     if timer.is_none() {
-        *timer = Some(Timer::from_seconds(2.0, TimerMode::Repeating));
+        *timer = Some(Timer::from_seconds(10.0, TimerMode::Repeating));
     }
 
     let timer = timer.as_mut().unwrap();
@@ -436,6 +433,11 @@ fn send_payload_and_log_error(
     payload: Vec<u8>,
     error_context: &str,
 ) {
+    let msg_name = match NetworkMessage::from_bytes(&payload) {
+        Ok(msg) => format!("{:?}", msg),
+        Err(_) => "<unknown message>".to_string(),
+    };
+    info!("Sending message '{}' to client {} ({})", msg_name, client_id, error_context);
     if let Err(e) = endpoint.send_payload(client_id, payload) {
         error!(
             "Failed to send {} to client {}: {}",
@@ -446,6 +448,11 @@ fn send_payload_and_log_error(
 
 /// Helper function to broadcast a payload and log an error if it fails.
 fn broadcast_payload_and_log_error(endpoint: &mut Endpoint, payload: Vec<u8>, error_context: &str) {
+    let msg_name = match NetworkMessage::from_bytes(&payload) {
+        Ok(msg) => format!("{:?}", msg),
+        Err(_) => "<unknown message>".to_string(),
+    };
+    info!("Broadcasting message '{}' to all clients ({})", msg_name, error_context);
     if let Err(e) = endpoint.broadcast_payload(payload) {
         error!("Failed to broadcast {}: {}", error_context, e);
     }
@@ -540,12 +547,20 @@ fn handle_game_session_created(
     };
 
     for created in game_sessions.read() {
+        info!("[Network] Received GameSessionCreated: {:?}", created.game_session);
         let message = NetworkMessage::GameSessionCreated(created.game_session.clone());
         let payload = message
             .to_bytes()
             .expect("Serialize GameSessionResponse (created)");
 
-        broadcast_payload_and_log_error(endpoint, payload, "GameSessionResponse (created)");
+        // Log all connected clients before broadcasting
+        let clients = endpoint.clients();
+        info!("[Network] Broadcasting GameSessionCreated to clients: {:?}", clients);
+        let result = endpoint.broadcast_payload(payload);
+        match result {
+            Ok(_) => info!("[Network] Broadcast GameSessionCreated succeeded"),
+            Err(e) => error!("[Network] Broadcast GameSessionCreated failed: {}", e),
+        }
     }
 }
 
@@ -609,17 +624,21 @@ fn broadcast_state_on_change(
     server_state: Res<State<ServerState>>,
     game_state: Res<State<GameState>>,
 ) {
+
     let Some(endpoint) = server.get_endpoint_mut() else {
+        info!("[broadcast_state_on_change] No endpoint available");
         return;
     };
 
     if server_state.is_changed() {
+        info!("[broadcast_state_on_change] ServerState changed, broadcasting ServerStateUpdate: {:?}", server_state.get());
         let msg = NetworkMessage::ServerStateUpdate(server_state.get().clone());
         let payload = msg.to_bytes().expect("Serialize ServerStateResponse");
         let _ = endpoint.broadcast_payload(payload);
     }
 
     if game_state.is_changed() {
+        info!("[broadcast_state_on_change] GameState changed, broadcasting GameStateUpdate: {:?}", game_state.get());
         let msg = NetworkMessage::GameStateUpdate(game_state.get().clone());
         let payload = msg.to_bytes().expect("Serialize GameStateResponse");
         let _ = endpoint.broadcast_payload(payload);
