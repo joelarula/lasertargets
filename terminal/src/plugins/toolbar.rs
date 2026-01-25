@@ -84,26 +84,39 @@ fn create_toolbar_ui(
     let mut top_buttons = Vec::new();
     let mut bottom_buttons = Vec::new();
     let mut statusbar_buttons = Vec::new();
-    
-    // Build a hashmap for quick lookup
+
+    // Build a hashmap for quick lookup and collect buttons by docking
     let mut buttons_map = HashMap::new();
     for item in items_query.iter() {
         buttons_map.insert(item.name.clone(), item.clone());
-        
         match item.docking {
-            Docking::Left => left_buttons.push(item.name.clone()),
-            Docking::Right => right_buttons.push(item.name.clone()),
-            Docking::Top => top_buttons.push(item.name.clone()),
-            Docking::Bottom => bottom_buttons.push(item.name.clone()),
-            Docking::StatusBar => statusbar_buttons.push(item.name.clone()),
+            Docking::Left => left_buttons.push((item.order, item.name.clone())),
+            Docking::Right => right_buttons.push((item.order, item.name.clone())),
+            Docking::Top => top_buttons.push((item.order, item.name.clone())),
+            Docking::Bottom => bottom_buttons.push((item.order, item.name.clone())),
+            Docking::StatusBar => statusbar_buttons.push((item.order, item.name.clone())),
         }
     }
-    
-    create_docked_toolbar(commands, &buttons_map, nerd_font, &left_buttons, Docking::Left);
-    create_docked_toolbar(commands, &buttons_map, nerd_font, &right_buttons, Docking::Right);
-    create_docked_toolbar(commands, &buttons_map, nerd_font, &top_buttons, Docking::Top);
-    create_docked_toolbar(commands, &buttons_map, nerd_font, &bottom_buttons, Docking::Bottom);
-    create_docked_toolbar(commands, &buttons_map, nerd_font, &statusbar_buttons, Docking::StatusBar);
+
+    // Sort each group by order ascending
+    left_buttons.sort_by_key(|(order, _)| *order);
+    right_buttons.sort_by_key(|(order, _)| *order);
+    top_buttons.sort_by_key(|(order, _)| *order);
+    bottom_buttons.sort_by_key(|(order, _)| *order);
+    statusbar_buttons.sort_by_key(|(order, _)| *order);
+
+    // Extract just the names in sorted order
+    let left_names: Vec<String> = left_buttons.into_iter().map(|(_, n)| n).collect();
+    let right_names: Vec<String> = right_buttons.into_iter().map(|(_, n)| n).collect();
+    let top_names: Vec<String> = top_buttons.into_iter().map(|(_, n)| n).collect();
+    let bottom_names: Vec<String> = bottom_buttons.into_iter().map(|(_, n)| n).collect();
+    let statusbar_names: Vec<String> = statusbar_buttons.into_iter().map(|(_, n)| n).collect();
+
+    create_docked_toolbar(commands, &buttons_map, nerd_font, &left_names, Docking::Left);
+    create_docked_toolbar(commands, &buttons_map, nerd_font, &right_names, Docking::Right);
+    create_docked_toolbar(commands, &buttons_map, nerd_font, &top_names, Docking::Top);
+    create_docked_toolbar(commands, &buttons_map, nerd_font, &bottom_names, Docking::Bottom);
+    create_docked_toolbar(commands, &buttons_map, nerd_font, &statusbar_names, Docking::StatusBar);
 }
 
 fn create_docked_toolbar(

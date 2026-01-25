@@ -1,6 +1,6 @@
 #[derive(Component)]
 struct BasictargetToolbarMarker;
-use bevy::{app::{App, Plugin}, ecs::{component::Component, entity::Entity, query::{Changed, With}, system::{Commands, Query, Res, ResMut}}, prelude::default, state::{app::AppExtStates, state::{OnEnter, OnExit, State}}, ui::Interaction};
+use bevy::{app::{App, Plugin}, ecs::{component::Component, entity::Entity, query::{Changed, With}, system::{Commands, Query, Res, ResMut}}, prelude::default, state::{app::AppExtStates, state::{NextState, OnEnter, OnExit, State}}, ui::Interaction};
 use bevy_quinnet::client::QuinnetClient;
 use common::{network::NetworkMessage, state::{GameState, ServerState, TerminalState}, toolbar::{Docking, ItemState, ToolbarButton, ToolbarItem}};
 use crate::common::{GAME_ID, HunterGameState};
@@ -20,8 +20,7 @@ impl Plugin for HunterTerminalPlugin {
         app.add_systems(OnEnter(ServerState::Menu), spawn_menu_toolbar);
         app.add_systems(OnExit(ServerState::Menu), despawn_menu_toolbar);
         app.add_systems(OnEnter(HunterGameState::On), spawn_basictarget_toolbar_item);
-        app.add_systems(OnEnter(ServerState::Menu), despawn_basictarget_toolbar_item);
-     
+        app.add_systems(OnEnter(ServerState::Menu), despawn_basictarget_toolbar_item); 
         app.add_systems(bevy::prelude::Update, handle_button_click);
     }
    
@@ -47,10 +46,12 @@ fn spawn_basictarget_toolbar_item(mut commands: Commands) {
 fn despawn_basictarget_toolbar_item(
     mut commands: Commands,
     query: Query<Entity, With<BasicTargetButton>>,
+    mut next_state: ResMut<NextState<HunterGameState>>,
 ) {
     for entity in query.iter() {
         commands.entity(entity).despawn();
     }
+    next_state.set(HunterGameState::Off);
 }
 
 
