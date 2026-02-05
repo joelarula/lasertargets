@@ -20,7 +20,8 @@ use crate::plugins::toolbar::ToolbarPlugin;
 use crate::plugins::settings::SettingsPlugin;
 use crate::plugins::target::TargetPlugin;
 use crate::plugins::basictarget::BasicTargetPlugin;
-use crate::plugins::network::NetworkPlugin; // Added NetworkPlugin
+use crate::plugins::network::NetworkPlugin;
+use crate::plugins::path::PathPlugin;
 use crate::plugins::keyboard::KeyboardPlugin;
 use crate::plugins::mouse::MousePlugin;
 use hunter::common::HunterGamePlugin;
@@ -48,7 +49,7 @@ fn main() {
     )
     .init_state::<ServerState>()
     .init_state::<TerminalState>()
-    .add_plugins(NetworkPlugin) // Add our new network plugin
+    .add_plugins(NetworkPlugin)
     .add_plugins(EguiPlugin::default())
     .insert_resource(ClearColor(Color::BLACK))
     .add_plugins(InstructionsPlugin)
@@ -61,6 +62,7 @@ fn main() {
     .add_plugins(ToolbarPlugin)
     .add_plugins(SettingsPlugin)
     .add_plugins(BasicTargetPlugin)
+    .add_plugins(PathPlugin)
     .add_plugins(TargetPlugin)
     .add_plugins(KeyboardPlugin)
     .add_plugins(MousePlugin)

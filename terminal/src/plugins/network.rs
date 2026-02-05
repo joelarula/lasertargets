@@ -8,6 +8,8 @@ use common::state::TerminalState;
 use common::toolbar::{Docking, ItemState, ToolbarItem};
 use std::net::{IpAddr, Ipv6Addr};
 use common::game::{GameSessionUpdate, GameSessionCreated};
+use hunter::server::SpawnHunterTargetEvent;
+use crate::plugins::path::{SpawnPathEvent, DespawnPathEvent, UpdatePathPositionEvent};
 
 const CONN_BTN_NAME: &str = "connection_status";
 
@@ -42,6 +44,10 @@ impl Plugin for NetworkPlugin {
             .init_resource::<NetworkingConfiguration>()
             .add_message::<GameSessionCreated>()
             .add_message::<GameSessionUpdate>()
+            .add_message::<SpawnHunterTargetEvent>()
+            .add_message::<SpawnPathEvent>()
+            .add_message::<DespawnPathEvent>()
+            .add_message::<UpdatePathPositionEvent>()
             .init_resource::<ReconnectTimer>()
             .add_systems(Startup, start_client)
             .add_systems(Startup, register_connection_toolbar_button)
@@ -88,17 +94,17 @@ fn handle_client_connection_events(
             info!("Connected to server!");
             next_state.set(TerminalState::Connected);
 
-            // Query server and game state
             if let Some(connection) = client.get_connection_mut() {
+                
                 let query_server = NetworkMessage::QueryServerState;
                 let query_game = NetworkMessage::QueryGameState;
+                
                 if let Err(e) = connection.send_payload(query_server.to_bytes().unwrap()) {
                     warn!("Failed to send QueryServerState: {e}");
                 }
                 if let Err(e) = connection.send_payload(query_game.to_bytes().unwrap()) {
                     warn!("Failed to send QueryGameState: {e}");
                 }
-                info!("Sent QueryServerState and QueryGameState to server");
             }
         }
     } else {
@@ -167,6 +173,10 @@ fn receive_server_messages(
     mut scene_config: ResMut<SceneConfiguration>,
     mut game_session_created_writer: MessageWriter<GameSessionCreated>,
     mut game_session_update_writer: MessageWriter<GameSessionUpdate>,
+    mut spawn_hunter_target_writer: MessageWriter<SpawnHunterTargetEvent>,
+    mut spawn_path_writer: MessageWriter<SpawnPathEvent>,
+    mut despawn_path_writer: MessageWriter<DespawnPathEvent>,
+    mut update_path_position_writer: MessageWriter<UpdatePathPositionEvent>,
     mut next_server_state: ResMut<NextState<ServerState>>,
     mut next_game_state: ResMut<NextState<GameState>>,
 ) {
@@ -242,6 +252,22 @@ fn receive_server_messages(
                                         info!("Sent Pong in response to Ping");
                                     }
                                 }
+                            }
+                            NetworkMessage::SpawnHunterTarget(target, position) => {
+                                info!("Received SpawnHunterTarget from server: target={:?}, position={:?}", target, position);
+                                spawn_hunter_target_writer.write(SpawnHunterTargetEvent { target, position });
+                            }
+                            NetworkMessage::SpawnPath(uuid, path, position) => {
+                                info!("Received SpawnPath from server: uuid={}, position={:?}", uuid, position);
+                                spawn_path_writer.write(SpawnPathEvent { uuid, path, position });
+                            }
+                            NetworkMessage::DespawnPath(uuid) => {
+                                info!("Received DespawnPath from server: uuid={}", uuid);
+                                despawn_path_writer.write(DespawnPathEvent { uuid });
+                            }
+                            NetworkMessage::UpdatePathPosition(uuid, position) => {
+                                debug!("Received UpdatePathPosition from server: uuid={}, position={:?}", uuid, position);
+                                update_path_position_writer.write(UpdatePathPositionEvent { uuid, position });
                             }
                             _ => {
                                 info!("Received unhandled message: {:?}", msg);

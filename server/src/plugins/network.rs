@@ -14,6 +14,7 @@ use common::scene::SceneSetup;
 use common::state::{GameState, ServerState};
 use std::collections::{HashMap, HashSet};
 use std::net::{IpAddr, Ipv6Addr};
+use hunter::server::SpawnHunterTargetEvent;
 
 use crate::plugins::actor::{
     ActorLink, ActorRegistrationResultEvent, ActorUnregistrationResultEvent, GameActorUpdateEvent,
@@ -66,6 +67,7 @@ impl Plugin for NetworkingPlugin {
             .add_message::<ActorUnregistrationResultEvent>()
             .add_message::<MousePositionEvent>()
             .add_message::<KeyboardInputEvent>()
+            .add_message::<SpawnHunterTargetEvent>()
             .init_resource::<NetworkingConfiguration>()
             .add_systems(Startup, start_server)
             .add_systems(Update, receive_network_messages)
@@ -73,6 +75,7 @@ impl Plugin for NetworkingPlugin {
             .add_systems(Update, handle_actor_messages)
             .add_systems(Update, handle_game_session_messages)
             .add_systems(Update, handle_input_messages)
+            .add_systems(Update, handle_hunter_target_messages)
             .add_systems(Update, send_ping_periodically)
             .add_systems(Update, handle_game_session_created)
             .add_systems(Update, send_game_session_updates)
@@ -316,6 +319,25 @@ fn handle_input_messages(
                     client_id: msg.client_id,
                     key: key.clone(),
                     pressed: *pressed,
+                });
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Handle hunter target spawn messages
+fn handle_hunter_target_messages(
+    mut messages: MessageReader<FromClientMessage>,
+    mut spawn_hunter_target_events: MessageWriter<SpawnHunterTargetEvent>,
+) {
+    for msg in messages.read() {
+        match &msg.message {
+            NetworkMessage::SpawnHunterTarget(target, position) => {
+                info!("Received SpawnHunterTarget from client {}: target={:?}, position={:?}", msg.client_id, target, position);
+                spawn_hunter_target_events.write(SpawnHunterTargetEvent {
+                    target: target.clone(),
+                    position: *position,
                 });
             }
             _ => {}

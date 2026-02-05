@@ -8,6 +8,23 @@ pub struct SceneSetupPlugin;
 #[derive(SystemSet, Debug, Hash, PartialEq, Eq, Clone)]
 pub struct SceneSystemSet;
 
+
+#[derive(Resource, Debug, Default, Clone, Copy)] 
+pub struct SceneData{
+    pub mouse_world_pos: Option<Vec3>
+}
+
+/// Marker component for the scene entity
+#[derive(Component)]
+pub struct SceneEntity;
+
+impl SceneData {
+    pub fn new(mouse_pos: Option<Vec3>) -> Self {
+        SceneData { mouse_world_pos: mouse_pos }
+    }
+}
+
+
 impl Plugin for SceneSetupPlugin {
     fn build(&self, app: &mut App) {
         app.configure_sets(Startup, SceneSystemSet);

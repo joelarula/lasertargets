@@ -4,4 +4,5 @@ pub mod camera;
 pub mod actor;
 pub mod game;
 pub mod scene;
+pub mod path;
 pub mod calibration;

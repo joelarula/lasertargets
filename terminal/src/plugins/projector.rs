@@ -5,7 +5,7 @@ use crate::plugins::calibration::CalibrationSystemSet;
 use crate::plugins::instructions::InstructionState;
 use common::config::ProjectorConfiguration;
 
-const BTN_NAME: &str = "projector";
+const PROJECTOR_BUTTON: &str = "projector";
 
 #[derive(Component)]
 struct ProjectorButton;
@@ -34,7 +34,7 @@ fn register_projector(mut commands: Commands) {
     commands.spawn((
         ProjectorButton,
         ToolbarItem {
-            name: BTN_NAME.to_string(),
+            name: PROJECTOR_BUTTON.to_string(),
             order: 1,
             text: None,
             icon: Some("\u{f0eb}".to_string()), // Laser icon
@@ -71,7 +71,7 @@ fn handle_projector_button(
     mut item_query: Query<&mut ToolbarItem, With<ProjectorButton>>,
 ) {
     for (interaction, button) in &button_query {
-        if button.name == BTN_NAME && *interaction == Interaction::Pressed {
+        if button.name == PROJECTOR_BUTTON && *interaction == Interaction::Pressed {
             projector_config.switched_on = !projector_config.switched_on;
             update_toolbar_state(&projector_config, &mut item_query);
         }

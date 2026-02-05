@@ -1,16 +1,16 @@
 use bevy::prelude::*;
 use bevy_quinnet::client::QuinnetClient;
-use common::network::NetworkMessage;
-use crate::plugins::scene::SceneData;
-
-#[derive(SystemSet, Debug, Hash, PartialEq, Eq, Clone)]
-pub struct MouseSystemSet;
+use common::{network::NetworkMessage, scene::SceneData};
 
 pub struct MousePlugin;
 
+#[derive(Resource, Debug, Clone, Copy, Default)]
+pub struct PreviousMouseWorldPos(pub Option<Vec3>);
+
 impl Plugin for MousePlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, handle_mouse_input.in_set(MouseSystemSet));
+        app.init_resource::<PreviousMouseWorldPos>();
+        app.add_systems(Update, handle_mouse_input);      
     }
 }
 
@@ -19,12 +19,25 @@ fn handle_mouse_input(
     mouse_button_input: Res<ButtonInput<MouseButton>>,
     scene_data: Res<SceneData>,
     mut last_sent_buttons: Local<Vec<MouseButton>>,
+    mut previous_mouse_world_pos: ResMut<PreviousMouseWorldPos>,
 ) {
     let mut current_pressed_buttons = Vec::new();
     
     // Get current world position from scene data
     let world_position = scene_data.mouse_world_pos;
     
+    if previous_mouse_world_pos.0 != world_position {
+    if let Some(connection) = client.get_connection_mut() {
+                    let payload = NetworkMessage::UpdateMousePosition(world_position)
+                        .to_bytes()
+                        .expect("Failed to serialize mouse position");
+                    if let Err(e) = connection.send_payload(payload) {
+                        error!("Failed to send mouse position update: {}", e);
+                    }
+                }
+        previous_mouse_world_pos.0 = world_position;
+    }
+
     // Collect all currently pressed mouse buttons
     for button in mouse_button_input.get_pressed() {
         current_pressed_buttons.push(*button);
@@ -43,6 +56,8 @@ fn handle_mouse_input(
             send_mouse_event(&mut client, button, false, world_position);
         }
     }
+
+
     
     // Update the last sent buttons
     *last_sent_buttons = current_pressed_buttons;

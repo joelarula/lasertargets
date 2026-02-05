@@ -5,6 +5,7 @@ use crate::plugins::camera::CameraPlugin;
 use crate::plugins::game::GamePlugin;
 use crate::plugins::scene::ScenePlugin;
 use crate::plugins::calibration::CalibrationPlugin;
+use crate::plugins::path::PathNetworkPlugin;
 use bevy::app::ScheduleRunnerPlugin;
 use bevy::prelude::*;
 use bevy::state::app::StatesPlugin;
@@ -30,19 +31,20 @@ pub fn create_server_app(schedule_runner: ScheduleRunnerPlugin) -> App {
 pub fn add_common_server_plugins(app: &mut App) {
   
     app
+    .insert_resource(Time::<Fixed>::from_seconds(FIXED_TIMESTEP))
+    .init_state::<ServerState>()
+    .init_state::<GameState>()
     .add_plugins(StatesPlugin)
     .add_plugins(SceneSetupPlugin)
     .add_plugins(ScenePlugin)
     .add_plugins(CalibrationPlugin)
-    .insert_resource(Time::<Fixed>::from_seconds(FIXED_TIMESTEP))
-    .init_state::<ServerState>()
-    .init_state::<GameState>()
     .add_plugins(ProjectorPlugin)
     .add_plugins(CameraPlugin)
     .add_plugins(ActorPlugin)
     .add_plugins(GameRegistryPlugin)
     .add_plugins(QuinnetServerPlugin::default())
     .add_plugins(NetworkingPlugin)
+    .add_plugins(PathNetworkPlugin)
     .add_plugins(HunterGamePlugin)
     .add_plugins(SnakeGamePlugin)
     .add_plugins(GamePlugin);

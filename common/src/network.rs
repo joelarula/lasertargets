@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
 
-    actor::ActorMetaData, config::{CameraConfiguration, ProjectorConfiguration, SceneConfiguration}, game::GameSession, scene::SceneSetup, state::GameState
+    actor::ActorMetaData, config::{CameraConfiguration, ProjectorConfiguration, SceneConfiguration}, game::GameSession, path::UniversalPath, scene::SceneSetup, state::GameState, target::HunterTarget
 };
 
 /// Network messages exchanged between server and terminal
@@ -80,6 +80,20 @@ pub enum NetworkMessage {
         key: String,
         pressed: bool,
     },
+
+    // Path
+    SpawnPath(Uuid, UniversalPath, bevy::prelude::Vec3),
+    DespawnPath(Uuid),
+    UpdatePathPosition(Uuid, bevy::prelude::Vec3),
+
+    //Targeting
+
+    SpawnHunterTarget(HunterTarget, bevy::prelude::Vec3),
+    
+
+
+
+
 
 }
 

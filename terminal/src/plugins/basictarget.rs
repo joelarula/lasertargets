@@ -1,9 +1,7 @@
 use bevy::prelude::*;
 // Removed unused import: use bevy_prototype_lyon::prelude::*;
 use log::info;
-use common::path::{UniversalPath, PathProvider, PathRenderable};
-use crate::plugins::scene::SceneData;
-use common::config::SceneConfiguration;
+use common::{path::{PathProvider, PathRenderable, UniversalPath}, scene::SceneData};
 
 /// Extension trait to add gizmo drawing to UniversalPath
 trait UniversalPathGizmos {

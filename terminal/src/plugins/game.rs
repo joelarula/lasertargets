@@ -3,8 +3,8 @@ use common::toolbar::{ToolbarItem, Docking, ItemState,ToolbarButton};
 use bevy::prelude::*;
 use common::{game::{GameSessionUpdate as GameSessionUpdate, GameSessionCreated}, state::{GameState, ServerState}};
 
-const BTN_NAME: &str = "exit_game";
-const PAUSE_BTN_NAME: &str = "pause_resume_game";
+const GAME_BUTTON: &str = "exit_game";
+const PAUSE_RESUME_BUTTON: &str = "pause_resume_game";
 
 #[derive(Component)]
 struct ExitGameButton;
@@ -21,8 +21,8 @@ pub struct GamePlugin;
 impl Plugin for GamePlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(OnEnter(ServerState::InGame), spawn_exit_game_toolbar_item);
-        app.add_systems(OnExit(ServerState::InGame), despawn_exit_game_toolbar_item);
         app.add_systems(OnEnter(ServerState::InGame), spawn_pause_resume_toolbar_item);
+        app.add_systems(OnExit(ServerState::InGame), despawn_exit_game_toolbar_item);
         app.add_systems(OnExit(ServerState::InGame), despawn_pause_resume_toolbar_item);
         app.add_systems(Update, spawn_gamesession_entity);
         app.add_systems(Update, update_gamesession_entity);
@@ -67,7 +67,7 @@ fn spawn_exit_game_toolbar_item(
 
           commands.spawn((
                 ToolbarItem {
-                    name: BTN_NAME.to_string(),
+                    name: GAME_BUTTON.to_string(),
                     order: 1,
                     icon: Some("\u{f060}".to_string()), // NerdFont arrow back icon (U+F060)
                     state: ItemState::On,
@@ -96,7 +96,7 @@ fn spawn_pause_resume_toolbar_item(
     };
     commands.spawn((
         ToolbarItem {
-            name: PAUSE_BTN_NAME.to_string(),
+            name: PAUSE_RESUME_BUTTON.to_string(),
             order: 2,
             icon: Some(icon.to_string()),
             state: ItemState::On,
@@ -138,7 +138,7 @@ fn handle_exit_game_button(
 
     for (toolbar_item, interaction) in &interaction_query {
         info!("Handling interaction for toolbar item: {}", toolbar_item.name);
-        if toolbar_item.name == BTN_NAME && *interaction == Interaction::Pressed {
+        if toolbar_item.name == GAME_BUTTON && *interaction == Interaction::Pressed {
             info!("[GamePlugin] Exit Game button pressed");
             if let Ok(session) = session_query.single() {
                 if let Some(connection) = client.get_connection_mut() {
@@ -161,7 +161,7 @@ fn handle_pause_resume_button(
     session_query: Query<&common::game::GameSession, With<GameSessionMarker>>,
 ) {
     for (toolbar_item, interaction) in &interaction_query {
-        if toolbar_item.name == PAUSE_BTN_NAME && *interaction == Interaction::Pressed {
+        if toolbar_item.name == PAUSE_RESUME_BUTTON && *interaction == Interaction::Pressed {
             info!("[GamePlugin] Pause/Resume button pressed");
             if let Ok(session) = session_query.single() {
                 if let Some(connection) = client.get_connection_mut() {

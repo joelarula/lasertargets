@@ -1,11 +1,9 @@
 use bevy::prelude::*;
-use common::scene::{SceneSetup, SceneSystemSet};
+use common::scene::{SceneEntity, SceneSetup, SceneSystemSet};
 
 pub struct ScenePlugin;
 
-/// Marker component for the scene entity
-#[derive(Component)]
-pub struct SceneEntity;
+
 
 impl Plugin for ScenePlugin {
     fn build(&self, app: &mut App) {

@@ -1,9 +1,9 @@
 use bevy::prelude::*;
 use bevy_quinnet::server::ConnectionLostEvent;
 use common::path::{UniversalPath, PathSegment};
-use common::scene::SceneSetup;
+use common::scene::{SceneEntity, SceneSetup};
 use crate::plugins::network::{MousePositionEvent, KeyboardInputEvent};
-use crate::plugins::scene::SceneEntity;
+
 
 pub struct CalibrationPlugin;
 

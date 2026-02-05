@@ -1,8 +1,8 @@
 use bevy::prelude::*;
+use common::scene::SceneData;
 use common::scene::SceneSetup;
 use crate::plugins::camera::CameraSystemSet;
 use crate::plugins::camera::DisplayMode;
-use crate::plugins::scene::SceneData;
 use crate::plugins::instructions::InstructionState;
 use common::config::{SceneConfiguration, ProjectorConfiguration};
 use std::f32::consts::PI;
