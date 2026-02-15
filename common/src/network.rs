@@ -90,12 +90,16 @@ pub enum NetworkMessage {
 
     SpawnHunterTarget(HunterTarget, bevy::prelude::Vec3),
     
-
-
-
-
+    // Hunter game server broadcasts (server → terminal)
+    HunterStatsUpdate {
+        session_id: Uuid,
+        targets_spawned: u32,
+        targets_popped: u32,
+        score: u32,
+    },
 
 }
+
 
 impl NetworkMessage {
     /// Serialize the message to bytes using bincode

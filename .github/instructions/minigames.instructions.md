@@ -31,7 +31,18 @@ pub mod terminal;
 ```
 
 ### model.rs
-Game-specific data structures:
+Game-specific data structures and **shared events**:
+
+**CRITICAL:** Events used by both server and terminal MUST be defined here (or in common/src/game.rs), not in server.rs or terminal.rs:
+
+```rust
+// ✅ Shared events belong in model.rs or common
+#[derive(Message, Debug, Clone, Serialize, Deserialize)]
+pub struct MyGameClickEvent { /* ... */ }
+
+#[derive(Message, Debug, Clone, Serialize, Deserialize)]
+pub struct BroadcastMyGameEvent { /* ... */ }
+```
 ```rust
 use serde::{Deserialize, Serialize};
 

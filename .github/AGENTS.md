@@ -248,6 +248,34 @@ cargo build --message-format=json
 <details>
 <summary><b>Network Issues</b></summary>
 
+**CRITICAL: Network Communication Pattern**
+
+```bash
+# Enable network logging (with dynamic linking for faster rebuilds)
+RUST_LOG=bevy_quinnet=debug,server=debug cargo run -p server --features bevy/dynamic_linking
+
+# In code, add logging
+debug!("Sending message: {:?}", message);
+```
+
+**\u274c NEVER do this:**
+- Don't use `ResMut<QuinnetServer>` in game plugins
+- Don't call `endpoint.broadcast_payload()` outside `network.rs`
+
+**\u2705 ALWAYS do this:**
+- Raise internal events (e.g., `BroadcastMyEvent`)
+- Let network plugin handle actual broadcasting
+- Only `server/src/plugins/network.rs` touches `QuinnetServer`
+- Only `terminal/src/plugins/network.rs` touches `QuinnetClient`
+
+Check:
+- [ ] Server is running and listening
+- [ ] Firewall allows connection
+- [ ] Messages properly serialized
+- [ ] Both sides handle message type
+- [ ] Events raised (not direct network calls)
+</details>
+
 ```bash
 # Enable network logging (with dynamic linking for faster rebuilds)
 RUST_LOG=bevy_quinnet=debug,server=debug cargo run -p server --features bevy/dynamic_linking
@@ -282,6 +310,18 @@ Common causes:
 </details>
 
 ## Code Quality Guidelines
+
+### Documentation Guidelines
+
+**Instruction Files**:
+- ✅ **DO**: Keep instructions concise and reference-focused
+- ✅ **DO**: Document what systems do and how they interact
+- ✅ **DO**: List implementation status and features
+- ✅ **DO**: Provide architecture diagrams and flow descriptions
+- ❌ **DON'T**: Include large code examples (read actual code instead)
+- ❌ **DON'T**: Duplicate code from implementation files
+- ❌ **DON'T**: Copy-paste full function implementations
+- **Why**: Code examples become outdated and create maintenance burden. Actual code is the source of truth.
 
 ### DO ✅
 

@@ -2,6 +2,45 @@
 
 **Applies to:** Files dealing with `NetworkMessage`, network communication, or `bevy_quinnet`
 
+## CRITICAL RULES
+
+### ❌ DON'T: Use QuinnetServer/QuinnetClient directly in game plugins
+```rust
+// ❌ WRONG: Game plugin using server directly
+fn spawn_target(
+    mut server: ResMut<QuinnetServer>,  // ❌ NO!
+) {
+    server.get_endpoint_mut().broadcast_payload(...);
+}
+```
+
+### ✅ DO: Use internal message pattern
+```rust
+// ✅ CORRECT: Game plugin raises event
+#[derive(Message, Debug, Clone)]
+pub struct BroadcastTargetSpawned { /* ... */ }
+
+fn spawn_target(
+    mut events: MessageWriter<BroadcastTargetSpawned>,  // ✅ YES!
+) {
+    events.write(BroadcastTargetSpawned { /* ... */ });
+}
+
+// Network plugin handles broadcasting (in network.rs)
+fn broadcast_target_events(
+    mut server: ResMut<QuinnetServer>,
+    mut events: MessageReader<BroadcastTargetSpawned>,
+) {
+    for event in events.read() {
+        let msg = NetworkMessage::TargetSpawned { /* ... */ };
+        endpoint.broadcast_payload(msg.to_bytes());
+    }
+}
+```
+
+**Only `server/src/plugins/network.rs` touches `QuinnetServer`.**  
+**Only `terminal/src/plugins/network.rs` touches `QuinnetClient`.**
+
 ## Context
 You are working with the LaserTargets network protocol. The system uses QUIC (via `bevy_quinnet`) for client-server communication with binary serialization (bincode).
 

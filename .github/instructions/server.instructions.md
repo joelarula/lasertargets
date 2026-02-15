@@ -18,6 +18,84 @@ You are working on the headless LaserTargets server application. This runs at co
 
 ## Important Patterns
 
+### CRITICAL: Network Communication Pattern
+
+**❌ NEVER do this in game plugins:**
+```rust
+// ❌ DON'T: Use QuinnetServer directly in game plugins
+fn my_system(mut server: ResMut<QuinnetServer>) {
+    let endpoint = server.get_endpoint_mut();
+    endpoint.broadcast_payload(...);
+}
+```
+
+**✅ ALWAYS do this instead:**
+```rust
+// ✅ DO: Raise events that network plugin handles
+
+// 1. Define broadcast event in your game plugin
+#[derive(Message, Debug, Clone)]
+pub struct BroadcastMyEvent {
+    pub session_id: Uuid,
+    pub data: MyData,
+}
+
+// 2. Raise the event in your game logic
+fn my_system(mut events: MessageWriter<BroadcastMyEvent>) {
+    events.write(BroadcastMyEvent { /* ... */ });
+}
+
+// 3. Network plugin listens and broadcasts
+// (in server/src/plugins/network.rs)
+fn broadcast_my_events(
+    mut server: ResMut<QuinnetServer>,
+    mut events: MessageReader<BroadcastMyEvent>,
+) {
+    for event in events.read() {
+        let message = NetworkMessage::MyUpdate { /* ... */ };
+        endpoint.broadcast_payload(message.to_bytes());
+    }
+}
+```
+
+**Why?** This keeps networking logic in one place (network.rs), makes game plugins testable without network, and follows the internal message pattern used throughout the codebase.
+
+### CRITICAL: Event Location
+
+**Events used by BOTH client and server:**
+
+```rust
+// ❌ DON'T: Define minigame events in server crate
+// minigames/hunter/src/server.rs
+#[derive(Message, Debug, Clone)]
+pub struct HunterClickEvent { /* ... */ }  // ❌ NO!
+
+// ❌ DON'T: Define minigame events in common crate
+// common/src/game.rs
+#[derive(Message, Debug, Clone)]
+pub struct HunterClickEvent { /* ... */ }  // ❌ NO!
+
+// ✅ DO: Define minigame events in minigame model.rs
+// minigames/hunter/src/model.rs
+#[derive(Message, Debug, Clone, Serialize, Deserialize)]
+pub struct HunterClickEvent { /* ... */ }  // ✅ YES!
+```
+
+**Generic events used across multiple features go in common:**
+```rust
+// ✅ OK: Generic game session events in common
+// common/src/game.rs
+#[derive(Message, Debug, Clone)]
+pub struct GameSessionCreated { /* ... */ }  // Used by all games
+```
+
+**Server-only events stay in server crate:**
+```rust
+// ✅ OK: Server-only event
+#[derive(Message, Debug, Clone)]
+pub struct SpawnHunterTargetEvent { /* ... */ }  // Only used by server systems
+```
+
 ### Fixed Timestep
 - Server runs at 50 FPS: `FIXED_TIMESTEP = 1.0 / 50.0`
 - Use `FixedUpdate` schedule for deterministic game logic

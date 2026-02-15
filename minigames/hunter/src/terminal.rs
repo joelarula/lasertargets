@@ -1,7 +1,8 @@
-use bevy::{app::{App, Plugin, Update}, ecs::{component::Component, entity::Entity, query::{Changed, With}, system::{Commands, Query, Res, ResMut}}, math::Dir3, prelude::default, state::{condition::in_state, state::{NextState, OnEnter, OnExit, State}}, ui::Interaction};
+use bevy::{app::{App, Plugin, Update}, ecs::{component::Component, entity::Entity, query::{Changed, With}, system::{Commands, Query, Res, ResMut}}, prelude::default, state::{condition::in_state, state::{NextState, OnEnter, OnExit, State}}, ui::Interaction, input::ButtonInput};
 use bevy_quinnet::client::QuinnetClient;
 use common::{network::NetworkMessage, path::UniversalPath, scene::SceneData, state::{GameState, ServerState, TerminalState}, toolbar::{Docking, ItemState, ToolbarButton, ToolbarItem}};
-use crate::common::{GAME_ID, HunterGameState};
+use crate::common::{GAME_ID, HunterGameState, generate_game_report};
+use crate::model::{HunterGameStats, CollisionIndicator};
 use bevy::prelude::*;
 
 /// Extension trait to add gizmo drawing to UniversalPath
@@ -36,13 +37,8 @@ impl UniversalPathGizmos for UniversalPath {
     }
 }
 
-#[derive(Component)]
-struct BasictargetToolbarMarker;
-
 const START_GAME_BTN: &str = "start_hunter_game";
-
 const SPAWN_BASIC_TARGET_BTN: &str = "spawn_basic_target";
-
 
 #[derive(Resource, Default)]
 struct DragState {
@@ -55,18 +51,26 @@ struct MenuButton;
 #[derive(Component)]
 struct BasicTargetButton;
 
+#[derive(Component)]
+struct HunterStatsDisplay;
+
 pub struct HunterTerminalPlugin;
 
 impl Plugin for HunterTerminalPlugin {
 
     fn build(&self, app: &mut App) {      
+        app.init_resource::<DragState>();
         app.add_systems(OnEnter(ServerState::Menu), spawn_menu_toolbar);
         app.add_systems(OnExit(ServerState::Menu), despawn_menu_toolbar);
-        app.add_systems(OnEnter(HunterGameState::On), spawn_basictarget_toolbar_item);
+        app.add_systems(OnEnter(HunterGameState::On), (spawn_basictarget_toolbar_item, spawn_hunter_stats_ui));
+        app.add_systems(OnExit(HunterGameState::On), on_hunter_game_finish);
+        app.add_systems(OnExit(HunterGameState::On), cleanup_hunter_stats_ui);
         app.add_systems(OnEnter(ServerState::Menu), despawn_basictarget_toolbar_item); 
         app.add_systems(Update, handle_button_click);
         app.add_systems(Update, handle_target_drag.run_if(in_state(HunterGameState::On)));
         app.add_systems(Update, draw_drag_gizmo.run_if(in_state(HunterGameState::On)));
+        app.add_systems(Update, handle_server_updates.run_if(in_state(HunterGameState::On)));
+        app.add_systems(Update, update_hunter_stats_display.run_if(in_state(HunterGameState::On)));
 
    
     }
@@ -194,6 +198,7 @@ fn handle_target_drag(
                             bevy::log::warn!("Failed to send spawn target message: {:?}", e);
                         } else {
                             bevy::log::info!("Sent spawn target message at world position {:?}", world_pos);
+                            // Server will track stats and broadcast update
                         }
                     }
                 }
@@ -220,4 +225,127 @@ fn draw_drag_gizmo(
             path.draw_with_gizmos(&mut gizmos, &global_transform, 0.1);
         }
     }
+}
+
+/// Handle server broadcasts for stats updates
+fn handle_server_updates(
+    mut client: ResMut<QuinnetClient>,
+    mut stats: ResMut<HunterGameStats>,
+) {
+    if let Some(connection) = client.get_connection_mut() {
+        if let Some(channel_id) = connection.default_channel() {
+            while let Some(bytes) = connection.try_receive_payload(channel_id) {
+                if let Ok(message) = NetworkMessage::from_bytes(&bytes) {
+                    match message {
+                        NetworkMessage::HunterStatsUpdate { session_id, targets_spawned, targets_popped, score } => {
+                            if session_id == stats.session_id {
+                                stats.targets_spawned = targets_spawned;
+                                stats.targets_popped = targets_popped;
+                                stats.score = score;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Spawn collision indicator at click position
+fn spawn_collision_indicator(commands: &mut Commands, position: Vec3) {
+    let indicator_path = UniversalPath::circle(
+        Vec2::new(position.x, position.y),
+        0.02, // 4cm diameter (small marker)
+        Color::srgb(1.0, 0.0, 0.0) // Red color
+    );
+    
+    commands.spawn((
+        CollisionIndicator,
+        Transform::from_translation(position),
+        GlobalTransform::default(),
+        Visibility::default(),
+        indicator_path,
+        common::path::PathRenderable::default(),
+    ));
+}
+
+/// Spawn stats UI in bottom toolbar
+fn spawn_hunter_stats_ui(mut commands: Commands) {
+    commands.spawn((
+        HunterStatsDisplay,
+        Text::new("Spawned: 0 | Hits: 0 | Points: 0"),
+        TextFont {
+            font_size: 16.0,
+            ..default()
+        },
+        TextColor(Color::WHITE),
+        Node {
+            position_type: PositionType::Absolute,
+            right: Val::Px(10.0),
+            bottom: Val::Px(5.0),
+            ..default()
+        },
+        ZIndex(1000),
+    ));
+}
+
+/// Update stats display in real-time
+fn update_hunter_stats_display(
+    stats: Res<HunterGameStats>,
+    mut query: Query<&mut Text, With<HunterStatsDisplay>>,
+) {
+    if stats.is_changed() {
+        if let Ok(mut text) = query.single_mut() {
+            **text = format!(
+                "Spawned: {} | Hits: {} | Points: {}",
+                stats.targets_spawned,
+                stats.targets_popped,
+                stats.score
+            );
+        }
+    }
+}
+
+/// Cleanup stats UI on game exit
+fn cleanup_hunter_stats_ui(
+    mut commands: Commands,
+    query: Query<Entity, With<HunterStatsDisplay>>,
+) {
+    for entity in &query {
+        commands.entity(entity).despawn();
+    }
+}
+
+/// Generate and log post-game report on game finish
+fn on_hunter_game_finish(
+    stats: Res<HunterGameStats>,
+    time: Res<Time>,
+) {
+    let report = generate_game_report(&*stats, time.elapsed_secs_f64());
+    
+    // Log report header
+    info!("=== HUNTER GAME REPORT ===");
+    info!("Game Duration: {:.2}s", report.total_game_time);
+    info!("Targets Spawned: {}", report.total_targets_spawned);
+    info!("Targets Popped: {}", report.total_targets_popped);
+    info!("Total Score: {}", report.total_score);
+    info!("Average Spawn Interval: {:.2}s", report.avg_spawn_interval);
+    info!("Average Target Lifetime: {:.2}s", report.avg_target_lifetime);
+    info!("");
+    
+    // Log event timeline
+    info!("EVENT TIMELINE:");
+    for event in &report.timeline {
+        info!(
+            "[{:.2}s] {} target {} at ({:.2}, {:.2}, {:.2})",
+            event.timestamp,
+            event.event_type,
+            event.target_uuid,
+            event.position.x,
+            event.position.y,
+            event.position.z
+        );
+    }
+    info!("=== END REPORT ===");
 }

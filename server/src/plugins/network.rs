@@ -14,6 +14,7 @@ use common::scene::SceneSetup;
 use common::state::{GameState, ServerState};
 use std::collections::{HashMap, HashSet};
 use std::net::{IpAddr, Ipv6Addr};
+use hunter::model::{BroadcastStatsUpdateEvent, HunterClickEvent};
 use hunter::server::SpawnHunterTargetEvent;
 
 use crate::plugins::actor::{
@@ -68,6 +69,8 @@ impl Plugin for NetworkingPlugin {
             .add_message::<MousePositionEvent>()
             .add_message::<KeyboardInputEvent>()
             .add_message::<SpawnHunterTargetEvent>()
+            .add_message::<HunterClickEvent>()
+            .add_message::<BroadcastStatsUpdateEvent>()
             .init_resource::<NetworkingConfiguration>()
             .add_systems(Startup, start_server)
             .add_systems(Update, receive_network_messages)
@@ -76,6 +79,7 @@ impl Plugin for NetworkingPlugin {
             .add_systems(Update, handle_game_session_messages)
             .add_systems(Update, handle_input_messages)
             .add_systems(Update, handle_hunter_target_messages)
+            .add_systems(Update, broadcast_hunter_events)
             .add_systems(Update, send_ping_periodically)
             .add_systems(Update, handle_game_session_created)
             .add_systems(Update, send_game_session_updates)
@@ -305,6 +309,8 @@ fn handle_input_messages(
     mut messages: MessageReader<FromClientMessage>,
     mut mouse_position_events: MessageWriter<MousePositionEvent>,
     mut keyboard_input_events: MessageWriter<KeyboardInputEvent>,
+    mut hunter_click_events: MessageWriter<HunterClickEvent>,
+    game_sessions: Query<&GameSession>,
 ) {
     for msg in messages.read() {
         match &msg.message {
@@ -320,6 +326,23 @@ fn handle_input_messages(
                     key: key.clone(),
                     pressed: *pressed,
                 });
+            }
+            NetworkMessage::MouseButtonInput { button, pressed, position } => {
+                // Forward mouse clicks to hunter game if session is active
+                if button == "Left" && *pressed {
+                    if let Some(position) = position {
+                        // Check if there's an active hunter game session (game_id 101)
+                        for session in game_sessions.iter() {
+                            if session.game_id == 101 { // Hunter game ID
+                                hunter_click_events.write(HunterClickEvent {
+                                    session_id: session.session_id,
+                                    click_position: *position,
+                                });
+                                break;
+                            }
+                        }
+                    }
+                }
             }
             _ => {}
         }
@@ -341,6 +364,32 @@ fn handle_hunter_target_messages(
                 });
             }
             _ => {}
+        }
+    }
+}
+
+/// Broadcast hunter game events to all clients
+fn broadcast_hunter_events(
+    mut server: ResMut<QuinnetServer>,
+    mut stats_events: MessageReader<BroadcastStatsUpdateEvent>,
+) {
+    let Some(endpoint) = server.get_endpoint_mut() else {
+        return;
+    };
+    
+    // Broadcast stats update events
+    for event in stats_events.read() {
+        let message = NetworkMessage::HunterStatsUpdate {
+            session_id: event.session_id,
+            targets_spawned: event.targets_spawned,
+            targets_popped: event.targets_popped,
+            score: event.score,
+        };
+        
+        if let Ok(payload) = message.to_bytes() {
+            if let Err(e) = endpoint.broadcast_payload(payload) {
+                error!("Failed to broadcast stats update: {:?}", e);
+            }
         }
     }
 }

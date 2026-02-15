@@ -14,6 +14,28 @@ You are working on the shared `common` library. This contains data structures, c
 
 ## Important Guidelines
 
+### CRITICAL: Event Location Rules
+
+**Events/Messages used by BOTH client and server MUST be in common crate:**
+
+✅ **DO put in common:**
+- **Generic** events used across multiple features (e.g., `GameSessionCreated`)
+- **Core system** events (e.g., `ActorRegistrationEvent`)
+- Events that are **NOT specific to any minigame**
+
+❌ **DON'T put in common:**
+- **Minigame-specific** events (put in `minigames/gamename/src/model.rs`)
+- Events used only within server (keep in `server/` plugins)
+- Events used only within terminal (keep in `terminal/` plugins)
+
+**For minigame events used by both server and terminal:**
+Put them in `minigames/gamename/src/model.rs` (e.g., `HunterClickEvent` goes in `hunter/src/model.rs`)
+
+**Why?** 
+- Keeps minigame logic self-contained in minigame crates
+- Prevents common crate from becoming a dumping ground
+- Maintains clear separation: common = shared infrastructure, minigames = game-specific logic
+
 ### Component Design
 Components should be data-focused but can include:
 - ✅ Constructors with validation (`new()` that returns `Result`)
