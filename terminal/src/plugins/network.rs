@@ -1,4 +1,4 @@
-use common::state::{GameState, ServerState};
+use common::state::{CalibrationState, GameState, ServerState};
 use bevy::prelude::*;
 use bevy_quinnet::client::connection::ClientSideConnection;
 use bevy_quinnet::client::{certificate::CertificateVerificationMode, connection::ClientAddrConfiguration, ClientConnectionConfiguration, QuinnetClient, QuinnetClientPlugin};

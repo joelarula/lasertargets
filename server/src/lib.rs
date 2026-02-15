@@ -12,7 +12,7 @@ use bevy::state::app::StatesPlugin;
 use bevy_quinnet::server::QuinnetServerPlugin;
 use common::game::GameRegistryPlugin;
 use common::scene::SceneSetupPlugin;
-use common::state::{GameState, ServerState};
+use common::state::{CalibrationState, GameState, ServerState};
 use hunter::common::HunterGamePlugin;
 use snake::plugin::SnakeGamePlugin;
 
@@ -33,6 +33,7 @@ pub fn add_common_server_plugins(app: &mut App) {
     app
     .insert_resource(Time::<Fixed>::from_seconds(FIXED_TIMESTEP))
     .init_state::<ServerState>()
+    .init_state::<CalibrationState>()
     .init_state::<GameState>()
     .add_plugins(StatesPlugin)
     .add_plugins(SceneSetupPlugin)

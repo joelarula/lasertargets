@@ -3,7 +3,7 @@ use bevy::prelude::*;
 use bevy_egui::EguiPlugin;
 use common::game::GameRegistryPlugin;
 use common::scene::SceneSetupPlugin;
-use common::state::{ServerState, TerminalState};
+use common::state::{CalibrationState, ServerState, TerminalState};
 use hunter::terminal::HunterTerminalPlugin;
 // Removed unused import: use log::info;
 
@@ -48,6 +48,7 @@ fn main() {
         })
     )
     .init_state::<ServerState>()
+    .init_state::<CalibrationState>()
     .init_state::<TerminalState>()
     .add_plugins(NetworkPlugin)
     .add_plugins(EguiPlugin::default())

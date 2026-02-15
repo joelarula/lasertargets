@@ -24,3 +24,10 @@ pub enum TerminalState {
     Connecting,
     Connected,
 }
+
+#[derive(States, Debug, Clone, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+pub enum CalibrationState {
+    #[default]
+    On,
+    Off,
+}

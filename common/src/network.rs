@@ -22,9 +22,12 @@ pub enum NetworkMessage {
     //server
     QueryServerState,
     QueryGameState,
+    QueryCalibrationState,
     
     ServerStateUpdate(crate::state::ServerState),
     GameStateUpdate(crate::state::GameState),
+    CalibrationStateUpdate(crate::state::CalibrationState),
+    UpdateCalibrationState(crate::state::CalibrationState),
 
     // Projector Configuration
     QueryProjectorConfig,

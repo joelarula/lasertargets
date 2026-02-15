@@ -11,7 +11,7 @@ use common::config::{CameraConfiguration, ProjectorConfiguration, SceneConfigura
 use common::game::{ExitGameEvent, FinishGameEvent, GameSession, GameSessionCreated, GameSessionUpdate, InitGameSessionEvent, PauseGameEvent, ResumeGameEvent, StartGameEvent};
 use common::network::{NetworkMessage, SERVER_HOST, SERVER_PORT};
 use common::scene::SceneSetup;
-use common::state::{GameState, ServerState};
+use common::state::{CalibrationState, GameState, ServerState};
 use std::collections::{HashMap, HashSet};
 use std::net::{IpAddr, Ipv6Addr};
 use hunter::model::{BroadcastStatsUpdateEvent, HunterClickEvent};
