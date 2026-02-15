@@ -2,22 +2,21 @@ use bevy::prelude::*;
 use bevy_quinnet::server::ConnectionLostEvent;
 use common::path::{UniversalPath, PathSegment};
 use common::scene::{SceneEntity, SceneSetup};
+use common::state::CalibrationState;
 use crate::plugins::network::{MousePositionEvent, KeyboardInputEvent};
 
 
 pub struct CalibrationPlugin;
 
-/// Resource to track calibration state (server singleton)
+/// Resource to track calibration data (server singleton)
 #[derive(Resource)]
-pub struct CalibrationState {
-    pub enabled: bool, // Global calibration state
+pub struct CalibrationData {
     pub mouse_positions: std::collections::HashMap<u64, Vec3>, // Per-client mouse tracking
 }
 
-impl Default for CalibrationState {
+impl Default for CalibrationData {
     fn default() -> Self {
         Self {
-            enabled: true, // Calibration enabled by default
             mouse_positions: std::collections::HashMap::new(),
         }
     }
@@ -36,10 +35,9 @@ pub struct ProjectionAreaRectangle;
 impl Plugin for CalibrationPlugin {
     fn build(&self, app: &mut App) {
         app
-            .init_resource::<CalibrationState>()
+            .init_resource::<CalibrationData>()
             .add_systems(PostStartup, initialize_calibration)
             .add_systems(Update, (
-                handle_calibration_toggle,
                 handle_mouse_position_updates,
                 spawn_crosshairs_for_new_clients,
             ))
@@ -53,14 +51,14 @@ impl Plugin for CalibrationPlugin {
 /// Initialize calibration on startup - spawn projection area rectangle
 fn initialize_calibration(
     mut commands: Commands,
-    calibration_state: Res<CalibrationState>,
+    calibration_state: Res<State<CalibrationState>>,
     scene_query: Query<(Entity, &Transform), With<SceneEntity>>,
     scene_setup: Res<SceneSetup>,
 ) {
-    info!("Initializing calibration system. Enabled: {}", calibration_state.enabled);
+    info!("Initializing calibration system. State: {:?}", calibration_state.get());
     
     // Spawn projection area rectangle if calibration is enabled
-    if !calibration_state.enabled {
+    if *calibration_state.get() == CalibrationState::Off {
         info!("Calibration disabled, skipping projection area rectangle spawn");
         return;
     }
@@ -74,75 +72,35 @@ fn initialize_calibration(
     }
 }
 
-fn handle_calibration_toggle(
-    mut keyboard_events: MessageReader<KeyboardInputEvent>,
-    mut calibration_state: ResMut<CalibrationState>,
-    mut commands: Commands,
-    crosshair_query: Query<Entity, With<CalibrationCrosshair>>,
-    projection_area_query: Query<Entity, With<ProjectionAreaRectangle>>,
-    scene_query: Query<(Entity, &Transform), With<SceneEntity>>,
-    scene_setup: Res<SceneSetup>,
-) {
-    for event in keyboard_events.read() {
-        info!("Received keyboard event: key='{}' pressed={} client_id={}", event.key, event.pressed, event.client_id);
-        
-        if event.key == "F3" && event.pressed {
-            info!("F3 pressed by client {}, current calibration enabled: {}", event.client_id, calibration_state.enabled);
-            
-            if calibration_state.enabled {
-                // Deactivate calibration
-                calibration_state.enabled = false;
-                
-                // Despawn all calibration entities
-                for entity in crosshair_query.iter() {
-                    commands.entity(entity).despawn();
-                }
-                for entity in projection_area_query.iter() {
-                    commands.entity(entity).despawn();
-                }
-                
-                info!("Calibration deactivated globally");
-            } else {
-                // Activate calibration
-                calibration_state.enabled = true;
-                
-                // Spawn calibration elements
-                spawn_calibration_elements(&mut commands, Vec3::ZERO, &scene_query, &scene_setup, &calibration_state);
-                
-                info!("Calibration activated globally");
-            }
-        }
-    }
-}
-
 fn handle_mouse_position_updates(
     mut mouse_events: MessageReader<MousePositionEvent>,
-    mut calibration_state: ResMut<CalibrationState>,
+    mut calibration_data: ResMut<CalibrationData>,
 ) {
     // Always track mouse positions from all clients
     for event in mouse_events.read() {
         if let Some(world_pos) = event.position {
-            calibration_state.mouse_positions.insert(event.client_id, world_pos);
+            calibration_data.mouse_positions.insert(event.client_id, world_pos);
         } else {
-            calibration_state.mouse_positions.remove(&event.client_id);
+            calibration_data.mouse_positions.remove(&event.client_id);
         }
     }
 }
 
 fn update_crosshair_positions(
-    calibration_state: Res<CalibrationState>,
+    calibration_state: Res<State<CalibrationState>>,
+    calibration_data: Res<CalibrationData>,
     scene_setup: Res<SceneSetup>,
     mut crosshair_query: Query<(&mut Transform, &mut GlobalTransform, &CalibrationCrosshair)>,
 ) {
     // Only update if calibration is enabled
-    if !calibration_state.enabled {
+    if *calibration_state.get() == CalibrationState::Off {
         return;
     }
     
     let scene_y = scene_setup.scene.origin.translation.y;
     
     for (mut transform, mut global_transform, crosshair) in crosshair_query.iter_mut() {
-        if let Some(world_pos) = calibration_state.mouse_positions.get(&crosshair.client_id) {
+        if let Some(world_pos) = calibration_data.mouse_positions.get(&crosshair.client_id) {
             // Invert Y axis around the scene center Y position
             let corrected_pos = Vec3::new(world_pos.x, 2.0 * scene_y - world_pos.y, world_pos.z);
             transform.translation = corrected_pos;
@@ -153,13 +111,13 @@ fn update_crosshair_positions(
 
 fn cleanup_disconnected_clients(
     mut connection_lost_events: MessageReader<ConnectionLostEvent>,
-    mut calibration_state: ResMut<CalibrationState>,
+    mut calibration_data: ResMut<CalibrationData>,
 ) {
     for connection_lost in connection_lost_events.read() {
         let client_id = connection_lost.id;
         
         // Remove from mouse positions tracking
-        calibration_state.mouse_positions.remove(&client_id);
+        calibration_data.mouse_positions.remove(&client_id);
         
         info!("Cleaned up mouse tracking for disconnected client {}", client_id);
     }
@@ -170,7 +128,7 @@ fn spawn_calibration_elements(
     world_position: Vec3,
     scene_query: &Query<(Entity, &Transform), With<SceneEntity>>,
     scene_setup: &SceneSetup,
-    calibration_state: &CalibrationState,
+    calibration_data: &CalibrationData,
 ) {
     // Find the scene entity to parent the calibration elements to
     if let Ok((scene_entity, scene_transform)) = scene_query.single() {
@@ -183,7 +141,7 @@ fn spawn_calibration_elements(
         let local_position = scene_matrix.inverse().transform_point3(world_position);
         
         // Spawn crosshairs for all currently connected clients
-        for &client_id in calibration_state.mouse_positions.keys() {
+        for &client_id in calibration_data.mouse_positions.keys() {
             spawn_crosshair_at_position(commands, client_id, local_position);
         }
         
@@ -193,7 +151,7 @@ fn spawn_calibration_elements(
         warn!("No scene entity found to parent calibration elements to");
         
         // Fallback: spawn without parenting
-        for &client_id in calibration_state.mouse_positions.keys() {
+        for &client_id in calibration_data.mouse_positions.keys() {
             spawn_crosshair_at_position(commands, client_id, world_position);
         }
         spawn_projection_area_rectangle(commands, &scene_setup, Entity::PLACEHOLDER, &Transform::IDENTITY);
@@ -370,12 +328,12 @@ fn spawn_projection_area_rectangle(
 /// Spawn crosshairs for new clients when they first send mouse events
 fn spawn_crosshairs_for_new_clients(
     mut mouse_events: MessageReader<MousePositionEvent>,
-    calibration_state: Res<CalibrationState>,
+    calibration_state: Res<State<CalibrationState>>,
     mut commands: Commands,
     scene_query: Query<(Entity, &Transform), With<SceneEntity>>,
     crosshair_query: Query<&CalibrationCrosshair>,
 ) {
-    if !calibration_state.enabled {
+    if *calibration_state.get() == CalibrationState::Off {
         return;
     }
     

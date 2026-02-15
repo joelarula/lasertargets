@@ -1,10 +1,13 @@
 use bevy::prelude::*;
+use bevy_quinnet::client::QuinnetClient;
+use common::config::{ProjectorConfiguration, SceneConfiguration};
+use common::network::NetworkMessage;
 use common::scene::SceneData;
 use common::scene::SceneSetup;
+use common::state::CalibrationState;
 use crate::plugins::camera::CameraSystemSet;
 use crate::plugins::camera::DisplayMode;
 use crate::plugins::instructions::InstructionState;
-use common::config::{SceneConfiguration, ProjectorConfiguration};
 use std::f32::consts::PI;
 use bevy::color::palettes::css::DARK_GREY;
 use bevy::color::palettes::css::SILVER;
@@ -19,9 +22,6 @@ pub const GRID_SPACING: f32 = 0.25;
 
 const INSTRUCTION_TEXT_F3: &str = "Press [F3] to toggle calibration gizmos visibility";
 
-#[derive(Resource, Default)]
-pub struct CalibrationVisible(pub bool);
-
 #[derive(SystemSet, Debug, Hash, PartialEq, Eq, Clone)]
 pub struct CalibrationSystemSet;
 
@@ -32,7 +32,7 @@ pub struct CalibrationPlugin;
 impl Plugin for CalibrationPlugin {
     fn build(&self, app: &mut App) {
         app
-        .insert_resource(CalibrationVisible(true)) // Start with calibration visible
+
         .add_systems(Startup, setup_calibration_instructions)
         .add_systems(Update, toggle_calibration_visibility.in_set(CalibrationSystemSet))
         .add_systems(Update, update_grid.in_set(CalibrationSystemSet).after(CameraSystemSet))
@@ -50,17 +50,36 @@ fn setup_calibration_instructions(mut instruction_state: ResMut<InstructionState
 
 fn toggle_calibration_visibility(
     keyboard_input: Res<ButtonInput<KeyCode>>,
-    mut calibration_visible: ResMut<CalibrationVisible>,
+    calibration_state: Res<State<CalibrationState>>,
+    mut commands: Commands,
+    mut client: ResMut<QuinnetClient>,
 ) {
     if keyboard_input.just_pressed(KeyCode::F3) {
-        calibration_visible.0 = !calibration_visible.0;
-        info!("Calibration gizmos visibility toggled: {}", calibration_visible.0);
+        let new_state = match calibration_state.get() {
+            CalibrationState::On => CalibrationState::Off,
+            CalibrationState::Off => CalibrationState::On,
+        };
+        
+        // Update local state
+        commands.insert_resource(NextState::Pending(new_state.clone()));
+        
+        // Send to server
+        if let Some(connection) = client.get_connection_mut() {
+            let message = NetworkMessage::UpdateCalibrationState(new_state.clone());
+            if let Ok(payload) = message.to_bytes() {
+                if let Err(e) = connection.send_payload(payload) {
+                    error!("Failed to send calibration state update: {:?}", e);
+                } else {
+                    info!("Calibration state toggled to: {:?}", new_state);
+                }
+            }
+        }
     }
 }
 
-fn update_grid(mut gizmos: Gizmos, scene_configuration: Res<SceneConfiguration>, display_mode: Res<DisplayMode>, calibration_visible: Res<CalibrationVisible>) {
+fn update_grid(mut gizmos: Gizmos, scene_configuration: Res<SceneConfiguration>, display_mode: Res<DisplayMode>, calibration_state: Res<State<CalibrationState>>) {
     
-    if !calibration_visible.0 {
+    if *calibration_state.get() == CalibrationState::Off {
         return;
     }
     
@@ -80,9 +99,9 @@ fn draw_billboard_gizmos(
     camera_query: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
     scene_data: Res<SceneData>,
     scene_configuration: Res<SceneConfiguration>,
-    calibration_visible: Res<CalibrationVisible>,
+    calibration_state: Res<State<CalibrationState>>,
 ) {
-    if !calibration_visible.0 {
+    if *calibration_state.get() == CalibrationState::Off {
         return;
     }
     
@@ -152,9 +171,9 @@ fn draw_projector_billboard(
     scene_setup: Res<SceneSetup>,
     projector_config: Res<ProjectorConfiguration>,
     camera_query: Query<&GlobalTransform, With<Camera3d>>,
-    calibration_visible: Res<CalibrationVisible>,
+    calibration_state: Res<State<CalibrationState>>,
 ) {
-    if !calibration_visible.0 || !projector_config.switched_on {
+    if *calibration_state.get() == CalibrationState::Off || !projector_config.switched_on {
         return;
     }
 
@@ -254,9 +273,9 @@ fn draw_billboard_grid(
 fn draw_scene_crosshair(
     mut gizmos: Gizmos,
     scene_setup: Res<SceneSetup>,
-    calibration_visible: Res<CalibrationVisible>,
+    calibration_state: Res<State<CalibrationState>>,
 ) {
-    if !calibration_visible.0 {
+    if *calibration_state.get() == CalibrationState::Off {
         return;
     }
     

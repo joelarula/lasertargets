@@ -18,8 +18,6 @@ use crate::plugins::projector::ProjectorPlugin;
 use crate::plugins::scene::{ScenePlugin};
 use crate::plugins::toolbar::ToolbarPlugin;
 use crate::plugins::settings::SettingsPlugin;
-use crate::plugins::target::TargetPlugin;
-use crate::plugins::basictarget::BasicTargetPlugin;
 use crate::plugins::network::NetworkPlugin;
 use crate::plugins::path::PathPlugin;
 use crate::plugins::keyboard::KeyboardPlugin;
@@ -62,9 +60,7 @@ fn main() {
     .add_plugins(ProjectorPlugin)
     .add_plugins(ToolbarPlugin)
     .add_plugins(SettingsPlugin)
-    .add_plugins(BasicTargetPlugin)
     .add_plugins(PathPlugin)
-    .add_plugins(TargetPlugin)
     .add_plugins(KeyboardPlugin)
     .add_plugins(MousePlugin)
     .add_plugins(GameRegistryPlugin)
