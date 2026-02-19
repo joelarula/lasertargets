@@ -16,6 +16,7 @@ pub struct BroadcastStatsUpdateEvent {
     pub session_id: Uuid,
     pub targets_spawned: u32,
     pub targets_popped: u32,
+    pub misses: u32,
     pub score: u32,
 }
 
@@ -65,6 +66,7 @@ pub struct HunterGameStats {
     pub session_id: Uuid,
     pub targets_spawned: u32,
     pub targets_popped: u32,
+    pub misses: u32,
     pub score: u32,
     pub target_events: Vec<TargetEvent>,
     pub game_start_time: f64,

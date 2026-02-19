@@ -2,7 +2,8 @@ use bevy::{app::{App, Plugin, Update}, ecs::{component::Component, message::{Mes
 use common::{
     game::GameSession,
     path::UniversalPath,
-    scene::SceneEntity,
+    scene::{SceneEntity, SceneSetup},
+    state::ServerState,
     target::HunterTarget,
 };
 use crate::common::GAME_ID;
@@ -32,6 +33,43 @@ impl Plugin for HunterGameServerPlugin {
         app.add_message::<HunterClickEvent>();
         app.add_message::<BroadcastStatsUpdateEvent>();
         app.add_systems(Update, (spawn_hunter_targets, handle_hunter_clicks));
+        app.add_systems(OnExit(ServerState::InGame), reset_hunter_session);
+        app.add_systems(Update, reset_hunter_on_new_session);
+    }
+}
+
+fn reset_hunter_session(
+    mut commands: Commands,
+    targets: Query<Entity, With<HunterTargetEntity>>,
+    stats: Option<ResMut<HunterGameStats>>,
+) {
+    for entity in targets.iter() {
+        commands.entity(entity).despawn();
+    }
+
+    if stats.is_some() {
+        commands.remove_resource::<HunterGameStats>();
+    }
+}
+
+fn reset_hunter_on_new_session(
+    mut commands: Commands,
+    mut created_events: MessageReader<common::game::GameSessionCreated>,
+    targets: Query<Entity, With<HunterTargetEntity>>,
+    stats: Option<ResMut<HunterGameStats>>,
+) {
+    for event in created_events.read() {
+        if event.game_session.game_id != GAME_ID {
+            continue;
+        }
+
+        for entity in targets.iter() {
+            commands.entity(entity).despawn();
+        }
+
+        if stats.is_some() {
+            commands.remove_resource::<HunterGameStats>();
+        }
     }
 }
 
@@ -40,10 +78,11 @@ fn spawn_hunter_targets(
     mut commands: Commands,
     mut spawn_events: MessageReader<SpawnHunterTargetEvent>,
     scene_query: Query<(Entity, &Transform), With<SceneEntity>>,
-    mut stats_query: Query<&mut HunterGameStats>,
+    mut stats: Option<ResMut<HunterGameStats>>,
     mut stats_events: MessageWriter<BroadcastStatsUpdateEvent>,
     time: Res<Time>,
     game_sessions: Query<&GameSession>,
+    scene_setup: Res<SceneSetup>,
 ) {
     for event in spawn_events.read() {
         info!("Spawning hunter target at {:?}", event.position);
@@ -80,7 +119,7 @@ fn spawn_hunter_targets(
         };
 
         // Update stats for this session
-        if let Ok(mut stats) = stats_query.single_mut() {
+        if let Some(mut stats) = stats.as_mut() {
             stats.targets_spawned += 1;
             session_id = stats.session_id;
 
@@ -97,6 +136,7 @@ fn spawn_hunter_targets(
                 session_id: stats.session_id,
                 targets_spawned: stats.targets_spawned,
                 targets_popped: stats.targets_popped,
+                misses: stats.misses,
                 score: stats.score,
             });
         } else if let Some(session) = game_sessions.iter().find(|session| session.game_id == GAME_ID) {
@@ -106,6 +146,7 @@ fn spawn_hunter_targets(
                 session_id: session.session_id,
                 targets_spawned: 1,
                 targets_popped: 0,
+                misses: 0,
                 score: 0,
                 target_events: Vec::new(),
                 game_start_time: time.elapsed_secs_f64(),
@@ -122,6 +163,7 @@ fn spawn_hunter_targets(
                 session_id: session.session_id,
                 targets_spawned: 1,
                 targets_popped: 0,
+                misses: 0,
                 score: 0,
             });
         }
@@ -160,16 +202,17 @@ fn handle_hunter_clicks(
     mut click_events: MessageReader<HunterClickEvent>,
     target_query: Query<(Entity, &Transform, Option<&ChildOf>, &HunterTargetEntity)>,
     scene_query: Query<&Transform, With<SceneEntity>>,
-    mut stats_query: Query<&mut HunterGameStats>,
+    scene_setup: Res<SceneSetup>,
+    mut stats: Option<ResMut<HunterGameStats>>,
     time: Res<Time>,
     mut stats_events: MessageWriter<BroadcastStatsUpdateEvent>,
 ) {
     for event in click_events.read() {
         let click_pos = event.click_position;
+        let scene_transform = scene_query.single().ok();
+        let mut hit_any = false;
         
         // Check all targets for collision
-        let scene_transform: Option<&Transform> = scene_query.single().ok();
-
         for (entity, transform, parent, target_entity) in &target_query {
             // Only check targets for this session
             if target_entity.session_id != event.session_id {
@@ -189,12 +232,15 @@ fn handle_hunter_clicks(
             };
             let distance = click_pos.distance(target_pos);
             
-            // Targets are 0.25m diameter (0.125m radius)
-            let radius = 0.125;
+            let radius = match &target_entity.target_type {
+                HunterTarget::Basic(size, _) => *size,
+                HunterTarget::Baloon(size, _) => *size,
+            };
             
             if distance <= radius {
+                hit_any = true;
                 // Target hit! Update stats
-                if let Ok(mut stats) = stats_query.single_mut() {
+                if let Some(mut stats) = stats.as_mut() {
                     stats.targets_popped += 1;
                     stats.score += target_entity.reward;
                     
@@ -212,6 +258,7 @@ fn handle_hunter_clicks(
                         session_id: event.session_id,
                         targets_spawned: stats.targets_spawned,
                         targets_popped: stats.targets_popped,
+                        misses: stats.misses,
                         score: stats.score,
                     });
                     
@@ -221,6 +268,32 @@ fn handle_hunter_clicks(
                 // Despawn target (path broadcast handles visual removal)
                 commands.entity(entity).despawn();
                 break; // Only pop one target per click
+            }
+        }
+
+        if !hit_any {
+            if let Some(scene_transform) = scene_transform {
+                let scene_matrix = Mat4::from_scale_rotation_translation(
+                    scene_transform.scale,
+                    scene_transform.rotation,
+                    scene_transform.translation,
+                );
+                let local_click = scene_matrix.inverse().transform_point3(click_pos);
+                let half_width = scene_setup.scene.scene_dimension.x as f32 / 2.0;
+                let half_height = scene_setup.scene.scene_dimension.y as f32 / 2.0;
+
+                if local_click.x.abs() <= half_width && local_click.y.abs() <= half_height {
+                    if let Some(mut stats) = stats.as_mut() {
+                        stats.misses += 1;
+                        stats_events.write(BroadcastStatsUpdateEvent {
+                            session_id: event.session_id,
+                            targets_spawned: stats.targets_spawned,
+                            targets_popped: stats.targets_popped,
+                            misses: stats.misses,
+                            score: stats.score,
+                        });
+                    }
+                }
             }
         }
     }

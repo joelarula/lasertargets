@@ -87,6 +87,7 @@ fn init_hunter_stats(
             session_id: session.session_id,
             targets_spawned: 0,
             targets_popped: 0,
+            misses: 0,
             score: 0,
             target_events: Vec::new(),
             game_start_time: time.elapsed_secs_f64(),

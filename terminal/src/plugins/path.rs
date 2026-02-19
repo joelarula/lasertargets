@@ -2,6 +2,7 @@ use bevy::asset::uuid::Uuid;
 use bevy::prelude::*;
 use common::path::{PathRenderable, UniversalPath};
 use common::scene::SceneEntity;
+use common::state::TerminalState;
 use std::collections::HashMap;
 
 /// Component to track the UUID of a path entity for network synchronization
@@ -73,12 +74,24 @@ impl Plugin for PathPlugin {
             .add_message::<SpawnPathEvent>()
             .add_message::<DespawnPathEvent>()
             .add_message::<UpdatePathPositionEvent>()
+            .add_systems(OnEnter(TerminalState::Connecting), cleanup_paths_on_disconnect)
             .add_systems(Update, handle_spawn_path_events)
             .add_systems(Update, handle_despawn_path_events)
             .add_systems(Update, handle_update_path_position_events)
             .add_systems(Update, attach_paths_to_scene)
             .add_systems(Update, draw_paths);
     }
+}
+
+fn cleanup_paths_on_disconnect(
+    mut commands: Commands,
+    mut path_registry: ResMut<PathRegistry>,
+    path_query: Query<Entity, With<PathId>>,
+) {
+    for entity in path_query.iter() {
+        commands.entity(entity).despawn();
+    }
+    path_registry.paths.clear();
 }
 
 /// Handle spawn path events and create entities under the scene
@@ -166,7 +179,7 @@ fn handle_despawn_path_events(
             warn!("Path entity not found in registry: uuid={}", event.uuid);
         }
     }
-}
+}   
 
 /// Handle update path position events
 fn handle_update_path_position_events(

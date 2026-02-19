@@ -98,6 +98,7 @@ pub enum NetworkMessage {
         session_id: Uuid,
         targets_spawned: u32,
         targets_popped: u32,
+        misses: u32,
         score: u32,
     },
 

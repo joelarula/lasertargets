@@ -99,6 +99,9 @@ fn handle_client_connection_events(
     config: Res<NetworkingConfiguration>,
     current_state: Res<State<TerminalState>>,
     mut next_state: ResMut<NextState<TerminalState>>,
+    mut next_server_state: ResMut<NextState<ServerState>>,
+    mut next_game_state: ResMut<NextState<GameState>>,
+    mut next_calibration_state: ResMut<NextState<CalibrationState>>,
     mut attempt: ResMut<ConnectionAttempt>,
 ) {
     if client.is_connected() {
@@ -130,6 +133,8 @@ fn handle_client_connection_events(
         if *current_state.get() != TerminalState::Connecting {
             info!("Disconnected from server, attempting to reconnect...");
             next_state.set(TerminalState::Connecting);
+            next_server_state.set(ServerState::Menu);
+            next_game_state.set(GameState::Paused);
         }
         attempt.in_flight = false;
     }
@@ -298,13 +303,14 @@ fn receive_server_messages(
                                 debug!("Received UpdatePathPosition from server: uuid={}, position={:?}", uuid, position);
                                 update_path_position_writer.write(UpdatePathPositionEvent { uuid, position });
                             }
-                            NetworkMessage::HunterStatsUpdate { session_id, targets_spawned, targets_popped, score } => {
+                            NetworkMessage::HunterStatsUpdate { session_id, targets_spawned, targets_popped, misses, score } => {
                                 if let Some(mut stats) = hunter_stats.as_mut() {
                                     if stats.session_id != session_id {
                                         **stats = HunterGameStats {
                                             session_id,
                                             targets_spawned,
                                             targets_popped,
+                                            misses,
                                             score,
                                             target_events: Vec::new(),
                                             game_start_time: 0.0,
@@ -312,6 +318,7 @@ fn receive_server_messages(
                                     } else {
                                         stats.targets_spawned = targets_spawned;
                                         stats.targets_popped = targets_popped;
+                                        stats.misses = misses;
                                         stats.score = score;
                                     }
                                 } else {
@@ -319,6 +326,7 @@ fn receive_server_messages(
                                         session_id,
                                         targets_spawned,
                                         targets_popped,
+                                        misses,
                                         score,
                                         target_events: Vec::new(),
                                         game_start_time: 0.0,

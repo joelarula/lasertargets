@@ -1,15 +1,32 @@
 use bevy::asset::uuid::Uuid;
 use bevy::prelude::*;
 use std::collections::HashMap;
-use bevy_quinnet::server::QuinnetServer;
-use common::network::NetworkMessage;
 use common::path::{PathRenderable, UniversalPath};
 use common::scene::SceneEntity;
+use common::state::ServerState;
 use crate::plugins::calibration::CalibrationPath;
 
 /// Component to track the UUID of a path entity for network synchronization
 #[derive(Component, Debug, Clone)]
 pub struct PathId(pub Uuid);
+
+#[derive(Message, Debug, Clone)]
+pub struct BroadcastSpawnPath {
+    pub uuid: Uuid,
+    pub path: UniversalPath,
+    pub position: Vec3,
+}
+
+#[derive(Message, Debug, Clone)]
+pub struct BroadcastDespawnPath {
+    pub uuid: Uuid,
+}
+
+#[derive(Message, Debug, Clone)]
+pub struct BroadcastPathPosition {
+    pub uuid: Uuid,
+    pub position: Vec3,
+}
 
 #[derive(Resource, Default)]
 pub struct PathIdRegistry {
@@ -21,15 +38,33 @@ pub struct PathNetworkPlugin;
 impl Plugin for PathNetworkPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<PathIdRegistry>()
+            .add_message::<BroadcastSpawnPath>()
+            .add_message::<BroadcastDespawnPath>()
+            .add_message::<BroadcastPathPosition>()
             .add_systems(PostUpdate, broadcast_path_spawns)
             .add_systems(Update, broadcast_path_despawns)
-            .add_systems(PostUpdate, broadcast_path_position_updates);
+            .add_systems(PostUpdate, broadcast_path_position_updates)
+            .add_systems(OnExit(ServerState::InGame), cleanup_paths_on_game_exit);
     }
+}
+
+fn cleanup_paths_on_game_exit(
+    mut commands: Commands,
+    mut registry: ResMut<PathIdRegistry>,
+    path_query: Query<Entity, (With<UniversalPath>, Without<CalibrationPath>)>,
+    mut despawn_writer: MessageWriter<BroadcastDespawnPath>,
+) {
+    for entity in path_query.iter() {
+        if let Some(path_id) = registry.by_entity.remove(&entity) {
+            despawn_writer.write(BroadcastDespawnPath { uuid: path_id });
+        }
+        commands.entity(entity).despawn();
+    }
+    registry.by_entity.clear();
 }
 
 /// Broadcast newly spawned path entities to all clients
 fn broadcast_path_spawns(
-    mut server: ResMut<QuinnetServer>,
     mut commands: Commands,
     mut registry: ResMut<PathIdRegistry>,
     new_paths: Query<
@@ -37,11 +72,8 @@ fn broadcast_path_spawns(
         (Added<UniversalPath>, With<PathRenderable>, Without<CalibrationPath>),
     >,
     scene_query: Query<&Transform, With<SceneEntity>>,
+    mut spawn_writer: MessageWriter<BroadcastSpawnPath>,
 ) {
-    let Some(endpoint) = server.get_endpoint_mut() else {
-        return;
-    };
-
     for (entity, path, transform, parent) in new_paths.iter() {
         // Generate a UUID for this path if it doesn't have one
         let path_id = Uuid::new_v4();
@@ -73,42 +105,30 @@ fn broadcast_path_spawns(
             path_id, position
         );
 
-        let message = NetworkMessage::SpawnPath(path_id, path.clone(), position);
-        if let Ok(payload) = message.to_bytes() {
-            if let Err(e) = endpoint.broadcast_payload(payload) {
-                error!("Failed to broadcast SpawnPath: {}", e);
-            }
-        }
+        spawn_writer.write(BroadcastSpawnPath {
+            uuid: path_id,
+            path: path.clone(),
+            position,
+        });
     }
 }
 
 /// Broadcast despawned path entities to all clients
 fn broadcast_path_despawns(
-    mut server: ResMut<QuinnetServer>,
     mut removed: RemovedComponents<UniversalPath>,
     mut registry: ResMut<PathIdRegistry>,
+    mut despawn_writer: MessageWriter<BroadcastDespawnPath>,
 ) {
-    let Some(endpoint) = server.get_endpoint_mut() else {
-        return;
-    };
-
     for entity in removed.read() {
         if let Some(path_id) = registry.by_entity.remove(&entity) {
             info!("Broadcasting DespawnPath: uuid={}", path_id);
-
-            let message = NetworkMessage::DespawnPath(path_id);
-            if let Ok(payload) = message.to_bytes() {
-                if let Err(e) = endpoint.broadcast_payload(payload) {
-                    error!("Failed to broadcast DespawnPath: {}", e);
-                }
-            }
+            despawn_writer.write(BroadcastDespawnPath { uuid: path_id });
         }
     }
 }
 
 /// Broadcast position updates for path entities when their transform changes
 fn broadcast_path_position_updates(
-    mut server: ResMut<QuinnetServer>,
     changed_paths: Query<
         (&PathId, &Transform, Option<&ChildOf>),
         (
@@ -119,11 +139,8 @@ fn broadcast_path_position_updates(
         ),
     >,
     scene_query: Query<&Transform, With<SceneEntity>>,
+    mut update_writer: MessageWriter<BroadcastPathPosition>,
 ) {
-    let Some(endpoint) = server.get_endpoint_mut() else {
-        return;
-    };
-
     for (path_id, transform, parent) in changed_paths.iter() {
         let position = if let Some(parent) = parent {
             if let Ok(scene_transform) = scene_query.get(parent.parent()) {
@@ -142,11 +159,9 @@ fn broadcast_path_position_updates(
             path_id.0, position
         );
 
-        let message = NetworkMessage::UpdatePathPosition(path_id.0, position);
-        if let Ok(payload) = message.to_bytes() {
-            if let Err(e) = endpoint.broadcast_payload(payload) {
-                error!("Failed to broadcast UpdatePathPosition: {}", e);
-            }
-        }
+        update_writer.write(BroadcastPathPosition {
+            uuid: path_id.0,
+            position,
+        });
     }
 }

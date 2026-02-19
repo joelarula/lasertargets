@@ -16,6 +16,7 @@ use std::collections::{HashMap, HashSet};
 use std::net::{IpAddr, Ipv6Addr};
 use hunter::model::{BroadcastStatsUpdateEvent, HunterClickEvent};
 use hunter::server::SpawnHunterTargetEvent;
+use crate::plugins::path::{BroadcastDespawnPath, BroadcastPathPosition, BroadcastSpawnPath};
 
 use crate::plugins::actor::{
     ActorLink, ActorRegistrationResultEvent, ActorUnregistrationResultEvent, GameActorUpdateEvent,
@@ -71,6 +72,9 @@ impl Plugin for NetworkingPlugin {
             .add_message::<SpawnHunterTargetEvent>()
             .add_message::<HunterClickEvent>()
             .add_message::<BroadcastStatsUpdateEvent>()
+            .add_message::<BroadcastSpawnPath>()
+            .add_message::<BroadcastDespawnPath>()
+            .add_message::<BroadcastPathPosition>()
             .init_resource::<NetworkingConfiguration>()
             .add_systems(Startup, start_server)
             .add_systems(Update, receive_network_messages)
@@ -80,6 +84,7 @@ impl Plugin for NetworkingPlugin {
             .add_systems(Update, handle_input_messages)
             .add_systems(Update, handle_hunter_target_messages)
             .add_systems(Update, broadcast_hunter_events)
+            .add_systems(Update, broadcast_path_events)
             .add_systems(Update, send_ping_periodically)
             .add_systems(Update, handle_game_session_created)
             .add_systems(Update, send_game_session_updates)
@@ -87,6 +92,44 @@ impl Plugin for NetworkingPlugin {
             .add_systems(Update, handle_actor_result_events)
             .add_systems(Update, broadcast_scene_setup_on_change)
             .add_systems(Update, broadcast_state_on_change);
+    }
+}
+
+fn broadcast_path_events(
+    mut server: ResMut<QuinnetServer>,
+    mut spawn_events: MessageReader<BroadcastSpawnPath>,
+    mut despawn_events: MessageReader<BroadcastDespawnPath>,
+    mut update_events: MessageReader<BroadcastPathPosition>,
+) {
+    let Some(endpoint) = server.get_endpoint_mut() else {
+        return;
+    };
+
+    for event in spawn_events.read() {
+        let message = NetworkMessage::SpawnPath(event.uuid, event.path.clone(), event.position);
+        if let Ok(payload) = message.to_bytes() {
+            if let Err(e) = endpoint.broadcast_payload(payload) {
+                error!("Failed to broadcast SpawnPath: {}", e);
+            }
+        }
+    }
+
+    for event in despawn_events.read() {
+        let message = NetworkMessage::DespawnPath(event.uuid);
+        if let Ok(payload) = message.to_bytes() {
+            if let Err(e) = endpoint.broadcast_payload(payload) {
+                error!("Failed to broadcast DespawnPath: {}", e);
+            }
+        }
+    }
+
+    for event in update_events.read() {
+        let message = NetworkMessage::UpdatePathPosition(event.uuid, event.position);
+        if let Ok(payload) = message.to_bytes() {
+            if let Err(e) = endpoint.broadcast_payload(payload) {
+                error!("Failed to broadcast UpdatePathPosition: {}", e);
+            }
+        }
     }
 }
 
@@ -417,6 +460,7 @@ fn broadcast_hunter_events(
             session_id: event.session_id,
             targets_spawned: event.targets_spawned,
             targets_popped: event.targets_popped,
+            misses: event.misses,
             score: event.score,
         };
         

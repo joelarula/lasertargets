@@ -71,8 +71,22 @@ impl Plugin for HunterTerminalPlugin {
         app.add_systems(Update, handle_target_drag.run_if(in_state(HunterGameState::On)));
         app.add_systems(Update, draw_drag_gizmo.run_if(in_state(HunterGameState::On)));
         app.add_systems(Update, update_hunter_stats_display.run_if(in_state(HunterGameState::On)));
+        app.add_systems(OnEnter(TerminalState::Connecting), clear_hunter_on_disconnect);
 
    
+    }
+}
+
+fn clear_hunter_on_disconnect(
+    mut commands: Commands,
+    stats: Option<Res<HunterGameStats>>,
+    query: Query<Entity, With<HunterStatsDisplay>>,
+) {
+    for entity in query.iter() {
+        commands.entity(entity).despawn();
+    }
+    if stats.is_some() {
+        commands.remove_resource::<HunterGameStats>();
     }
 }
 
@@ -278,7 +292,7 @@ fn spawn_collision_indicator(commands: &mut Commands, position: Vec3) {
 fn spawn_hunter_stats_ui(mut commands: Commands) {
     commands.spawn((
         HunterStatsDisplay,
-        Text::new("Spawned: 0 | Hits: 0 | Points: 0"),
+        Text::new("Spawned: 0 | Hits: 0 | Misses: 0 | Points: 0"),
         TextFont {
             font_size: 16.0,
             ..default()
@@ -302,9 +316,10 @@ fn update_hunter_stats_display(
     if stats.is_changed() {
         if let Ok(mut text) = query.single_mut() {
             **text = format!(
-                "Spawned: {} | Hits: {} | Points: {}",
+                "Spawned: {} | Hits: {} | Misses: {} | Points: {}",
                 stats.targets_spawned,
                 stats.targets_popped,
+                stats.misses,
                 stats.score
             );
         }
