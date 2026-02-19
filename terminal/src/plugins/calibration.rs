@@ -16,17 +16,25 @@ use bevy::color::palettes::css::ORANGE;
 use bevy::color::palettes::css::RED;
 
 
+
 pub const DARK_GREY_THIRD: Srgba = Srgba::new(0.663, 0.663, 0.663, 0.3);
 
 pub const GRID_SPACING: f32 = 0.25;
 
 const INSTRUCTION_TEXT_F3: &str = "Press [F3] to toggle calibration gizmos visibility";
+const INSTRUCTION_TEXT_MOUSE_DISTANCE: &str = "Press [Mouse Back/Forward] to move scene distance further/closer";
 
 #[derive(SystemSet, Debug, Hash, PartialEq, Eq, Clone)]
 pub struct CalibrationSystemSet;
 
 
 pub struct CalibrationPlugin;
+
+#[derive(Component)]
+struct MouseCoordsText;
+
+#[derive(Component)]
+struct SceneDimsText;
 
 
 impl Plugin for CalibrationPlugin {
@@ -35,17 +43,95 @@ impl Plugin for CalibrationPlugin {
 
         .add_systems(Startup, setup_calibration_instructions)
         .add_systems(Update, toggle_calibration_visibility.in_set(CalibrationSystemSet))
+        .add_systems(Update, adjust_scene_distance_with_mouse.in_set(CalibrationSystemSet))
+        .add_systems(Update, ensure_calibration_text.in_set(CalibrationSystemSet))
         .add_systems(Update, update_grid.in_set(CalibrationSystemSet).after(CameraSystemSet))
         .add_systems(Update, draw_billboard_gizmos.in_set(CalibrationSystemSet).after(CameraSystemSet))
         .add_systems(Update, draw_projector_billboard.in_set(CalibrationSystemSet).after(CameraSystemSet))
         .add_systems(Update, draw_scene_crosshair.in_set(CalibrationSystemSet).after(CameraSystemSet))
-        .add_systems(Update, draw_mouse_crosshair.in_set(CalibrationSystemSet).after(CameraSystemSet));
+        .add_systems(Update, draw_mouse_crosshair.in_set(CalibrationSystemSet).after(CameraSystemSet))
+        .add_systems(Update, update_calibration_text.in_set(CalibrationSystemSet).after(CameraSystemSet));
     }
 }
 
 
 fn setup_calibration_instructions(mut instruction_state: ResMut<InstructionState>) {
     instruction_state.instructions.push(INSTRUCTION_TEXT_F3.to_string());
+    instruction_state.instructions.push(INSTRUCTION_TEXT_MOUSE_DISTANCE.to_string());
+}
+
+fn adjust_scene_distance_with_mouse(
+    calibration_state: Res<State<CalibrationState>>,
+    mouse_buttons: Res<ButtonInput<MouseButton>>,
+    mut scene_config: ResMut<SceneConfiguration>,
+) {
+    if *calibration_state.get() == CalibrationState::Off {
+        return;
+    }
+
+    const DISTANCE_STEP: f32 = 0.25;
+
+    let mut delta = 0.0;
+    if mouse_buttons.just_pressed(MouseButton::Back) {
+        delta -= DISTANCE_STEP;
+    }
+    if mouse_buttons.just_pressed(MouseButton::Forward) {
+        delta += DISTANCE_STEP;
+    }
+
+    if delta == 0.0 {
+        return;
+    }
+
+    let z = scene_config.origin.translation.z;
+    let signed_delta = if z <= 0.0 { delta } else { -delta };
+    scene_config.origin.translation.z = z + signed_delta;
+}
+
+fn ensure_calibration_text(
+    mut commands: Commands,
+    mouse_query: Query<Entity, With<MouseCoordsText>>,
+    dims_query: Query<Entity, With<SceneDimsText>>,
+) {
+    if !mouse_query.is_empty() || !dims_query.is_empty() {
+        return;
+    }
+
+    commands.spawn((
+        MouseCoordsText,
+        Text::new("Mouse: --"),
+        TextFont {
+            font_size: 14.0,
+            ..default()
+        },
+        TextColor(Color::WHITE),
+        Node {
+            position_type: PositionType::Absolute,
+            left: Val::Px(0.0),
+            top: Val::Px(0.0),
+            ..default()
+        },
+        ZIndex(1000),
+        Visibility::Hidden,
+    ));
+
+    commands.spawn((
+        SceneDimsText,
+        Text::new("Scene: --"),
+        TextFont {
+            font_size: 14.0,
+            ..default()
+        },
+        TextColor(Color::WHITE),
+        Node {
+            position_type: PositionType::Absolute,
+            left: Val::Px(0.0),
+            top: Val::Px(0.0),
+            ..default()
+        },
+        ZIndex(1000),
+        Visibility::Hidden,
+    ));
 }
 
 fn toggle_calibration_visibility(
@@ -283,4 +369,100 @@ fn draw_scene_crosshair(
     let crosshair_size = GRID_SPACING * 2.0; // Larger crosshair for scene center
     gizmos.line(center - Vec3::X * crosshair_size, center + Vec3::X * crosshair_size, RED);
     gizmos.line(center - Vec3::Y * crosshair_size, center + Vec3::Y * crosshair_size, RED);
+}
+
+fn update_calibration_text(
+    scene_setup: Res<SceneSetup>,
+    scene_data: Res<SceneData>,
+    calibration_state: Res<State<CalibrationState>>,
+    mut mouse_query: Query<(&mut Text, &mut Node, &mut Visibility), (With<MouseCoordsText>, Without<SceneDimsText>)>,
+    mut dims_query: Query<(&mut Text, &mut Node, &mut Visibility), (With<SceneDimsText>, Without<MouseCoordsText>)>,
+    camera_query: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
+) {
+    let is_visible = *calibration_state.get() == CalibrationState::On;
+
+    let scene_dims = scene_setup.scene.scene_dimension.as_vec2();
+    let scene_distance = scene_setup.scene.origin.translation.z.abs();
+    let half_width = scene_dims.x / 2.0;
+    let half_height = scene_dims.y / 2.0;
+    let padding = 0.25;
+    let depth = 0.01;
+
+    let Ok((camera, camera_transform)) = camera_query.single() else {
+        return;
+    };
+
+    let scene_origin = scene_setup.scene.origin.translation;
+    let scene_rotation = scene_setup.scene.origin.rotation;
+    let right = scene_rotation.mul_vec3(Vec3::X);
+    let up = scene_rotation.mul_vec3(Vec3::Y);
+    let normal = scene_rotation.mul_vec3(Vec3::Z);
+
+    let left_bottom_world = scene_origin
+        + right * (-half_width + padding)
+        + up * (-half_height + padding)
+        + normal * depth;
+
+    let right_bottom_world = scene_origin
+        + right * (half_width - padding)
+        + up * (-half_height + padding)
+        + normal * depth;
+
+    let left_screen = camera.world_to_viewport(camera_transform, left_bottom_world).ok();
+    let right_screen = camera.world_to_viewport(camera_transform, right_bottom_world).ok();
+
+    const LABEL_FONT_SIZE: f32 = 14.0;
+    const AVG_CHAR_WIDTH_FACTOR: f32 = 0.6;
+    const LABEL_PADDING_PX: f32 = 6.0;
+
+    let mouse_offset = Vec2::new(0.0, -14.0);
+
+    if let Ok((mut text, mut node, mut visibility)) = mouse_query.single_mut() {
+        let mut show = is_visible;
+        let label = if let Some(world_pos) = scene_data.mouse_world_pos {
+            let scene_matrix = Mat4::from_scale_rotation_translation(
+                scene_setup.scene.origin.scale,
+                scene_setup.scene.origin.rotation,
+                scene_setup.scene.origin.translation,
+            );
+            let local_pos = scene_matrix.inverse().transform_point3(world_pos);
+            let display_y = -local_pos.y;
+            format!("Mouse: ({:.2}, {:.2})", local_pos.x, display_y)
+        } else {
+            "Mouse: --".to_string()
+        };
+
+        **text = label;
+
+        if let Some(pos) = left_screen {
+            node.left = Val::Px(pos.x + mouse_offset.x);
+            node.top = Val::Px(pos.y + mouse_offset.y);
+        } else {
+            show = false;
+        }
+
+        *visibility = if show { Visibility::Visible } else { Visibility::Hidden };
+    }
+
+    if let Ok((mut text, mut node, mut visibility)) = dims_query.single_mut() {
+        let mut show = is_visible;
+        let label = format!(
+            "Scene: {:.2}m x {:.2}m | Dist: {:.2}m",
+            scene_dims.x,
+            scene_dims.y,
+            scene_distance
+        );
+
+        **text = label.clone();
+
+        if let Some(pos) = right_screen {
+            let estimated_width = label.chars().count() as f32 * LABEL_FONT_SIZE * AVG_CHAR_WIDTH_FACTOR;
+            node.left = Val::Px(pos.x - estimated_width - LABEL_PADDING_PX);
+            node.top = Val::Px(pos.y - LABEL_FONT_SIZE);
+        } else {
+            show = false;
+        }
+
+        *visibility = if show { Visibility::Visible } else { Visibility::Hidden };
+    }
 }

@@ -160,14 +160,10 @@ fn update_crosshair_positions(
         return;
     }
     
-    let scene_y = scene_setup.scene.origin.translation.y;
-    
     for (mut transform, mut global_transform, crosshair) in crosshair_query.iter_mut() {
         if let Some(world_pos) = calibration_data.mouse_positions.get(&crosshair.client_id) {
-            // Invert Y axis around the scene center Y position
-            let corrected_pos = Vec3::new(world_pos.x, 2.0 * scene_y - world_pos.y, world_pos.z);
-            transform.translation = corrected_pos;
-            *global_transform = GlobalTransform::from(Transform::from_translation(corrected_pos));
+            transform.translation = *world_pos;
+            *global_transform = GlobalTransform::from(Transform::from_translation(*world_pos));
         }
     }
 }
