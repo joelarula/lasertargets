@@ -1,10 +1,12 @@
 use bevy::{app::{App, Plugin, Update}, ecs::{component::Component, message::{MessageReader, MessageWriter}, system::Commands}, prelude::*};
 use common::{
+    game::GameSession,
     path::UniversalPath,
     scene::SceneEntity,
     target::HunterTarget,
 };
-use crate::model::{BroadcastStatsUpdateEvent, HunterClickEvent, HunterGameStats};
+use crate::common::GAME_ID;
+use crate::model::{BroadcastStatsUpdateEvent, HunterClickEvent, HunterGameStats, TargetEvent};
 
 /// Event for spawning hunter targets (server-only)
 #[derive(Message, Debug, Clone)]
@@ -38,8 +40,10 @@ fn spawn_hunter_targets(
     mut commands: Commands,
     mut spawn_events: MessageReader<SpawnHunterTargetEvent>,
     scene_query: Query<(Entity, &Transform), With<SceneEntity>>,
-    stats_query: Query<&HunterGameStats>,
+    mut stats_query: Query<&mut HunterGameStats>,
     mut stats_events: MessageWriter<BroadcastStatsUpdateEvent>,
+    time: Res<Time>,
+    game_sessions: Query<&GameSession>,
 ) {
     for event in spawn_events.read() {
         info!("Spawning hunter target at {:?}", event.position);
@@ -48,18 +52,7 @@ fn spawn_hunter_targets(
         let target_uuid = bevy::asset::uuid::Uuid::new_v4();
         let reward = 10; // Base reward for all targets
         
-        // Update stats for this session
-        if let Ok(stats) = stats_query.single() {
-            let updated_spawned = stats.targets_spawned + 1;
-            
-            // Raise event for network plugin to broadcast
-            stats_events.write(BroadcastStatsUpdateEvent {
-                session_id: stats.session_id,
-                targets_spawned: updated_spawned,
-                targets_popped: stats.targets_popped,
-                score: stats.score,
-            });
-        }
+        let mut session_id = bevy::asset::uuid::Uuid::nil();
         
         // Create UniversalPath based on target type
         let (radius, color) = match &event.target {
@@ -67,30 +60,73 @@ fn spawn_hunter_targets(
             HunterTarget::Baloon(size, color) => (*size, *color),
         };
         
-        let path = UniversalPath::circle(Vec2::new(event.position.x, event.position.y), radius, color);
+        let path = UniversalPath::circle(Vec2::ZERO, radius, color);
         
         // Get local position relative to scene transform
-        let local_position = if let Ok((_scene_entity, scene_transform)) = scene_query.single() {
+        let (local_position, spawn_world_pos) = if let Ok((_scene_entity, scene_transform)) = scene_query.single() {
+            let mut snapped_world_pos = event.position;
+            snapped_world_pos.z = scene_transform.translation.z;
+
             // Convert world position to local position relative to scene
             let scene_matrix = Mat4::from_scale_rotation_translation(
                 scene_transform.scale,
                 scene_transform.rotation,
                 scene_transform.translation,
             );
-            scene_matrix.inverse().transform_point3(event.position)
+            (scene_matrix.inverse().transform_point3(snapped_world_pos), snapped_world_pos)
         } else {
             // Fallback: use world position if no scene found
-            event.position
+            (event.position, event.position)
         };
+
+        // Update stats for this session
+        if let Ok(mut stats) = stats_query.single_mut() {
+            stats.targets_spawned += 1;
+            session_id = stats.session_id;
+
+            let elapsed = time.elapsed_secs_f64() - stats.game_start_time;
+            stats.target_events.push(TargetEvent {
+                target_uuid,
+                event_type: "spawned".to_string(),
+                timestamp: elapsed,
+                position: spawn_world_pos,
+            });
+
+            // Raise event for network plugin to broadcast
+            stats_events.write(BroadcastStatsUpdateEvent {
+                session_id: stats.session_id,
+                targets_spawned: stats.targets_spawned,
+                targets_popped: stats.targets_popped,
+                score: stats.score,
+            });
+        } else if let Some(session) = game_sessions.iter().find(|session| session.game_id == GAME_ID) {
+            session_id = session.session_id;
+            let elapsed = 0.0;
+            let mut new_stats = HunterGameStats {
+                session_id: session.session_id,
+                targets_spawned: 1,
+                targets_popped: 0,
+                score: 0,
+                target_events: Vec::new(),
+                game_start_time: time.elapsed_secs_f64(),
+            };
+            new_stats.target_events.push(TargetEvent {
+                target_uuid,
+                event_type: "spawned".to_string(),
+                timestamp: elapsed,
+                position: spawn_world_pos,
+            });
+            commands.insert_resource(new_stats);
+
+            stats_events.write(BroadcastStatsUpdateEvent {
+                session_id: session.session_id,
+                targets_spawned: 1,
+                targets_popped: 0,
+                score: 0,
+            });
+        }
         
         let transform = Transform::from_translation(local_position);
-        
-        // Get session_id from stats if available
-        let session_id = if let Ok(stats) = stats_query.single() {
-            stats.session_id
-        } else {
-            bevy::asset::uuid::Uuid::nil()
-        };
         
         let target_entity = commands.spawn((
             transform,
@@ -113,6 +149,8 @@ fn spawn_hunter_targets(
         } else {
             warn!("No scene entity found, spawned hunter target without parent at {:?}", event.position);
         }
+
+        info!("Spawned hunter target entity {:?}", target_entity);
     }
 }
 
@@ -120,7 +158,8 @@ fn spawn_hunter_targets(
 fn handle_hunter_clicks(
     mut commands: Commands,
     mut click_events: MessageReader<HunterClickEvent>,
-    target_query: Query<(Entity, &GlobalTransform, &HunterTargetEntity)>,
+    target_query: Query<(Entity, &Transform, Option<&ChildOf>, &HunterTargetEntity)>,
+    scene_query: Query<&Transform, With<SceneEntity>>,
     mut stats_query: Query<&mut HunterGameStats>,
     time: Res<Time>,
     mut stats_events: MessageWriter<BroadcastStatsUpdateEvent>,
@@ -129,13 +168,25 @@ fn handle_hunter_clicks(
         let click_pos = event.click_position;
         
         // Check all targets for collision
-        for (entity, global_transform, target_entity) in &target_query {
+        let scene_transform: Option<&Transform> = scene_query.single().ok();
+
+        for (entity, transform, parent, target_entity) in &target_query {
             // Only check targets for this session
             if target_entity.session_id != event.session_id {
                 continue;
             }
-            
-            let target_pos = global_transform.translation();
+
+            let target_pos = if parent.is_some() {
+                if let Some(scene_transform) = scene_transform {
+                    scene_transform.transform_point(transform.translation)
+                } else {
+                    transform.translation
+                }
+            } else if let Some(scene_transform) = scene_transform {
+                scene_transform.transform_point(transform.translation)
+            } else {
+                transform.translation
+            };
             let distance = click_pos.distance(target_pos);
             
             // Targets are 0.25m diameter (0.125m radius)

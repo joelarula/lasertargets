@@ -21,6 +21,10 @@ fn handle_mouse_input(
     mut last_sent_buttons: Local<Vec<MouseButton>>,
     mut previous_mouse_world_pos: ResMut<PreviousMouseWorldPos>,
 ) {
+    if !client.is_connected() {
+        return;
+    }
+
     let mut current_pressed_buttons = Vec::new();
     
     // Get current world position from scene data
@@ -69,6 +73,10 @@ fn send_mouse_event(
     is_pressed: bool,
     world_position: Option<Vec3>,
 ) {
+    if !client.is_connected() {
+        return;
+    }
+
     if let Some(connection) = client.get_connection_mut() {
         let button_name = format!("{:?}", button);
         let message = NetworkMessage::MouseButtonInput {

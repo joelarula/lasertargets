@@ -1,5 +1,5 @@
-use bevy::{app::{App, Plugin, Startup, Update}, ecs::{message::MessageReader, system::ResMut}, state::{app::AppExtStates, state::{NextState, OnEnter, SubStates}}, time::Time};
-use common::{game::{Game, GameRegistry, GameSessionCreated}, state::ServerState};
+use bevy::{app::{App, Plugin, Startup, Update}, ecs::{message::MessageReader, system::{Res, ResMut}}, state::{app::AppExtStates, state::{NextState, OnEnter, SubStates}}, time::Time};
+use common::{game::{Game, GameRegistry, GameSessionCreated, GameSessionUpdate}, state::ServerState};
 use serde::{Deserialize, Serialize};
 use bevy::prelude::StateSet;
 use crate::model::{HunterGameStats, GameReport};
@@ -21,7 +21,7 @@ impl Plugin for HunterGamePlugin {
     fn build(&self, app: &mut App) {
         app.init_state::<HunterGameState>();
         app.add_systems(Startup, fun_name);
-        app.add_systems(Update, (set_hunter_game_state_on, init_hunter_stats));
+        app.add_systems(Update, (set_hunter_game_state_on, set_hunter_game_state_on_update, init_hunter_stats));
         app.add_systems(OnEnter(ServerState::Menu), set_hunter_game_state_off);
 
     }
@@ -49,6 +49,17 @@ fn set_hunter_game_state_on(
     }
 }
 
+fn set_hunter_game_state_on_update(
+    mut state: ResMut<NextState<HunterGameState>>,
+    mut events: MessageReader<GameSessionUpdate>,
+) {
+    for event in events.read() {
+        if event.game_session.game_id == GAME_ID {
+            state.set(HunterGameState::On);
+        }
+    }
+}
+
 fn set_hunter_game_state_off(mut state: ResMut<NextState<HunterGameState>>) {
         state.set(HunterGameState::Off);
 }
@@ -56,21 +67,39 @@ fn set_hunter_game_state_off(mut state: ResMut<NextState<HunterGameState>>) {
 /// Initialize game statistics when game session starts
 fn init_hunter_stats(
     mut commands: bevy::ecs::system::Commands,
-    mut events: MessageReader<GameSessionCreated>,
+    mut created_events: MessageReader<GameSessionCreated>,
+    mut update_events: MessageReader<GameSessionUpdate>,
+    existing_stats: Option<Res<HunterGameStats>>,
     time: bevy::ecs::system::Res<Time>,
 ) {
-    for event in events.read() {
-        if event.game_session.game_id == GAME_ID {
-            commands.insert_resource(HunterGameStats {
-                session_id: event.game_session.session_id,
-                targets_spawned: 0,
-                targets_popped: 0,
-                score: 0,
-                target_events: Vec::new(),
-                game_start_time: time.elapsed_secs_f64(),
-            });
-            bevy::log::info!("Initialized Hunter game stats for session {}", event.game_session.session_id);
+    let mut try_init = |session: &common::game::GameSession| {
+        if session.game_id != GAME_ID {
+            return;
         }
+
+        if let Some(stats) = existing_stats.as_ref() {
+            if stats.session_id == session.session_id {
+                return;
+            }
+        }
+
+        commands.insert_resource(HunterGameStats {
+            session_id: session.session_id,
+            targets_spawned: 0,
+            targets_popped: 0,
+            score: 0,
+            target_events: Vec::new(),
+            game_start_time: time.elapsed_secs_f64(),
+        });
+        bevy::log::info!("Initialized Hunter game stats for session {}", session.session_id);
+    };
+
+    for event in created_events.read() {
+        try_init(&event.game_session);
+    }
+
+    for event in update_events.read() {
+        try_init(&event.game_session);
     }
 }
 

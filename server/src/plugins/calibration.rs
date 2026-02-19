@@ -8,6 +8,25 @@ use crate::plugins::network::{MousePositionEvent, KeyboardInputEvent};
 
 pub struct CalibrationPlugin;
 
+#[derive(Resource, Debug, Clone)]
+pub struct CalibrationSceneSnapshot {
+    pub scene_dimension: UVec2,
+    pub translation: Vec3,
+    pub rotation: Quat,
+    pub scale: Vec3,
+}
+
+impl Default for CalibrationSceneSnapshot {
+    fn default() -> Self {
+        Self {
+            scene_dimension: UVec2::ZERO,
+            translation: Vec3::ZERO,
+            rotation: Quat::IDENTITY,
+            scale: Vec3::ONE,
+        }
+    }
+}
+
 /// Resource to track calibration data (server singleton)
 #[derive(Resource)]
 pub struct CalibrationData {
@@ -32,19 +51,63 @@ pub struct CalibrationCrosshair {
 #[derive(Component)]
 pub struct ProjectionAreaRectangle;
 
+/// Component to mark center crosshair entity
+#[derive(Component)]
+pub struct CalibrationCenterCrosshair;
+
+/// Component to mark calibration-only paths (not broadcast to terminals)
+#[derive(Component)]
+pub struct CalibrationPath;
+
 impl Plugin for CalibrationPlugin {
     fn build(&self, app: &mut App) {
         app
             .init_resource::<CalibrationData>()
+            .init_resource::<CalibrationSceneSnapshot>()
             .add_systems(PostStartup, initialize_calibration)
+            .add_systems(OnEnter(CalibrationState::On), spawn_calibration_on_enable)
+            .add_systems(OnExit(CalibrationState::On), cleanup_calibration_on_disable)
             .add_systems(Update, (
                 handle_mouse_position_updates,
                 spawn_crosshairs_for_new_clients,
-            ))
+            ).chain())
             .add_systems(Update, (
                 update_crosshair_positions,
                 cleanup_disconnected_clients,
+                refresh_calibration_visuals_on_scene_change,
             ));
+    }
+}
+
+fn spawn_calibration_on_enable(
+    mut commands: Commands,
+    scene_query: Query<(Entity, &Transform), With<SceneEntity>>,
+    scene_setup: Res<SceneSetup>,
+) {
+    if let Ok((scene_entity, scene_transform)) = scene_query.single() {
+        spawn_projection_area_rectangle(&mut commands, &scene_setup, scene_entity, scene_transform);
+        spawn_center_crosshair(&mut commands, &scene_setup);
+    }
+}
+
+fn cleanup_calibration_on_disable(
+    mut commands: Commands,
+    rectangle_query: Query<Entity, With<ProjectionAreaRectangle>>,
+    center_query: Query<Entity, With<CalibrationCenterCrosshair>>,
+    crosshair_query: Query<Entity, With<CalibrationCrosshair>>,
+    path_query: Query<Entity, With<CalibrationPath>>,
+) {
+    for entity in rectangle_query.iter() {
+        commands.entity(entity).despawn();
+    }
+    for entity in center_query.iter() {
+        commands.entity(entity).despawn();
+    }
+    for entity in crosshair_query.iter() {
+        commands.entity(entity).despawn();
+    }
+    for entity in path_query.iter() {
+        commands.entity(entity).despawn();
     }
 }
 
@@ -112,6 +175,8 @@ fn update_crosshair_positions(
 fn cleanup_disconnected_clients(
     mut connection_lost_events: MessageReader<ConnectionLostEvent>,
     mut calibration_data: ResMut<CalibrationData>,
+    mut commands: Commands,
+    crosshair_query: Query<(Entity, &CalibrationCrosshair)>,
 ) {
     for connection_lost in connection_lost_events.read() {
         let client_id = connection_lost.id;
@@ -119,7 +184,13 @@ fn cleanup_disconnected_clients(
         // Remove from mouse positions tracking
         calibration_data.mouse_positions.remove(&client_id);
         
-        info!("Cleaned up mouse tracking for disconnected client {}", client_id);
+        for (entity, crosshair) in crosshair_query.iter() {
+            if crosshair.client_id == client_id {
+                commands.entity(entity).despawn();
+            }
+        }
+
+        info!("Cleaned up mouse tracking and crosshair for disconnected client {}", client_id);
     }
 }
 
@@ -196,6 +267,7 @@ fn spawn_crosshair_at_position(
         transform,
         GlobalTransform::from(transform),
         Visibility::default(),
+        CalibrationPath,
         CalibrationCrosshair { client_id },
         crosshair_universal_path,
         common::path::PathRenderable::default(),
@@ -247,6 +319,8 @@ fn spawn_center_crosshair(
         transform,
         GlobalTransform::from(transform),
         Visibility::default(),
+        CalibrationPath,
+        CalibrationCenterCrosshair,
         crosshair_universal_path,
         common::path::PathRenderable::default(),
     ));
@@ -259,70 +333,62 @@ fn spawn_projection_area_rectangle(
     commands: &mut Commands,
     scene_setup: &SceneSetup,
     _parent_entity: Entity,
-    _scene_transform: &Transform,
+    scene_transform: &Transform,
 ) {
-    // Calculate rectangle size to fill the projector's FOV
-    // Projector is at (0, 1.5, 0) with 60° FOV, looking at scene at (0, 3, -10)
-    // Distance from projector to scene: ~10m
-    // At 60° FOV, the projection width at 10m distance: 2 * 10 * tan(30°) ≈ 11.55m
-    // Use a moderate size that shows well - 60% of max to have good margins
-    let fov_degrees = 60.0f32;
-    let projector_pos = Vec3::new(0.0, 1.5, 0.0);
-    let scene_pos = scene_setup.scene.origin.translation;
-    let distance = projector_pos.distance(scene_pos);
-    let half_fov_rad = (fov_degrees / 2.0).to_radians();
-    let max_width = 2.0 * distance * half_fov_rad.tan();
-    let square_size = max_width * 0.7; // Use 80% of max for clear visibility with margins
-    
-    info!("Calculating projection area rectangle: distance={:.2}m, FOV={}°, max_width={:.2}m, using {:.2}m square", 
-          distance, fov_degrees, max_width, square_size);
-    
-    // Position at scene center - this is the billboard/projection surface
-    let center_world_pos = scene_setup.scene.origin.translation;
-    
-    info!("Spawning projection area rectangle at scene center {:?}", center_world_pos);
-    
-    // Create 4 separate corner segments with dwell 15 each
-    let half_size = square_size / 2.0;
+    let scene_dimensions = scene_setup.scene.scene_dimension.as_vec2();
+    let half_width = scene_dimensions.x / 2.0;
+    let half_height = scene_dimensions.y / 2.0;
+
+    info!(
+        "Spawning scene corner markers: width={:.2}, height={:.2}",
+        scene_dimensions.x, scene_dimensions.y
+    );
+
     let corners = [
-        Vec2::new(-half_size, -half_size), // Bottom-left
-        Vec2::new(half_size, -half_size),  // Bottom-right
-        Vec2::new(half_size, half_size),   // Top-right
-        Vec2::new(-half_size, half_size),  // Top-left
+        Vec2::new(-half_width, -half_height), // Bottom-left
+        Vec2::new(half_width, -half_height),  // Bottom-right
+        Vec2::new(half_width, half_height),   // Top-right
+        Vec2::new(-half_width, half_height),  // Top-left
     ];
-    
+
     let green = Color::srgb(0.0, 1.0, 0.0);
     let blank = Color::srgb(0.0, 0.0, 0.0);
-    let corner_dwell = 15; // High dwell for sharp, bright corners
-    
-    // Create one segment per corner point
+    let corner_dwell = 12;
+
     let mut segments = Vec::new();
     for corner in &corners {
-        let mut segment = common::path::PathSegment::empty();
-        segment.push(corner.x, corner.y, blank, 15);
-        segment.push(corner.x, corner.y, green, 25);
-        segment.push(corner.x, corner.y, blank, 15);
+        let mut segment = PathSegment::empty();
+        segment.push(corner.x, corner.y, blank, corner_dwell);
+        segment.push(corner.x, corner.y, green, corner_dwell * 2);
+        segment.push(corner.x, corner.y, blank, corner_dwell);
         segments.push(segment);
     }
-    
+
     let rectangle_universal_path = UniversalPath {
         segments,
     };
-    
-    // Spawn at world position in XY plane (flat, not rotated)
-    let transform = Transform::from_translation(center_world_pos);
-    
+
+    let transform = Transform {
+        translation: scene_transform.translation,
+        rotation: scene_transform.rotation,
+        scale: scene_transform.scale,
+    };
+
     let _rectangle_entity = commands.spawn((
         transform,
         GlobalTransform::from(transform),
         Visibility::default(),
+        CalibrationPath,
         ProjectionAreaRectangle,
         rectangle_universal_path.clone(),
         common::path::PathRenderable::default(),
     )).id();
-    
-    info!("Spawned test square ({}m x {}m) at {:?}, {} segments", 
-          square_size, square_size, center_world_pos, rectangle_universal_path.segments.len());
+
+    info!(
+        "Spawned scene corner markers at {:?}, {} segments",
+        scene_transform.translation,
+        rectangle_universal_path.segments.len()
+    );
 }
 
 /// Spawn crosshairs for new clients when they first send mouse events
@@ -338,7 +404,7 @@ fn spawn_crosshairs_for_new_clients(
     }
     
     // Get existing crosshair client IDs
-    let existing_clients: std::collections::HashSet<u64> = crosshair_query
+    let mut existing_clients: std::collections::HashSet<u64> = crosshair_query
         .iter()
         .map(|crosshair| crosshair.client_id)
         .collect();
@@ -359,6 +425,49 @@ fn spawn_crosshairs_for_new_clients(
             });
             
             spawn_crosshair_at_position(&mut commands, client_id, world_position);
+            existing_clients.insert(client_id);
         }
     }
+}
+
+fn refresh_calibration_visuals_on_scene_change(
+    mut commands: Commands,
+    calibration_state: Res<State<CalibrationState>>,
+    scene_setup: Res<SceneSetup>,
+    scene_query: Query<(Entity, &Transform), With<SceneEntity>>,
+    rectangle_query: Query<Entity, With<ProjectionAreaRectangle>>,
+    center_crosshair_query: Query<Entity, With<CalibrationCenterCrosshair>>,
+    mut snapshot: ResMut<CalibrationSceneSnapshot>,
+) {
+    if *calibration_state.get() == CalibrationState::Off {
+        return;
+    }
+
+    let scene_config = &scene_setup.scene;
+    let should_update = snapshot.scene_dimension != scene_config.scene_dimension
+        || snapshot.translation != scene_config.origin.translation
+        || snapshot.rotation != scene_config.origin.rotation
+        || snapshot.scale != scene_config.origin.scale;
+
+    if !should_update {
+        return;
+    }
+
+    for entity in rectangle_query.iter() {
+        commands.entity(entity).despawn();
+    }
+
+    for entity in center_crosshair_query.iter() {
+        commands.entity(entity).despawn();
+    }
+
+    if let Some((scene_entity, scene_transform)) = scene_query.iter().next() {
+        spawn_projection_area_rectangle(&mut commands, &scene_setup, scene_entity, scene_transform);
+        spawn_center_crosshair(&mut commands, &scene_setup);
+    }
+
+    snapshot.scene_dimension = scene_config.scene_dimension;
+    snapshot.translation = scene_config.origin.translation;
+    snapshot.rotation = scene_config.origin.rotation;
+    snapshot.scale = scene_config.origin.scale;
 }

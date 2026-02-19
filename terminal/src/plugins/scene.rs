@@ -1,12 +1,10 @@
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 use common::config::SceneConfiguration;
-use common::scene::{SceneData, SceneSetup, SceneSystemSet};
+use common::scene::{SceneData, SceneEntity, SceneSetup, SceneSystemSet};
 use crate::plugins::camera::{CameraTag};
 use crate::plugins::instructions::InstructionState;
 use bevy::prelude::Vec2;
-use bevy_quinnet::client::QuinnetClient;
-use common::network::NetworkMessage;
 
 
 const INSTRUCTION_TEXT_A: &str = "Press [Up][Down] to adjust target distance";
@@ -22,8 +20,8 @@ impl Plugin for ScenePlugin {
         app.insert_resource(SceneConfiguration::default());
         app.init_resource::<SceneSetup>();
         app.init_resource::<SceneData>();
-        app.add_systems(Startup, setup_scene.in_set(SceneSystemSet));
-        app.add_systems(Update, update_scene.in_set(SceneSystemSet));  
+        app.add_systems(Startup, (setup_scene, setup_scene_entity).in_set(SceneSystemSet));
+        app.add_systems(Update, (update_scene, sync_scene_transform).in_set(SceneSystemSet));  
     }
 }
 
@@ -73,6 +71,32 @@ fn update_scene(
             scene_data.mouse_world_pos = mouse_pos;
 
 
+        }
+    }
+}
+
+fn setup_scene_entity(
+    mut commands: Commands,
+    scene_setup: Res<SceneSetup>,
+) {
+    commands.spawn((
+        SceneEntity,
+        Transform::from_translation(scene_setup.scene.origin.translation)
+            .with_rotation(scene_setup.scene.origin.rotation)
+            .with_scale(scene_setup.scene.origin.scale),
+        Visibility::default(),
+    ));
+}
+
+fn sync_scene_transform(
+    scene_setup: Res<SceneSetup>,
+    mut scene_query: Query<&mut Transform, With<SceneEntity>>,
+) {
+    if scene_setup.is_changed() {
+        if let Ok(mut transform) = scene_query.single_mut() {
+            transform.translation = scene_setup.scene.origin.translation;
+            transform.rotation = scene_setup.scene.origin.rotation;
+            transform.scale = scene_setup.scene.origin.scale;
         }
     }
 }

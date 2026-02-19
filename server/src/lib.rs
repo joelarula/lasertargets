@@ -14,6 +14,7 @@ use common::game::GameRegistryPlugin;
 use common::scene::SceneSetupPlugin;
 use common::state::{CalibrationState, GameState, ServerState};
 use hunter::common::HunterGamePlugin;
+use hunter::server::HunterGameServerPlugin;
 use snake::plugin::SnakeGamePlugin;
 
 pub mod plugins;
@@ -32,10 +33,10 @@ pub fn add_common_server_plugins(app: &mut App) {
   
     app
     .insert_resource(Time::<Fixed>::from_seconds(FIXED_TIMESTEP))
+    .add_plugins(StatesPlugin)
     .init_state::<ServerState>()
     .init_state::<CalibrationState>()
     .init_state::<GameState>()
-    .add_plugins(StatesPlugin)
     .add_plugins(SceneSetupPlugin)
     .add_plugins(ScenePlugin)
     .add_plugins(CalibrationPlugin)
@@ -47,6 +48,7 @@ pub fn add_common_server_plugins(app: &mut App) {
     .add_plugins(NetworkingPlugin)
     .add_plugins(PathNetworkPlugin)
     .add_plugins(HunterGamePlugin)
+    .add_plugins(HunterGameServerPlugin)
     .add_plugins(SnakeGamePlugin)
     .add_plugins(GamePlugin);
 }

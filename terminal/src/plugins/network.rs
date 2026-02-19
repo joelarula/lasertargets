@@ -8,6 +8,7 @@ use common::state::TerminalState;
 use common::toolbar::{Docking, ItemState, ToolbarItem};
 use std::net::{IpAddr, Ipv6Addr};
 use common::game::{GameSessionUpdate, GameSessionCreated};
+use hunter::model::HunterGameStats;
 use hunter::server::SpawnHunterTargetEvent;
 use crate::plugins::path::{SpawnPathEvent, DespawnPathEvent, UpdatePathPositionEvent};
 
@@ -38,10 +39,16 @@ impl Default for NetworkingConfiguration {
 
 pub struct NetworkPlugin;
 
+#[derive(Resource, Default)]
+struct ConnectionAttempt {
+    in_flight: bool,
+}
+
 impl Plugin for NetworkPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(QuinnetClientPlugin::default())
             .init_resource::<NetworkingConfiguration>()
+            .init_resource::<ConnectionAttempt>()
             .add_message::<GameSessionCreated>()
             .add_message::<GameSessionUpdate>()
             .add_message::<SpawnHunterTargetEvent>()
@@ -66,6 +73,7 @@ impl Plugin for NetworkPlugin {
 fn start_client(
     mut client: ResMut<QuinnetClient>,
     config: Res<NetworkingConfiguration>,
+    mut attempt: ResMut<ConnectionAttempt>,
 ) {
     info!("Connecting to server...");
     match client.open_connection(ClientConnectionConfiguration {
@@ -78,7 +86,10 @@ fn start_client(
         cert_mode: CertificateVerificationMode::SkipVerification,
         defaultables: Default::default(),
     }) {
-        Ok(_) => info!("Connection initiated successfully"),
+        Ok(_) => {
+            attempt.in_flight = true;
+            info!("Connection initiated successfully");
+        }
         Err(e) => warn!("Failed to initiate connection: {:?}", e),
     }
 }
@@ -88,22 +99,30 @@ fn handle_client_connection_events(
     config: Res<NetworkingConfiguration>,
     current_state: Res<State<TerminalState>>,
     mut next_state: ResMut<NextState<TerminalState>>,
+    mut attempt: ResMut<ConnectionAttempt>,
 ) {
     if client.is_connected() {
         if *current_state.get() != TerminalState::Connected {
             info!("Connected to server!");
             next_state.set(TerminalState::Connected);
+            attempt.in_flight = false;
 
             if let Some(connection) = client.get_connection_mut() {
-                
-                let query_server = NetworkMessage::QueryServerState;
-                let query_game = NetworkMessage::QueryGameState;
-                
-                if let Err(e) = connection.send_payload(query_server.to_bytes().unwrap()) {
-                    warn!("Failed to send QueryServerState: {e}");
-                }
-                if let Err(e) = connection.send_payload(query_game.to_bytes().unwrap()) {
-                    warn!("Failed to send QueryGameState: {e}");
+                let queries = [
+                    NetworkMessage::QueryServerState,
+                    NetworkMessage::QueryGameState,
+                    NetworkMessage::QueryCalibrationState,
+                    NetworkMessage::QueryGameSession,
+                    NetworkMessage::QueryProjectorConfig,
+                    NetworkMessage::QueryCameraConfig,
+                    NetworkMessage::QuerySceneConfig,
+                    NetworkMessage::QuerySceneSetup,
+                ];
+
+                for query in queries {
+                    if let Err(e) = connection.send_payload(query.to_bytes().unwrap()) {
+                        warn!("Failed to send {:?}: {e}", query);
+                    }
                 }
             }
         }
@@ -112,23 +131,7 @@ fn handle_client_connection_events(
             info!("Disconnected from server, attempting to reconnect...");
             next_state.set(TerminalState::Connecting);
         }
-        
-        // Attempt to reconnect if not currently connected
-        if client.get_connection().is_none() {
-            match client.open_connection(ClientConnectionConfiguration {
-                addr_config: ClientAddrConfiguration::from_ips(
-                    config.ip,
-                    config.port,
-                    IpAddr::V6(Ipv6Addr::UNSPECIFIED),
-                    0,
-                ),
-                cert_mode: CertificateVerificationMode::SkipVerification,
-                defaultables: Default::default(),
-            }) {
-                Ok(_) => info!("Reconnection attempt initiated"),
-                Err(e) => debug!("Reconnection attempt failed: {:?}", e),
-            }
-        }
+        attempt.in_flight = false;
     }
 }
 
@@ -167,10 +170,13 @@ fn update_connection_toolbar_button(
 }
 
 fn receive_server_messages(
+    mut commands: Commands,
     mut client: ResMut<QuinnetClient>,
     mut projector_config: ResMut<ProjectorConfiguration>,
     mut camera_config: ResMut<CameraConfiguration>,
     mut scene_config: ResMut<SceneConfiguration>,
+    mut scene_setup: ResMut<common::scene::SceneSetup>,
+    mut hunter_stats: Option<ResMut<HunterGameStats>>,
     mut game_session_created_writer: MessageWriter<GameSessionCreated>,
     mut game_session_update_writer: MessageWriter<GameSessionUpdate>,
     mut spawn_hunter_target_writer: MessageWriter<SpawnHunterTargetEvent>,
@@ -179,7 +185,11 @@ fn receive_server_messages(
     mut update_path_position_writer: MessageWriter<UpdatePathPositionEvent>,
     mut next_server_state: ResMut<NextState<ServerState>>,
     mut next_game_state: ResMut<NextState<GameState>>,
+    mut next_calibration_state: ResMut<NextState<CalibrationState>>,
 ) {
+    if !client.is_connected() {
+        return;
+    }
 
     if let Some(mut connection) = client.get_connection_mut() {
         if let Some(channel_id) = connection.default_channel() {
@@ -197,29 +207,44 @@ fn receive_server_messages(
                             NetworkMessage::ProjectorConfigUpdate(config)  => {
                                 if *projector_config != config {
                                     *projector_config.bypass_change_detection() = config;
+                                    projector_config.set_changed();
                                     info!("Updated projector configuration from server");
                                 }
                             }
                             NetworkMessage::CameraConfigUpdate(config) => {
                                 if *camera_config != config {
                                     *camera_config.bypass_change_detection() = config;
+                                    camera_config.set_changed();
                                     info!("Updated camera configuration from server");
                                 }
                             }
                             NetworkMessage::SceneConfigUpdate(config) => {
                                 if *scene_config != config {
                                     *scene_config.bypass_change_detection() = config;
+                                    scene_config.set_changed();
                                     info!("Updated scene configuration from server");
                                 }
                             }
                             NetworkMessage::SceneSetupUpdate(setup) => {
+                                if *scene_setup != setup {
+                                    *scene_setup.bypass_change_detection() = setup.clone();
+                                    scene_setup.set_changed();
+                                    info!("Updated SceneSetup from server");
+                                }
                                 if *camera_config != setup.camera {
                                     *camera_config.bypass_change_detection() = setup.camera;
+                                    camera_config.set_changed();
                                     info!("Updated camera configuration from SceneSetup");
                                 }
                                 if *projector_config != setup.projector {
                                     *projector_config.bypass_change_detection() = setup.projector;
+                                    projector_config.set_changed();
                                     info!("Updated projector configuration from SceneSetup");
+                                }
+                                if *scene_config != setup.scene {
+                                    *scene_config.bypass_change_detection() = setup.scene;
+                                    scene_config.set_changed();
+                                    info!("Updated scene configuration from SceneSetup");
                                 }
                             }
                             NetworkMessage::GameSessionCreated(session) => {
@@ -237,6 +262,10 @@ fn receive_server_messages(
                             NetworkMessage::GameStateUpdate(game_state) => {
                                 info!("Received GameStateUpdate from server: {:?}", game_state);
                                 next_game_state.set(game_state);
+                            }
+                            NetworkMessage::CalibrationStateUpdate(calibration_state) => {
+                                info!("Received CalibrationStateUpdate from server: {:?}", calibration_state);
+                                next_calibration_state.set(calibration_state);
                             }
                             NetworkMessage::ExitGameSession(uuid) => {
                                 info!("Received ExitGameSession from server for session: {:?}", uuid);
@@ -268,6 +297,33 @@ fn receive_server_messages(
                             NetworkMessage::UpdatePathPosition(uuid, position) => {
                                 debug!("Received UpdatePathPosition from server: uuid={}, position={:?}", uuid, position);
                                 update_path_position_writer.write(UpdatePathPositionEvent { uuid, position });
+                            }
+                            NetworkMessage::HunterStatsUpdate { session_id, targets_spawned, targets_popped, score } => {
+                                if let Some(mut stats) = hunter_stats.as_mut() {
+                                    if stats.session_id != session_id {
+                                        **stats = HunterGameStats {
+                                            session_id,
+                                            targets_spawned,
+                                            targets_popped,
+                                            score,
+                                            target_events: Vec::new(),
+                                            game_start_time: 0.0,
+                                        };
+                                    } else {
+                                        stats.targets_spawned = targets_spawned;
+                                        stats.targets_popped = targets_popped;
+                                        stats.score = score;
+                                    }
+                                } else {
+                                    commands.insert_resource(HunterGameStats {
+                                        session_id,
+                                        targets_spawned,
+                                        targets_popped,
+                                        score,
+                                        target_events: Vec::new(),
+                                        game_start_time: 0.0,
+                                    });
+                                }
                             }
                             _ => {
                                 info!("Received unhandled message: {:?}", msg);
@@ -356,6 +412,7 @@ fn send_payload_and_log_error(
         mut timer: ResMut<ReconnectTimer>,
         time: Res<Time>,
         current_state: Res<State<TerminalState>>,
+        mut attempt: ResMut<ConnectionAttempt>,
     ) {
         // Only try to reconnect if not connected
         if !client.is_connected() {
@@ -364,7 +421,10 @@ fn send_payload_and_log_error(
                 timer.0 = Timer::from_seconds(2.0, TimerMode::Repeating);
             }
             timer.0.tick(time.delta());
-            if timer.0.just_finished() && *current_state.get() == TerminalState::Connecting {
+            if timer.0.just_finished()
+                && *current_state.get() == TerminalState::Connecting
+                && !attempt.in_flight
+            {
                 match client.open_connection(ClientConnectionConfiguration {
                     addr_config: ClientAddrConfiguration::from_ips(
                         config.ip,
@@ -375,12 +435,16 @@ fn send_payload_and_log_error(
                     cert_mode: CertificateVerificationMode::SkipVerification,
                     defaultables: Default::default(),
                 }) {
-                    Ok(_) => info!("[Reconnect] Reconnection attempt initiated"),
+                    Ok(_) => {
+                        attempt.in_flight = true;
+                        info!("[Reconnect] Reconnection attempt initiated");
+                    }
                     Err(e) => debug!("[Reconnect] Reconnection attempt failed: {:?}", e),
                 }
             }
         } else {
             // Reset timer if connected
             timer.0 = Timer::from_seconds(0.0, TimerMode::Once);
+            attempt.in_flight = false;
         }
     }

@@ -66,7 +66,7 @@ fn update_scene_setup_resource(
 }
 
 
-#[derive(Debug, Default, Clone, Serialize, Deserialize, Resource)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize, Resource, PartialEq)]
 pub struct SceneSetup {
     /// Scene configuration including transform, dimensions, and distance.
     pub scene: SceneConfiguration,

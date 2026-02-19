@@ -1,6 +1,6 @@
-use bevy::{app::{App, Plugin, Update}, ecs::{component::Component, entity::Entity, query::{Changed, With}, system::{Commands, Query, Res, ResMut}}, prelude::default, state::{condition::in_state, state::{NextState, OnEnter, OnExit, State}}, ui::Interaction, input::ButtonInput};
+use bevy::{app::{App, Plugin, Update}, ecs::{component::Component, entity::Entity, query::{Changed, With}, system::{Commands, Query, Res, ResMut}}, prelude::default, state::{condition::in_state, state::{NextState, OnEnter, OnExit, State}}, ui::Interaction, input::ButtonInput, window::PrimaryWindow};
 use bevy_quinnet::client::QuinnetClient;
-use common::{network::NetworkMessage, path::UniversalPath, scene::SceneData, state::{GameState, ServerState, TerminalState}, toolbar::{Docking, ItemState, ToolbarButton, ToolbarItem}};
+use common::{network::NetworkMessage, path::UniversalPath, scene::{SceneData, SceneSetup}, state::{GameState, ServerState, TerminalState}, toolbar::{Docking, ItemState, ToolbarButton, ToolbarItem}};
 use crate::common::{GAME_ID, HunterGameState, generate_game_report};
 use crate::model::{HunterGameStats, CollisionIndicator};
 use bevy::prelude::*;
@@ -42,7 +42,8 @@ const SPAWN_BASIC_TARGET_BTN: &str = "spawn_basic_target";
 
 #[derive(Resource, Default)]
 struct DragState {
-    is_dragging: bool
+    is_dragging: bool,
+    last_world_pos: Option<Vec3>,
 }
 
 #[derive(Component)]
@@ -69,7 +70,6 @@ impl Plugin for HunterTerminalPlugin {
         app.add_systems(Update, handle_button_click);
         app.add_systems(Update, handle_target_drag.run_if(in_state(HunterGameState::On)));
         app.add_systems(Update, draw_drag_gizmo.run_if(in_state(HunterGameState::On)));
-        app.add_systems(Update, handle_server_updates.run_if(in_state(HunterGameState::On)));
         app.add_systems(Update, update_hunter_stats_display.run_if(in_state(HunterGameState::On)));
 
    
@@ -175,6 +175,7 @@ fn handle_target_drag(
             
                 if !drag_state.is_dragging {
                     drag_state.is_dragging = true;
+                    drag_state.last_world_pos = scene_data.mouse_world_pos;
                 }
             }
         }
@@ -209,45 +210,48 @@ fn handle_target_drag(
             info!("No mouse world position available");
         }
         drag_state.is_dragging = false;
+        drag_state.last_world_pos = None;
     }
 }
 
 fn draw_drag_gizmo(
-    drag_state: Res<DragState>,
+    mut drag_state: ResMut<DragState>,
     scene_data: Res<SceneData>,
+    scene_setup: Res<SceneSetup>,
+    camera_query: Query<(&Camera, &GlobalTransform)>,
+    window_query: Query<&Window, With<PrimaryWindow>>,
     mut gizmos: Gizmos,
 ) {
     if drag_state.is_dragging {
         if let Some(world_pos) = scene_data.mouse_world_pos {
-            // Draw a white circle with radius 0.125 (diameter 0.25)
-            let path = UniversalPath::circle(Vec2::new(world_pos.x, world_pos.y), 0.125, Color::WHITE);
-            let global_transform = GlobalTransform::from(Transform::from_translation(world_pos));
-            path.draw_with_gizmos(&mut gizmos, &global_transform, 0.1);
-        }
-    }
-}
+            drag_state.last_world_pos = Some(world_pos);
+        } else if let (Ok(window), Ok((camera, camera_transform))) =
+            (window_query.single(), camera_query.single())
+        {
+            let cursor_ray: Option<bevy::math::Ray3d> = window
+                .cursor_position()
+                .and_then(|cursor_pos| camera.viewport_to_world(camera_transform, cursor_pos).ok());
 
-/// Handle server broadcasts for stats updates
-fn handle_server_updates(
-    mut client: ResMut<QuinnetClient>,
-    mut stats: ResMut<HunterGameStats>,
-) {
-    if let Some(connection) = client.get_connection_mut() {
-        if let Some(channel_id) = connection.default_channel() {
-            while let Some(bytes) = connection.try_receive_payload(channel_id) {
-                if let Ok(message) = NetworkMessage::from_bytes(&bytes) {
-                    match message {
-                        NetworkMessage::HunterStatsUpdate { session_id, targets_spawned, targets_popped, score } => {
-                            if session_id == stats.session_id {
-                                stats.targets_spawned = targets_spawned;
-                                stats.targets_popped = targets_popped;
-                                stats.score = score;
-                            }
-                        }
-                        _ => {}
-                    }
+            if let Some(ray) = cursor_ray {
+                let scene_transform: GlobalTransform = Transform::from_translation(scene_setup.scene.origin.translation)
+                    .with_rotation(scene_setup.scene.origin.rotation)
+                    .with_scale(scene_setup.scene.origin.scale)
+                    .into();
+
+                let scene_position = scene_transform.translation();
+                let scene_plane: InfinitePlane3d = InfinitePlane3d::new(scene_transform.forward());
+
+                if let Some(distance) = ray.intersect_plane(scene_position, scene_plane) {
+                    drag_state.last_world_pos = Some(ray.get_point(distance));
                 }
             }
+        }
+
+        if let Some(world_pos) = drag_state.last_world_pos {
+            // Draw a white circle with radius 0.125 (diameter 0.25)
+            let path = UniversalPath::circle(Vec2::ZERO, 0.125, Color::WHITE);
+            let global_transform = GlobalTransform::from(Transform::from_translation(world_pos));
+            path.draw_with_gizmos(&mut gizmos, &global_transform, 0.1);
         }
     }
 }

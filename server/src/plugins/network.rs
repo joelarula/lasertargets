@@ -155,6 +155,8 @@ fn handle_config_messages(
     scene_setup: Res<SceneSetup>,
     current_state: Res<State<ServerState>>,
     current_game_state: Res<State<GameState>>,
+    current_calibration_state: Res<State<CalibrationState>>,
+    mut next_calibration_state: ResMut<NextState<CalibrationState>>,
 ) {
     let Some(endpoint) = server.get_endpoint_mut() else {
         return;
@@ -195,6 +197,11 @@ fn handle_config_messages(
                 let payload = message.to_bytes().expect("Serialize GameStateResponse");
                 send_payload_and_log_error(endpoint, msg.client_id, payload, "GameStateResponse");
             }
+            NetworkMessage::QueryCalibrationState => {
+                let message = NetworkMessage::CalibrationStateUpdate(current_calibration_state.get().clone());
+                let payload = message.to_bytes().expect("Serialize CalibrationStateResponse");
+                send_payload_and_log_error(endpoint, msg.client_id, payload, "CalibrationStateResponse");
+            }
             NetworkMessage::UpdateProjectorConfig(new_config) => {
                 *projector_config = new_config.clone();
                 info!("Projector configuration updated by client {}", msg.client_id);
@@ -206,6 +213,17 @@ fn handle_config_messages(
             NetworkMessage::UpdateSceneConfig(new_config) => {
                 *scene_config = new_config.clone();
                 info!("Scene configuration updated by client {}", msg.client_id);
+            }
+            NetworkMessage::UpdateCalibrationState(new_state) => {
+                next_calibration_state.set(new_state.clone());
+                info!("Calibration state updated by client {}: {:?}", msg.client_id, new_state);
+
+                let message = NetworkMessage::CalibrationStateUpdate(new_state.clone());
+                if let Ok(payload) = message.to_bytes() {
+                    if let Err(e) = endpoint.broadcast_payload(payload) {
+                        error!("Failed to broadcast CalibrationStateUpdate: {:?}", e);
+                    }
+                }
             }
             _ => {}
         }
@@ -246,6 +264,7 @@ fn handle_actor_messages(
 
 /// Handle game session management messages
 fn handle_game_session_messages(
+    mut server: ResMut<QuinnetServer>,
     mut messages: MessageReader<FromClientMessage>,
     mut start_game_session_events: MessageWriter<StartGameEvent>,
     mut init_game_session_events: MessageWriter<InitGameSessionEvent>,
@@ -257,8 +276,22 @@ fn handle_game_session_messages(
     mut game_sessions: Query<&mut GameSession>,
     mut broadcast_events: MessageWriter<GameSessionUpdate>,
 ) {
+    let Some(endpoint) = server.get_endpoint_mut() else {
+        return;
+    };
+
     for msg in messages.read() {
         match &msg.message {
+            NetworkMessage::QueryGameSession => {
+                if let Some(session) = game_sessions.iter().next() {
+                    let message = NetworkMessage::GameSessionUpdate(session.clone());
+                    if let Ok(payload) = message.to_bytes() {
+                        send_payload_and_log_error(endpoint, msg.client_id, payload, "GameSessionResponse");
+                    }
+                } else {
+                    debug!("No active game session to return to client {}", msg.client_id);
+                }
+            }
             NetworkMessage::InitGameSession(session_uuid, game_id, initial_state) => {
                 info!("Received InitGameSession for game ID: {} with initial state: {:?}", game_id, initial_state);
                 init_game_session_events.write(InitGameSessionEvent {
@@ -357,6 +390,7 @@ fn handle_hunter_target_messages(
     for msg in messages.read() {
         match &msg.message {
             NetworkMessage::SpawnHunterTarget(target, position) => {
+                info!("Received SpawnHunterTarget message from client {}", msg.client_id);
                 info!("Received SpawnHunterTarget from client {}: target={:?}, position={:?}", msg.client_id, target, position);
                 spawn_hunter_target_events.write(SpawnHunterTargetEvent {
                     target: target.clone(),

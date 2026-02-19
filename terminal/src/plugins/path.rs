@@ -1,6 +1,5 @@
 use bevy::asset::uuid::Uuid;
 use bevy::prelude::*;
-use common::network::NetworkMessage;
 use common::path::{PathRenderable, UniversalPath};
 use common::scene::SceneEntity;
 use std::collections::HashMap;
@@ -77,6 +76,7 @@ impl Plugin for PathPlugin {
             .add_systems(Update, handle_spawn_path_events)
             .add_systems(Update, handle_despawn_path_events)
             .add_systems(Update, handle_update_path_position_events)
+            .add_systems(Update, attach_paths_to_scene)
             .add_systems(Update, draw_paths);
     }
 }
@@ -86,7 +86,7 @@ fn handle_spawn_path_events(
     mut commands: Commands,
     mut spawn_events: MessageReader<SpawnPathEvent>,
     mut path_registry: ResMut<PathRegistry>,
-    scene_query: Query<Entity, With<SceneEntity>>,
+    scene_query: Query<(Entity, &Transform), With<SceneEntity>>,
 ) {
     for event in spawn_events.read() {
         info!(
@@ -94,7 +94,7 @@ fn handle_spawn_path_events(
             event.uuid, event.position
         );
 
-        let transform = Transform::from_translation(event.position);
+        let mut transform = Transform::from_translation(event.position);
 
         let path_entity = commands
             .spawn((
@@ -108,7 +108,13 @@ fn handle_spawn_path_events(
             .id();
 
         // Parent to scene entity if it exists
-        if let Ok(scene_entity) = scene_query.single() {
+        if let Ok((scene_entity, scene_transform)) = scene_query.single() {
+            let local_pos = scene_transform
+                .to_matrix()
+                .inverse()
+                .transform_point3(event.position);
+            transform.translation = local_pos;
+            commands.entity(path_entity).insert(transform);
             commands.entity(scene_entity).add_child(path_entity);
             info!("Spawned path entity as child of scene");
         } else {
@@ -117,6 +123,30 @@ fn handle_spawn_path_events(
 
         // Track the entity in the registry
         path_registry.paths.insert(event.uuid, path_entity);
+    }
+}
+
+/// Attach any unparented paths to the scene and convert to local coordinates
+fn attach_paths_to_scene(
+    mut commands: Commands,
+    scene_query: Query<(Entity, &Transform), With<SceneEntity>>,
+    path_query: Query<(Entity, &GlobalTransform), With<PathId>>,
+) {
+    let Ok((scene_entity, scene_transform)) = scene_query.single() else {
+        return;
+    };
+
+    let scene_inverse = scene_transform.to_matrix().inverse();
+
+    for (entity, global_transform) in path_query.iter() {
+        let world_pos: Vec3 = global_transform.translation();
+        let local_pos = scene_inverse.transform_point3(world_pos);
+        if let Ok(mut entity_commands) = commands.get_entity(entity) {
+            entity_commands.queue_silenced(move |mut entity: bevy::ecs::world::EntityWorldMut<'_>| {
+                entity.insert(Transform::from_translation(local_pos));
+                entity.insert(ChildOf(scene_entity));
+            });
+        }
     }
 }
 
@@ -142,12 +172,25 @@ fn handle_despawn_path_events(
 fn handle_update_path_position_events(
     mut update_events: MessageReader<UpdatePathPositionEvent>,
     path_registry: Res<PathRegistry>,
-    mut transform_query: Query<&mut Transform>,
+    mut transform_queries: ParamSet<(
+        Query<&mut Transform, With<PathId>>,
+        Query<&Transform, With<SceneEntity>>,
+    )>,
 ) {
+    let scene_inverse = if let Ok(scene_transform) = transform_queries.p1().single() {
+        Some(scene_transform.to_matrix().inverse())
+    } else {
+        None
+    };
+
     for event in update_events.read() {
         if let Some(&entity) = path_registry.paths.get(&event.uuid) {
-            if let Ok(mut transform) = transform_query.get_mut(entity) {
-                transform.translation = event.position;
+            if let Ok(mut transform) = transform_queries.p0().get_mut(entity) {
+                if let Some(scene_inverse) = scene_inverse {
+                    transform.translation = scene_inverse.transform_point3(event.position);
+                } else {
+                    transform.translation = event.position;
+                }
                 debug!(
                     "Updated path position: uuid={}, position={:?}",
                     event.uuid, event.position

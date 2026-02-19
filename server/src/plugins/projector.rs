@@ -1,7 +1,9 @@
 use bevy::prelude::*;
 use common::config::ProjectorConfiguration;
+use common::scene::SceneEntity;
 use common::scene::SceneSetup;
 use common::path::{UniversalPath, PathSegment};
+use crate::plugins::calibration::CalibrationPath;
 use crate::dac::helios::{HeliosDacController, HeliosPoint, HELIOS_FLAGS_DEFAULT, HELIOS_MAX_COORD};
 use std::sync::{Arc, Mutex};
 use std::sync::mpsc::{self, Sender};
@@ -50,6 +52,15 @@ impl Default for ProjectorDacController {
 
 pub struct ProjectorPlugin;
 
+#[derive(Resource)]
+struct DacReconnectTimer(Timer);
+
+impl Default for DacReconnectTimer {
+    fn default() -> Self {
+        Self(Timer::from_seconds(3.0, TimerMode::Repeating))
+    }
+}
+
 impl Plugin for ProjectorPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(ProjectorConfiguration {
@@ -58,6 +69,7 @@ impl Plugin for ProjectorPlugin {
         })
             .insert_resource(ProjectorDacController::default())
             .insert_resource(LaserPointBuffer::default())
+            .init_resource::<DacReconnectTimer>()
             .add_systems(Startup, initialize_projector_dac)
             .add_systems(Update, update_projector)
             .add_systems(Update, update_point_buffer)
@@ -72,6 +84,18 @@ fn initialize_projector_dac(
     mut projector_config: ResMut<ProjectorConfiguration>,
 ) {
     info!("Initializing Helios DAC controller...");
+    if try_initialize_projector_dac(&mut dac_controller, &point_buffer, &mut projector_config) {
+        info!("✓ Projector initialization complete");
+    } else {
+        projector_config.connected = false;
+    }
+}
+
+fn try_initialize_projector_dac(
+    dac_controller: &mut ProjectorDacController,
+    point_buffer: &LaserPointBuffer,
+    projector_config: &mut ProjectorConfiguration,
+) -> bool {
     match HeliosDacController::new() {
         Ok(mut controller) => {
             info!("Helios DAC library loaded successfully");
@@ -112,7 +136,7 @@ fn initialize_projector_dac(
 
             if !devices_opened {
                 error!("✗ Failed to open Helios DAC after {} attempts. Is the device connected?", max_retries);
-                return;
+                return false;
             }
 
             // Verify device is actually responding with a status check
@@ -122,7 +146,11 @@ fn initialize_projector_dac(
                 }
                 Err(e) => {
                     error!("✗ DAC opened but status check failed: {}. Device may not be fully initialized.", e);
-                    error!("   Attempting to continue anyway, but laser output may not work.");
+                    error!("   Closing devices and retrying on next reconnect tick.");
+                    let _ = controller.stop(0);
+                    let _ = controller.close_devices();
+                    std::thread::sleep(std::time::Duration::from_millis(250));
+                    return false;
                 }
             }
 
@@ -151,12 +179,12 @@ fn initialize_projector_dac(
             dac_controller.switched_on = projector_config.switched_on;
             set_switched_on_arc(switched_on_flag);
             set_connected_arc(connected_flag);
-            // Set ProjectorConfiguration.connected to match initialized
             projector_config.connected = dac_controller.initialized;
-            info!("✓ Projector initialization complete");
+            true
         }
         Err(e) => {
             error!("✗ Failed to initialize Helios DAC controller: {}", e);
+            false
         }
     }
 }
@@ -172,6 +200,7 @@ fn start_dac_output_thread(
     let shutdown_tx_clone = shutdown_tx.clone();
 
     thread::spawn(move || {
+        let mut controller = controller;
         info!("DAC output thread started");
         let pps = 15000;
         let flags = 0;
@@ -184,6 +213,8 @@ fn start_dac_output_thread(
         loop {
             if shutdown_rx.try_recv().is_ok() {
                 info!("✓ DAC output thread received shutdown signal, cleaning up...");
+                let _ = controller.stop(0);
+                let _ = controller.close_devices();
                 drop(controller);
                 info!("✓ DAC output thread terminated cleanly");
                 let mut connected = connected.lock().unwrap();
@@ -212,7 +243,7 @@ fn start_dac_output_thread(
                             Ok(_) => {
                                 consecutive_write_failures = 0;
                                 frame_count += 1;
-                                if frame_count % 60 == 0 {
+                                if frame_count % 600 == 0 {
                                     info!("✓ DAC active: {} frames sent, current frame has {} points", frame_count, points.len());
                                 }
                             }
@@ -226,6 +257,8 @@ fn start_dac_output_thread(
                                     error!("   Please restart the server to reinitialize the DAC.");
                                     let mut connected = connected.lock().unwrap();
                                     *connected = false;
+                                    let _ = controller.stop(0);
+                                    let _ = controller.close_devices();
                                     break;
                                 }
                                 thread::sleep(std::time::Duration::from_millis(50));
@@ -265,6 +298,8 @@ fn start_dac_output_thread(
                         error!("   Please check USB connection and restart the server.");
                         let mut connected = connected.lock().unwrap();
                         *connected = false;
+                        let _ = controller.stop(0);
+                        let _ = controller.close_devices();
                         break;
                     }
                     if consecutive_errors > max_consecutive_errors {
@@ -305,6 +340,9 @@ fn update_projector(
     mut projector_config: ResMut<ProjectorConfiguration>,
     scene_setup: Res<SceneSetup>,
     mut dac_controller: ResMut<ProjectorDacController>,
+    point_buffer: Res<LaserPointBuffer>,
+    time: Res<Time>,
+    mut reconnect_timer: ResMut<DacReconnectTimer>,
 ) {
     // Synchronize DAC controller switched_on with projector_config.switched_on
     if projector_config.is_changed() {
@@ -316,12 +354,32 @@ fn update_projector(
         }
     }
     // Always keep ProjectorConfiguration.connected in sync with thread connection status
-    //if let Some(flag) = get_connected_arc() {
-    //    let connected = flag.lock().unwrap();
-    //    projector_config.connected = *connected;
-    //} else {
-    //    projector_config.connected = dac_controller.initialized;
-    //}
+    let connected = if let Some(flag) = get_connected_arc() {
+        let connected = flag.lock().unwrap();
+        *connected
+    } else {
+        dac_controller.initialized
+    };
+
+    if projector_config.connected != connected {
+        projector_config.bypass_change_detection().connected = connected;
+        projector_config.set_changed();
+    }
+
+    if !connected {
+        reconnect_timer.0.tick(time.delta());
+        if reconnect_timer.0.just_finished() {
+            info!("Attempting DAC reconnect...");
+            if let Some(sender) = dac_controller.shutdown_sender.take() {
+                let _ = sender.send(());
+            }
+            dac_controller.thread_running = false;
+            dac_controller.initialized = false;
+            try_initialize_projector_dac(&mut dac_controller, &point_buffer, &mut projector_config);
+        }
+    } else {
+        reconnect_timer.0.reset();
+    }
 
     if projector_config.is_changed() || scene_setup.is_changed() {
         if projector_config.locked_to_scene {
@@ -339,7 +397,8 @@ fn update_projector(
 fn update_point_buffer(
     projector_config: Res<ProjectorConfiguration>,
     point_buffer: Res<LaserPointBuffer>,
-    path_query: Query<(&UniversalPath, &GlobalTransform)>,
+    path_query: Query<(&UniversalPath, &Transform, Option<&ChildOf>, Option<&CalibrationPath>)>,
+    scene_query: Query<&Transform, With<SceneEntity>>,
 ) {
     // Only update buffer if projector is enabled
     if !projector_config.switched_on {
@@ -354,13 +413,24 @@ fn update_point_buffer(
     // Convert all paths to Helios points
     let mut helios_points = Vec::new();
     
-    for (universal_path, global_transform) in path_query.iter() {
+    let scene_transform = scene_query.single().ok();
+
+    for (universal_path, transform, _parent, calibration_path) in path_query.iter() {
+        let global_transform = if calibration_path.is_some() {
+            GlobalTransform::from(*transform)
+        } else if let Some(scene_transform) = scene_transform {
+            let world_matrix = scene_transform.to_matrix() * transform.to_matrix();
+            GlobalTransform::from(Transform::from_matrix(world_matrix))
+        } else {
+            GlobalTransform::from(*transform)
+        };
+
         debug!("Converting path with {} segments at {:?}", 
               universal_path.segments.len(), global_transform.translation());
         
         let points = convert_universal_path_to_helios_points(
             universal_path,
-            global_transform,
+            &global_transform,
             &projector_config,
         );
         
@@ -584,7 +654,7 @@ fn world_to_projector_coordinates(
     // Check if point is in front of projector
     // In projector local space, negative Z means the point is in the direction the projector is looking
     if local_pos.z >= 0.0 {
-        warn!("Point {:?} behind projector (local_z: {})", world_pos, local_pos.z);
+        debug!("Point {:?} behind projector (local_z: {})", world_pos, local_pos.z);
         return None; // Behind projector
     }
     
@@ -597,11 +667,11 @@ fn world_to_projector_coordinates(
     
     // Project to normalized device coordinates [-1, 1]
     let projected_x = (local_pos.x / distance) / half_fov.tan();
-    let projected_y = (local_pos.y / distance) / half_fov.tan();
+    let projected_y = -((local_pos.y / distance) / half_fov.tan());
     
     // Clip to visible range
     if projected_x.abs() > 1.0 || projected_y.abs() > 1.0 {
-        warn!("Point {:?} outside FOV (projected: {}, {})", world_pos, projected_x, projected_y);
+        debug!("Point {:?} outside FOV (projected: {}, {})", world_pos, projected_x, projected_y);
         return None; // Outside field of view
     }
     
