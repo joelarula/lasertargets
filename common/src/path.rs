@@ -244,6 +244,12 @@ impl UniversalPath {
         }
     }
 
+    /// Create a balloon path shape (circle for now, can be enhanced later)
+    pub fn balloon(center: Vec2, radius: f32, color: Color) -> Self {
+        // Start with a circle; can be changed to a teardrop/balloon shape later
+        Self::circle(center, radius, color)
+    }
+
     /// Create a rectangle path
     pub fn rectangle(top_left: Vec2, size: Vec2, color: Color) -> Self {
         use lyon_tessellation::math::point;

@@ -3009,6 +3009,7 @@ dependencies = [
  "bevy_quinnet",
  "common",
  "log",
+ "rand",
  "seldom_state",
  "serde",
 ]

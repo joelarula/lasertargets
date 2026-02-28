@@ -39,6 +39,7 @@ impl UniversalPathGizmos for UniversalPath {
 
 const START_GAME_BTN: &str = "start_hunter_game";
 const SPAWN_BASIC_TARGET_BTN: &str = "spawn_basic_target";
+const SPAWN_BALLOON_BTN: &str = "spawn_balloon_target";
 
 #[derive(Resource, Default)]
 struct DragState {
@@ -53,6 +54,9 @@ struct MenuButton;
 struct BasicTargetButton;
 
 #[derive(Component)]
+struct BalloonButton;
+
+#[derive(Component)]
 struct HunterStatsDisplay;
 
 pub struct HunterTerminalPlugin;
@@ -63,12 +67,13 @@ impl Plugin for HunterTerminalPlugin {
         app.init_resource::<DragState>();
         app.add_systems(OnEnter(ServerState::Menu), spawn_menu_toolbar);
         app.add_systems(OnExit(ServerState::Menu), despawn_menu_toolbar);
-        app.add_systems(OnEnter(HunterGameState::On), (spawn_basictarget_toolbar_item, spawn_hunter_stats_ui));
+        app.add_systems(OnEnter(HunterGameState::On), (spawn_basictarget_toolbar_item, spawn_balloon_toolbar_item, spawn_hunter_stats_ui));
         app.add_systems(OnExit(HunterGameState::On), on_hunter_game_finish);
-        app.add_systems(OnExit(HunterGameState::On), cleanup_hunter_stats_ui);
-        app.add_systems(OnEnter(ServerState::Menu), despawn_basictarget_toolbar_item); 
+        app.add_systems(OnExit(HunterGameState::On), (cleanup_hunter_stats_ui, despawn_balloon_toolbar_item));
+        app.add_systems(OnEnter(ServerState::Menu), (despawn_basictarget_toolbar_item, despawn_balloon_toolbar_item)); 
         app.add_systems(Update, handle_button_click);
         app.add_systems(Update, handle_target_drag.run_if(in_state(HunterGameState::On)));
+        app.add_systems(Update, handle_balloon_button_click.run_if(in_state(HunterGameState::On)));
         app.add_systems(Update, draw_drag_gizmo.run_if(in_state(HunterGameState::On)));
         app.add_systems(Update, update_hunter_stats_display.run_if(in_state(HunterGameState::On)));
         app.add_systems(OnEnter(TerminalState::Connecting), clear_hunter_on_disconnect);
@@ -116,6 +121,60 @@ fn despawn_basictarget_toolbar_item(
         commands.entity(entity).despawn();
     }
     next_state.set(HunterGameState::Off);
+}
+
+/// Spawns the balloon toolbar item when entering HunterGameState::On
+fn spawn_balloon_toolbar_item(mut commands: Commands) {
+    commands.spawn((
+        ToolbarItem {
+            name: SPAWN_BALLOON_BTN.to_string(),
+            order: 11,
+            icon: Some("\u{f5a4}".to_string()), // Balloon icon
+            state: ItemState::On,
+            docking: Docking::Bottom,
+            button_size: 36.0,
+            ..default()
+        },
+        BalloonButton,
+    ));
+}
+
+/// Despawns the balloon toolbar item
+fn despawn_balloon_toolbar_item(
+    mut commands: Commands,
+    query: Query<Entity, With<BalloonButton>>,
+) {
+    for entity in query.iter() {
+        commands.entity(entity).despawn();
+    }
+}
+
+/// Handle balloon button click: sends SpawnHunterTarget(Baloon) to server
+fn handle_balloon_button_click(
+    button_query: Query<(&Interaction, &ToolbarButton), Changed<Interaction>>,
+    mut client: ResMut<QuinnetClient>,
+    terminal_state: Res<State<TerminalState>>,
+) {
+    for (interaction, toolbar_button) in &button_query {
+        if toolbar_button.name == SPAWN_BALLOON_BTN && *interaction == Interaction::Pressed {
+            log::info!("'Spawn Balloon' button pressed");
+            if *terminal_state.get() == TerminalState::Connected {
+                if let Some(connection) = client.get_connection_mut() {
+                    let target = common::target::HunterTarget::Baloon(0.2, Color::srgb(1.0, 0.0, 0.0));
+                    let message = NetworkMessage::SpawnHunterTarget(target, Vec3::ZERO);
+                    if let Ok(payload) = message.to_bytes() {
+                        if let Err(e) = connection.send_payload(payload) {
+                            bevy::log::warn!("Failed to send spawn balloon message: {:?}", e);
+                        } else {
+                            bevy::log::info!("Sent spawn balloon target message");
+                        }
+                    }
+                }
+            } else {
+                bevy::log::warn!("Cannot spawn balloon: not connected to server");
+            }
+        }
+    }
 }
 
 

@@ -22,6 +22,7 @@ bevy_quinnet = "0.19"
 bevy_prototype_lyon = "0.15.0"
 lyon_path = { version = "1.0.16", features = ["serde"] }
 seldom_state = "=0.15.0"
+rand = "0.9"
 
 [profile.dev]
 opt-level = 1

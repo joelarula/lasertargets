@@ -56,6 +56,20 @@ pub struct TargetEvent {
     pub position: bevy::math::Vec3,
 }
 
+/// Marker component for balloon target entities (rising targets)
+#[derive(bevy::ecs::component::Component, Debug, Clone)]
+pub struct BalloonTargetEntity;
+
+/// Component storing the vertical rise speed for balloon targets (units/sec)
+#[derive(bevy::ecs::component::Component, Debug, Clone)]
+pub struct BalloonRiseSpeed(pub f32);
+
+impl Default for BalloonRiseSpeed {
+    fn default() -> Self {
+        Self(0.3)
+    }
+}
+
 /// Marker component for collision indicator
 #[derive(bevy::ecs::component::Component, Debug, Clone)]
 pub struct CollisionIndicator;

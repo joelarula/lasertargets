@@ -7,7 +7,7 @@ use common::{
     target::HunterTarget,
 };
 use crate::common::GAME_ID;
-use crate::model::{BroadcastStatsUpdateEvent, HunterClickEvent, HunterGameStats, TargetEvent};
+use crate::model::{BalloonRiseSpeed, BalloonTargetEntity, BroadcastStatsUpdateEvent, HunterClickEvent, HunterGameStats, TargetEvent};
 
 /// Event for spawning hunter targets (server-only)
 #[derive(Message, Debug, Clone)]
@@ -32,7 +32,8 @@ impl Plugin for HunterGameServerPlugin {
         app.add_message::<SpawnHunterTargetEvent>();
         app.add_message::<HunterClickEvent>();
         app.add_message::<BroadcastStatsUpdateEvent>();
-        app.add_systems(Update, (spawn_hunter_targets, handle_hunter_clicks));
+        app.add_systems(Update, (spawn_hunter_targets, handle_hunter_clicks, check_balloon_out_of_bounds));
+        app.add_systems(FixedUpdate, update_balloon_positions);
         app.add_systems(OnExit(ServerState::InGame), reset_hunter_session);
         app.add_systems(Update, reset_hunter_on_new_session);
     }
@@ -94,15 +95,38 @@ fn spawn_hunter_targets(
         let mut session_id = bevy::asset::uuid::Uuid::nil();
         
         // Create UniversalPath based on target type
-        let (radius, color) = match &event.target {
-            HunterTarget::Basic(size, color) => (*size, *color),
-            HunterTarget::Baloon(size, color) => (*size, *color),
+        let (radius, color, is_balloon) = match &event.target {
+            HunterTarget::Basic(size, color) => (*size, *color, false),
+            HunterTarget::Baloon(size, color) => (*size, *color, true),
         };
         
-        let path = UniversalPath::circle(Vec2::ZERO, radius, color);
+        let path = if is_balloon {
+            UniversalPath::balloon(Vec2::ZERO, radius, color)
+        } else {
+            UniversalPath::circle(Vec2::ZERO, radius, color)
+        };
         
         // Get local position relative to scene transform
-        let (local_position, spawn_world_pos) = if let Ok((_scene_entity, scene_transform)) = scene_query.single() {
+        let (local_position, spawn_world_pos) = if is_balloon {
+            // Balloon: random X within scene bounds, start below scene bottom
+            let half_width = scene_setup.scene.scene_dimension.x as f32 / 2.0;
+            let half_height = scene_setup.scene.scene_dimension.y as f32 / 2.0;
+            let margin = radius;
+            let x = rand::random_range((-half_width + margin)..(half_width - margin));
+            let local_pos = Vec3::new(x, -half_height - radius, 0.0);
+            
+            let world_pos = if let Ok((_scene_entity, scene_transform)) = scene_query.single() {
+                let scene_matrix = Mat4::from_scale_rotation_translation(
+                    scene_transform.scale,
+                    scene_transform.rotation,
+                    scene_transform.translation,
+                );
+                scene_matrix.transform_point3(local_pos)
+            } else {
+                local_pos
+            };
+            (local_pos, world_pos)
+        } else if let Ok((_scene_entity, scene_transform)) = scene_query.single() {
             let mut snapped_world_pos = event.position;
             snapped_world_pos.z = scene_transform.translation.z;
 
@@ -183,6 +207,14 @@ fn spawn_hunter_targets(
             path,
             common::path::PathRenderable::default(),
         )).id();
+        
+        // Add balloon-specific components for rising behavior
+        if is_balloon {
+            commands.entity(target_entity).insert((
+                BalloonTargetEntity,
+                BalloonRiseSpeed::default(),
+            ));
+        }
         
         // Parent to scene entity if it exists
         if let Ok((scene_entity, _)) = scene_query.single() {
@@ -299,3 +331,48 @@ fn handle_hunter_clicks(
     }
 }
 
+/// Move balloon targets upward each fixed tick
+fn update_balloon_positions(
+    mut balloon_query: Query<(&mut Transform, &BalloonRiseSpeed), With<BalloonTargetEntity>>,
+    time: Res<Time>,
+) {
+    for (mut transform, speed) in balloon_query.iter_mut() {
+        transform.translation.y += speed.0 * time.delta_secs();
+    }
+}
+
+/// Despawn balloons that have risen past the top of the scene
+fn check_balloon_out_of_bounds(
+    mut commands: Commands,
+    balloon_query: Query<(Entity, &Transform, &HunterTargetEntity), With<BalloonTargetEntity>>,
+    scene_setup: Res<SceneSetup>,
+    mut stats: Option<ResMut<HunterGameStats>>,
+    mut stats_events: MessageWriter<BroadcastStatsUpdateEvent>,
+) {
+    let half_height = scene_setup.scene.scene_dimension.y as f32 / 2.0;
+    
+    for (entity, transform, target) in balloon_query.iter() {
+        let radius = match &target.target_type {
+            HunterTarget::Baloon(size, _) => *size,
+            _ => 0.2,
+        };
+        
+        if transform.translation.y > half_height + radius {
+            // Balloon escaped the scene
+            info!("Balloon {} escaped at y={:.2}", target.uuid, transform.translation.y);
+            
+            if let Some(mut stats) = stats.as_mut() {
+                stats.misses += 1;
+                stats_events.write(BroadcastStatsUpdateEvent {
+                    session_id: target.session_id,
+                    targets_spawned: stats.targets_spawned,
+                    targets_popped: stats.targets_popped,
+                    misses: stats.misses,
+                    score: stats.score,
+                });
+            }
+            
+            commands.entity(entity).despawn();
+        }
+    }
+}
