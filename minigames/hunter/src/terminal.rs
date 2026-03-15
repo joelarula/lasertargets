@@ -399,8 +399,9 @@ fn cleanup_hunter_stats_ui(
 fn on_hunter_game_finish(
     stats: Res<HunterGameStats>,
     time: Res<Time>,
+    scene_setup: Res<SceneSetup>,
 ) {
-    let report = generate_game_report(&*stats, time.elapsed_secs_f64());
+    let report = generate_game_report(&*stats, time.elapsed_secs_f64(), &scene_setup);
     
     // Log report header
     info!("=== HUNTER GAME REPORT ===");

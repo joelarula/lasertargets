@@ -1,0 +1,46 @@
+# Custom cross-compilation image for Raspberry Pi 4 (aarch64)
+# Extends the official cross-rs base image with Helios DAC C++ SDK build
+#
+# Usage:
+#   docker build -f docker/Dockerfile.aarch64 -t lasertargets-cross-aarch64 .
+#   cross build -p server --target aarch64-unknown-linux-gnu --release
+
+FROM ghcr.io/cross-rs/aarch64-unknown-linux-gnu:main
+
+# Pin Helios DAC SDK to a known-good commit for reproducible builds
+ARG HELIOS_DAC_COMMIT=b32c4c4ed1e1121c8c6e7f3ce452948ad6cf8a5a
+
+# Enable arm64 architecture and install cross-compilation dependencies
+RUN dpkg --add-architecture arm64 && \
+    # Add arm64 package sources (needed for libusb-1.0-0-dev:arm64)
+    sed -i 's/^deb /deb [arch=amd64] /' /etc/apt/sources.list 2>/dev/null || true && \
+    echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports $(. /etc/os-release && echo $VERSION_CODENAME) main restricted universe multiverse" >> /etc/apt/sources.list && \
+    echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports $(. /etc/os-release && echo $VERSION_CODENAME)-updates main restricted universe multiverse" >> /etc/apt/sources.list && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
+        git \
+        g++-aarch64-linux-gnu \
+        libusb-1.0-0-dev:arm64 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Clone and build Helios DAC shared library for aarch64
+RUN git clone https://github.com/Grix/helios_dac.git /tmp/helios_dac && \
+    cd /tmp/helios_dac && \
+    git checkout ${HELIOS_DAC_COMMIT} && \
+    cd sdk/cpp/shared_library && \
+    aarch64-linux-gnu-g++ \
+        -shared -fPIC -std=c++14 -O2 \
+        -o /opt/libHeliosLaserDAC.so \
+        HeliosDacAPI.cpp \
+        ../HeliosDac.cpp \
+        ../idn/idn.cpp \
+        ../idn/idnServerList.cpp \
+        ../idn/plt-posix.cpp \
+        -I.. \
+        -I../idn \
+        -lusb-1.0 \
+        -lpthread \
+    && rm -rf /tmp/helios_dac
+
+# Verify the library was built correctly
+RUN aarch64-linux-gnu-objdump -p /opt/libHeliosLaserDAC.so | head -5

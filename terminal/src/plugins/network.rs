@@ -10,6 +10,7 @@ use std::net::{IpAddr, Ipv6Addr};
 use common::game::{GameSessionUpdate, GameSessionCreated};
 use hunter::model::HunterGameStats;
 use hunter::server::SpawnHunterTargetEvent;
+use snake::model::SnakeGameStats;
 use crate::plugins::path::{SpawnPathEvent, DespawnPathEvent, UpdatePathPositionEvent};
 
 const CONN_BTN_NAME: &str = "connection_status";
@@ -332,6 +333,14 @@ fn receive_server_messages(
                                         game_start_time: 0.0,
                                     });
                                 }
+                            }
+                            NetworkMessage::SnakeStatsUpdate { session_id, score, length, game_over } => {
+                                commands.insert_resource(SnakeGameStats {
+                                    session_id,
+                                    score,
+                                    length,
+                                    game_over,
+                                });
                             }
                             _ => {
                                 info!("Received unhandled message: {:?}", msg);

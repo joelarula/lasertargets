@@ -1,0 +1,9 @@
+# Exclude build artifacts and repo metadata from Docker build context
+target/
+.git/
+*.dll
+*.so
+*.dylib
+*.pdb
+.vscode/
+.idea/

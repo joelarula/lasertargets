@@ -23,7 +23,8 @@ use crate::plugins::path::PathPlugin;
 use crate::plugins::keyboard::KeyboardPlugin;
 use crate::plugins::mouse::MousePlugin;
 use hunter::common::HunterGamePlugin;
-use snake::plugin::SnakeGamePlugin;
+use snake::common::SnakeGamePlugin;
+use snake::terminal::SnakeTerminalPlugin;
 
 
 fn main() {
@@ -67,7 +68,8 @@ fn main() {
     .add_plugins(GamePlugin)
     .add_plugins(HunterGamePlugin)
     .add_plugins(HunterTerminalPlugin)
-    .add_plugins(SnakeGamePlugin);
+    .add_plugins(SnakeGamePlugin)
+    .add_plugins(SnakeTerminalPlugin);
 
     app.run();
 }

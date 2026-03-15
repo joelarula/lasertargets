@@ -1,0 +1,28 @@
+[Unit]
+Description=LaserTargets Server
+Documentation=https://github.com/joela/lasertargets
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+WorkingDirectory=/opt/lasertargets
+ExecStart=/opt/lasertargets/server
+Environment=LD_LIBRARY_PATH=/opt/lasertargets/lib
+Environment=RUST_LOG=info
+
+Restart=on-failure
+RestartSec=5
+StartLimitBurst=3
+StartLimitIntervalSec=60
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/lasertargets
+
+[Install]
+WantedBy=multi-user.target

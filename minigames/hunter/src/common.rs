@@ -1,8 +1,9 @@
 use bevy::{app::{App, Plugin, Startup, Update}, ecs::{message::MessageReader, system::{Res, ResMut}}, state::{app::AppExtStates, state::{NextState, OnEnter, SubStates}}, time::Time};
-use common::{game::{Game, GameRegistry, GameSessionCreated, GameSessionUpdate}, state::ServerState};
+use common::{game::{Game, GameRegistry, GameSessionCreated, GameSessionUpdate}, scene::SceneSetup, state::ServerState};
 use serde::{Deserialize, Serialize};
 use bevy::prelude::StateSet;
-use crate::model::{HunterGameStats, GameReport};
+use bevy::math::{Mat4, Vec3};
+use crate::model::{HunterGameStats, GameReport, TargetEvent};
 
 pub const GAME_ID: u16 = 101;
 pub const GAME_NAME: &str = "huntergame"; 
@@ -104,8 +105,20 @@ fn init_hunter_stats(
     }
 }
 
+/// Convert world-space position to scene-local coordinates
+fn world_to_scene_local(world_pos: &Vec3, scene_setup: &SceneSetup) -> Vec3 {
+    let origin = &scene_setup.scene.origin;
+    let scene_matrix = Mat4::from_scale_rotation_translation(
+        origin.scale,
+        origin.rotation,
+        origin.translation,
+    );
+    scene_matrix.inverse().transform_point3(*world_pos)
+}
+
 /// Generate post-game report from statistics
-pub fn generate_game_report(stats: &HunterGameStats, end_time: f64) -> GameReport {
+/// Positions in the report are converted to scene-local coordinates.
+pub fn generate_game_report(stats: &HunterGameStats, end_time: f64, scene_setup: &SceneSetup) -> GameReport {
     let mut spawned_events = Vec::new();
     let mut popped_events = Vec::new();
     
@@ -142,14 +155,19 @@ pub fn generate_game_report(stats: &HunterGameStats, end_time: f64) -> GameRepor
     };
     
     GameReport {
+        scene_setup: scene_setup.clone(),
         total_targets_spawned: stats.targets_spawned,
         total_targets_popped: stats.targets_popped,
+        total_misses: stats.misses,
         total_score: stats.score,
         total_game_time,
         avg_spawn_interval,
         avg_target_lifetime: avg_lifetime,
-        spawn_positions: spawned_events.iter().map(|e| e.position).collect(),
-        pop_positions: popped_events.iter().map(|e| e.position).collect(),
-        timeline: stats.target_events.clone(),
+        spawn_positions: spawned_events.iter().map(|e| world_to_scene_local(&e.position, scene_setup)).collect(),
+        pop_positions: popped_events.iter().map(|e| world_to_scene_local(&e.position, scene_setup)).collect(),
+        timeline: stats.target_events.iter().map(|e| TargetEvent {
+            position: world_to_scene_local(&e.position, scene_setup),
+            ..e.clone()
+        }).collect(),
     }
 }

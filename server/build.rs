@@ -3,34 +3,70 @@ use std::fs;
 use std::path::PathBuf;
 
 fn main() {
-    // Only copy if we are on Windows, as the DLL is Windows-specific
-    if env::var("CARGO_CFG_TARGET_OS").unwrap_or_default() == "windows" {
-        let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
-        let libs_dir = manifest_dir.join("libs");
-        let dll_name = "HeliosLaserDAC.dll";
-        let src_path = libs_dir.join(dll_name);
+    let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+    let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
+    let profile_dir = out_dir
+        .ancestors()
+        .nth(3)
+        .expect("Failed to find profile directory");
 
-        println!("cargo:rerun-if-changed=libs/HeliosLaserDAC.dll");
+    if target_os == "windows" {
+        copy_windows_dll(profile_dir);
+    } else if target_os == "linux" {
+        copy_linux_so(profile_dir);
+    }
+}
 
-        // The OUT_DIR is set by Cargo during build, e.g., target/debug/build/project-hash/out
-        // We want to copy the DLL to the same directory as the binary, which is typically
-        // 3 levels up: target/debug/
-        let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
+/// Copy HeliosLaserDAC.dll from server/libs/ to the target output directory (Windows)
+fn copy_windows_dll(profile_dir: &std::path::Path) {
+    let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
+    let libs_dir = manifest_dir.join("libs");
+    let dll_name = "HeliosLaserDAC.dll";
+    let src_path = libs_dir.join(dll_name);
 
-        let profile_dir = out_dir
-            .ancestors()
-            .nth(3)
-            .expect("Failed to find profile directory");
+    println!("cargo:rerun-if-changed=libs/HeliosLaserDAC.dll");
 
-        let dest_path = profile_dir.join(dll_name);
+    let dest_path = profile_dir.join(dll_name);
 
-        match fs::copy(&src_path, &dest_path) {
-            Ok(_) => println!(
-                "cargo:warning=Copied {} to {}",
-                dll_name,
-                dest_path.display()
-            ),
-            Err(e) => println!("cargo:warning=Failed to copy DLL: {}", e),
-        }
+    match fs::copy(&src_path, &dest_path) {
+        Ok(_) => println!(
+            "cargo:warning=Copied {} to {}",
+            dll_name,
+            dest_path.display()
+        ),
+        Err(e) => println!("cargo:warning=Failed to copy DLL: {}", e),
+    }
+}
+
+/// Copy libHeliosLaserDAC.so from /opt/ (inside the cross Docker container) to the target output directory.
+/// When not cross-compiling, falls back to server/libs/ if available.
+fn copy_linux_so(profile_dir: &std::path::Path) {
+    let so_name = "libHeliosLaserDAC.so";
+
+    // In the cross Docker container, the .so is pre-built at /opt/
+    let cross_path = PathBuf::from("/opt").join(so_name);
+    let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
+    let local_path = manifest_dir.join("libs").join(so_name);
+
+    let src_path = if cross_path.exists() {
+        cross_path
+    } else if local_path.exists() {
+        local_path
+    } else {
+        println!("cargo:warning={} not found — DAC will be unavailable at runtime", so_name);
+        return;
+    };
+
+    println!("cargo:rerun-if-changed={}", src_path.display());
+
+    let dest_path = profile_dir.join(so_name);
+
+    match fs::copy(&src_path, &dest_path) {
+        Ok(_) => println!(
+            "cargo:warning=Copied {} to {}",
+            so_name,
+            dest_path.display()
+        ),
+        Err(e) => println!("cargo:warning=Failed to copy .so: {}", e),
     }
 }

@@ -1,6 +1,7 @@
 use bevy::asset::uuid::Uuid;
 use bevy::prelude::*;
 use common::path::UniversalPath;
+use common::scene::SceneSetup;
 use serde::{Deserialize, Serialize};
 
 /// Event for click detection from client (used by server)
@@ -89,8 +90,10 @@ pub struct HunterGameStats {
 /// Post-game report with analytics
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GameReport {
+    pub scene_setup: SceneSetup,
     pub total_targets_spawned: u32,
     pub total_targets_popped: u32,
+    pub total_misses: u32,
     pub total_score: u32,
     pub total_game_time: f64,
     pub avg_spawn_interval: f64,

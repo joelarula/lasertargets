@@ -148,29 +148,53 @@ cargo run -p server --features bevy/dynamic_linking
 This reduces compile times significantly. Only build without the flag for release.
 
 ### Cross-Compilation for Raspberry Pi 4
-The server can be deployed on Raspberry Pi 4 Linux:
+The server can be cross-compiled for Raspberry Pi 4 (aarch64) using `cross` with a custom Docker image that also builds `libHeliosLaserDAC.so` for ARM64.
 
+**Prerequisites:**
+- Docker installed and running
+- `cargo install cross`
+
+**Quick build (recommended):**
 ```bash
-# Install cross (one-time setup)
-cargo install cross
+# Build everything (Docker image + cross-compile) in one step
+./scripts/build-pi.sh
+```
 
-# Build for Raspberry Pi 4 64-bit (recommended)
+**Manual steps:**
+```bash
+# 1. Build the custom cross Docker image (includes Helios DAC C++ SDK for ARM64)
+docker build -f docker/Dockerfile.aarch64 -t lasertargets-cross-aarch64 .
+
+# 2. Cross-compile the server
 cross build -p server --target aarch64-unknown-linux-gnu --release
 
-# Build for Raspberry Pi 4 32-bit
-cross build -p server --target armv7-unknown-linux-gnueabihf --release
-
-# Binary will be in target/<arch>/release/server
+# Binary: target/aarch64-unknown-linux-gnu/release/server
+# Library: target/aarch64-unknown-linux-gnu/release/libHeliosLaserDAC.so
 ```
 
 **Deployment:**
 ```bash
-# Copy to Raspberry Pi
-scp target/aarch64-unknown-linux-gnu/release/server pi@raspberrypi.local:~/
+# Automated deployment to Pi (copies binary + .so + systemd service)
+./scripts/deploy-pi.sh raspberrypi.local
 
-# Copy Helios DAC library if using hardware
-scp server/libs/HeliosLaserDAC.dll pi@raspberrypi.local:~/
+# Or manual:
+scp target/aarch64-unknown-linux-gnu/release/server pi@raspberrypi.local:/opt/lasertargets/
+scp target/aarch64-unknown-linux-gnu/release/libHeliosLaserDAC.so pi@raspberrypi.local:/opt/lasertargets/lib/
 ```
+
+**First-time Pi setup:**
+```bash
+# Run on the Pi to install libusb and configure USB permissions
+ssh pi@raspberrypi.local 'sudo bash -s' < deploy/install-pi-deps.sh
+```
+
+**Configuration files:**
+- `Cross.toml` — points `cross` to the custom Docker image
+- `docker/Dockerfile.aarch64` — custom image with Helios C++ SDK cross-compiled for ARM64
+- `deploy/lasertargets-server.service` — systemd unit file
+- `deploy/install-pi-deps.sh` — one-time Pi dependency setup
+- `scripts/build-pi.sh` — build automation
+- `scripts/deploy-pi.sh` — deployment automation
 
 ## Testing
 - Integration tests in `server/test/`

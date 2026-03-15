@@ -16,6 +16,7 @@ use std::collections::{HashMap, HashSet};
 use std::net::{IpAddr, Ipv6Addr};
 use hunter::model::{BroadcastStatsUpdateEvent, HunterClickEvent};
 use hunter::server::SpawnHunterTargetEvent;
+use snake::model::{BroadcastSnakeStatsEvent, ChangeSnakeDirectionEvent, SnakeDirection, SnakeState, GAME_ID as SNAKE_GAME_ID};
 use crate::plugins::path::{BroadcastDespawnPath, BroadcastPathPosition, BroadcastSpawnPath};
 
 use crate::plugins::actor::{
@@ -75,6 +76,8 @@ impl Plugin for NetworkingPlugin {
             .add_message::<BroadcastSpawnPath>()
             .add_message::<BroadcastDespawnPath>()
             .add_message::<BroadcastPathPosition>()
+            .add_message::<ChangeSnakeDirectionEvent>()
+            .add_message::<BroadcastSnakeStatsEvent>()
             .init_resource::<NetworkingConfiguration>()
             .add_systems(Startup, start_server)
             .add_systems(Update, receive_network_messages)
@@ -84,6 +87,8 @@ impl Plugin for NetworkingPlugin {
             .add_systems(Update, handle_input_messages)
             .add_systems(Update, handle_hunter_target_messages)
             .add_systems(Update, broadcast_hunter_events)
+            .add_systems(Update, broadcast_snake_events)
+            .add_systems(Update, handle_snake_direction_input)
             .add_systems(Update, broadcast_path_events)
             .add_systems(Update, send_ping_periodically)
             .add_systems(Update, handle_game_session_created)
@@ -791,5 +796,59 @@ fn broadcast_state_on_change(
         let msg = NetworkMessage::GameStateUpdate(game_state.get().clone());
         let payload = msg.to_bytes().expect("Serialize GameStateResponse");
         let _ = endpoint.broadcast_payload(payload);
+    }
+}
+
+/// Broadcast snake game stats events to all clients
+fn broadcast_snake_events(
+    mut server: ResMut<QuinnetServer>,
+    mut stats_events: MessageReader<BroadcastSnakeStatsEvent>,
+) {
+    let Some(endpoint) = server.get_endpoint_mut() else {
+        return;
+    };
+
+    for event in stats_events.read() {
+        let message = NetworkMessage::SnakeStatsUpdate {
+            session_id: event.session_id,
+            score: event.score,
+            length: event.length,
+            game_over: event.game_over,
+        };
+        if let Ok(payload) = message.to_bytes() {
+            if let Err(e) = endpoint.broadcast_payload(payload) {
+                error!("Failed to broadcast snake stats update: {:?}", e);
+            }
+        }
+    }
+}
+
+/// Convert arrow-key keyboard events into snake direction changes
+fn handle_snake_direction_input(
+    mut keyboard_events: MessageReader<KeyboardInputEvent>,
+    mut direction_events: MessageWriter<ChangeSnakeDirectionEvent>,
+    snake_state: Option<Res<SnakeState>>,
+    game_sessions: Query<&GameSession>,
+) {
+    // Only process if there's an active snake game
+    let has_snake_session = game_sessions.iter().any(|s| s.game_id == SNAKE_GAME_ID);
+    if !has_snake_session || snake_state.is_none() {
+        return;
+    }
+
+    for event in keyboard_events.read() {
+        if !event.pressed {
+            continue;
+        }
+        let direction = match event.key.as_str() {
+            "ArrowUp" => Some(SnakeDirection::Up),
+            "ArrowDown" => Some(SnakeDirection::Down),
+            "ArrowLeft" => Some(SnakeDirection::Left),
+            "ArrowRight" => Some(SnakeDirection::Right),
+            _ => None,
+        };
+        if let Some(dir) = direction {
+            direction_events.write(ChangeSnakeDirectionEvent { direction: dir });
+        }
     }
 }

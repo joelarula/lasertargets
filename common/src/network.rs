@@ -102,6 +102,14 @@ pub enum NetworkMessage {
         score: u32,
     },
 
+    // Snake game server broadcasts (server → terminal)
+    SnakeStatsUpdate {
+        session_id: Uuid,
+        score: u32,
+        length: u32,
+        game_over: bool,
+    },
+
 }
 
 

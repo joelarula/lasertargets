@@ -6,8 +6,8 @@ use common::{
     state::ServerState,
     target::HunterTarget,
 };
-use crate::common::GAME_ID;
-use crate::model::{BalloonRiseSpeed, BalloonTargetEntity, BroadcastStatsUpdateEvent, HunterClickEvent, HunterGameStats, TargetEvent};
+use crate::common::{GAME_ID, generate_game_report};
+use crate::model::{BalloonRiseSpeed, BalloonTargetEntity, BroadcastStatsUpdateEvent, CollisionIndicator, GameReport, HunterClickEvent, HunterGameStats, TargetEvent};
 
 /// Event for spawning hunter targets (server-only)
 #[derive(Message, Debug, Clone)]
@@ -34,7 +34,7 @@ impl Plugin for HunterGameServerPlugin {
         app.add_message::<BroadcastStatsUpdateEvent>();
         app.add_systems(Update, (spawn_hunter_targets, handle_hunter_clicks, check_balloon_out_of_bounds));
         app.add_systems(FixedUpdate, update_balloon_positions);
-        app.add_systems(OnExit(ServerState::InGame), reset_hunter_session);
+        app.add_systems(OnExit(ServerState::InGame), (save_hunter_report, reset_hunter_session).chain());
         app.add_systems(Update, reset_hunter_on_new_session);
     }
 }
@@ -42,9 +42,13 @@ impl Plugin for HunterGameServerPlugin {
 fn reset_hunter_session(
     mut commands: Commands,
     targets: Query<Entity, With<HunterTargetEntity>>,
+    indicators: Query<Entity, With<CollisionIndicator>>,
     stats: Option<ResMut<HunterGameStats>>,
 ) {
     for entity in targets.iter() {
+        commands.entity(entity).despawn();
+    }
+    for entity in indicators.iter() {
         commands.entity(entity).despawn();
     }
 
@@ -233,15 +237,17 @@ fn handle_hunter_clicks(
     mut commands: Commands,
     mut click_events: MessageReader<HunterClickEvent>,
     target_query: Query<(Entity, &Transform, Option<&ChildOf>, &HunterTargetEntity)>,
-    scene_query: Query<&Transform, With<SceneEntity>>,
+    scene_query: Query<(Entity, &Transform), With<SceneEntity>>,
     scene_setup: Res<SceneSetup>,
     mut stats: Option<ResMut<HunterGameStats>>,
     time: Res<Time>,
     mut stats_events: MessageWriter<BroadcastStatsUpdateEvent>,
+    indicator_query: Query<Entity, With<CollisionIndicator>>,
 ) {
     for event in click_events.read() {
         let click_pos = event.click_position;
-        let scene_transform = scene_query.single().ok();
+        let scene_result = scene_query.single().ok();
+        let scene_transform = scene_result.map(|(_, t)| t);
         let mut hit_any = false;
         
         // Check all targets for collision
@@ -328,6 +334,41 @@ fn handle_hunter_clicks(
                 }
             }
         }
+
+        // Despawn any previous click indicator
+        for entity in indicator_query.iter() {
+            commands.entity(entity).despawn();
+        }
+
+        // Spawn new click indicator at click position (5 cm diameter = 0.025 radius)
+        if let Some(scene_transform) = scene_transform {
+            let scene_matrix = Mat4::from_scale_rotation_translation(
+                scene_transform.scale,
+                scene_transform.rotation,
+                scene_transform.translation,
+            );
+            let local_click = scene_matrix.inverse().transform_point3(click_pos);
+
+            let indicator_path = UniversalPath::circle(
+                Vec2::ZERO,
+                0.025,
+                Color::srgb(1.0, 0.0, 0.0),
+            );
+
+            let indicator_transform = Transform::from_translation(local_click);
+            let indicator_entity = commands.spawn((
+                CollisionIndicator,
+                indicator_transform,
+                GlobalTransform::from(indicator_transform),
+                Visibility::default(),
+                indicator_path,
+                common::path::PathRenderable::default(),
+            )).id();
+
+            if let Some((scene_entity, _)) = scene_result {
+                commands.entity(scene_entity).add_child(indicator_entity);
+            }
+        }
     }
 }
 
@@ -375,4 +416,106 @@ fn check_balloon_out_of_bounds(
             commands.entity(entity).despawn();
         }
     }
+}
+
+/// Save hunter game report to file on game exit
+fn save_hunter_report(
+    stats: Option<Res<HunterGameStats>>,
+    time: Res<Time>,
+    scene_setup: Res<SceneSetup>,
+) {
+    let Some(stats) = stats else { return; };
+
+    let report = generate_game_report(&stats, time.elapsed_secs_f64(), &scene_setup);
+    let text = format_report_text(&report);
+
+    let session_id = stats.session_id;
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+
+    let base_name = format!("hunter_{}_{}", session_id, timestamp);
+
+    let txt_filename = format!("{}.txt", base_name);
+    match std::fs::write(&txt_filename, &text) {
+        Ok(_) => info!("Hunter game report saved to {}", txt_filename),
+        Err(e) => warn!("Failed to save hunter text report: {}", e),
+    }
+
+    let json_filename = format!("{}.json", base_name);
+    match serde_json::to_string_pretty(&report) {
+        Ok(json) => match std::fs::write(&json_filename, &json) {
+            Ok(_) => info!("Hunter game report (JSON) saved to {}", json_filename),
+            Err(e) => warn!("Failed to save hunter JSON report: {}", e),
+        },
+        Err(e) => warn!("Failed to serialize hunter report to JSON: {}", e),
+    }
+}
+
+fn format_report_text(report: &GameReport) -> String {
+    use std::fmt::Write;
+    let mut s = String::new();
+
+    writeln!(s, "=== HUNTER GAME REPORT ===").unwrap();
+    writeln!(s).unwrap();
+
+    // --- Configuration ---
+    writeln!(s, "--- CONFIGURATION ---").unwrap();
+
+    let scene = &report.scene_setup.scene;
+    writeln!(s, "Scene:").unwrap();
+    writeln!(s, "  Dimensions: {} x {}", scene.scene_dimension.x, scene.scene_dimension.y).unwrap();
+    writeln!(s, "  Origin: ({:.3}, {:.3}, {:.3})",
+        scene.origin.translation.x, scene.origin.translation.y, scene.origin.translation.z).unwrap();
+    writeln!(s, "  Rotation: ({:.3}, {:.3}, {:.3}, {:.3})",
+        scene.origin.rotation.x, scene.origin.rotation.y, scene.origin.rotation.z, scene.origin.rotation.w).unwrap();
+    writeln!(s, "  Y Difference: {:.3}", scene.y_difference).unwrap();
+
+    let camera = &report.scene_setup.camera;
+    writeln!(s, "Camera:").unwrap();
+    writeln!(s, "  Resolution: {} x {}", camera.resolution.x, camera.resolution.y).unwrap();
+    writeln!(s, "  Position: ({:.3}, {:.3}, {:.3})",
+        camera.origin.translation.x, camera.origin.translation.y, camera.origin.translation.z).unwrap();
+    writeln!(s, "  FOV: {:.1} deg", camera.angle).unwrap();
+    writeln!(s, "  Locked to Scene: {}", camera.locked_to_scene).unwrap();
+
+    let proj = &report.scene_setup.projector;
+    writeln!(s, "Projector:").unwrap();
+    writeln!(s, "  Resolution: {} x {}", proj.resolution.x, proj.resolution.y).unwrap();
+    writeln!(s, "  Position: ({:.3}, {:.3}, {:.3})",
+        proj.origin.translation.x, proj.origin.translation.y, proj.origin.translation.z).unwrap();
+    writeln!(s, "  Angle: {:.1} deg", proj.angle).unwrap();
+    writeln!(s, "  Enabled: {}", proj.switched_on).unwrap();
+    writeln!(s, "  Connected: {}", proj.connected).unwrap();
+    writeln!(s, "  Locked to Scene: {}", proj.locked_to_scene).unwrap();
+
+    // --- Statistics ---
+    writeln!(s).unwrap();
+    writeln!(s, "--- STATISTICS ---").unwrap();
+    writeln!(s, "Game Duration: {:.2}s", report.total_game_time).unwrap();
+    writeln!(s, "Targets Spawned: {}", report.total_targets_spawned).unwrap();
+    writeln!(s, "Targets Popped: {}", report.total_targets_popped).unwrap();
+    writeln!(s, "Misses: {}", report.total_misses).unwrap();
+    writeln!(s, "Score: {}", report.total_score).unwrap();
+    writeln!(s, "Avg Spawn Interval: {:.2}s", report.avg_spawn_interval).unwrap();
+    writeln!(s, "Avg Target Lifetime: {:.2}s", report.avg_target_lifetime).unwrap();
+
+    // --- Event Timeline ---
+    writeln!(s).unwrap();
+    writeln!(s, "--- EVENT TIMELINE (scene coordinates) ---").unwrap();
+    for event in &report.timeline {
+        writeln!(s, "[{:>7.2}s] {:>7} target {} at ({:>7.3}, {:>7.3}, {:>7.3})",
+            event.timestamp,
+            event.event_type,
+            event.target_uuid,
+            event.position.x,
+            event.position.y,
+            event.position.z,
+        ).unwrap();
+    }
+
+    writeln!(s).unwrap();
+    writeln!(s, "=== END REPORT ===").unwrap();
+    s
 }

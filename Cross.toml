@@ -1,0 +1,7 @@
+# Cross.toml - Configuration for the `cross` cross-compilation tool
+# https://github.com/cross-rs/cross
+
+[target.aarch64-unknown-linux-gnu]
+# Custom Docker image that includes the Helios DAC C++ SDK compiled for ARM64
+# Build the image first: docker build -f docker/Dockerfile.aarch64 -t lasertargets-cross-aarch64 .
+image = "lasertargets-cross-aarch64"

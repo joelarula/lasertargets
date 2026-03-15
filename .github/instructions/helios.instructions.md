@@ -3,7 +3,10 @@
 **Applies to:** `server/src/dac/helios.rs` and related DAC integration code
 
 ## Context
-This file wraps the Helios Laser DAC C API via `libloading` and is used by the headless server to send laser point data to hardware. It is Windows-only and depends on `HeliosLaserDAC.dll` being available (copied by `server/build.rs`).
+This file wraps the Helios Laser DAC C API via `libloading` and is used by the headless server to send laser point data to hardware. It supports Windows (`HeliosLaserDAC.dll`) and Linux (`libHeliosLaserDAC.so`). The appropriate library is copied to the output directory by `server/build.rs`.
+
+- **Windows**: `HeliosLaserDAC.dll` from `server/libs/`
+- **Linux (cross-compiled for Pi)**: `libHeliosLaserDAC.so` built inside the `docker/Dockerfile.aarch64` cross-compilation container from the [Helios DAC C++ SDK](https://github.com/Grix/helios_dac/tree/master/sdk/cpp/shared_library)
 
 ## Core Responsibilities
 - Load and bind Helios DLL functions safely
@@ -44,8 +47,11 @@ This file wraps the Helios Laser DAC C API via `libloading` and is used by the h
 - Include device index and operation context in errors when available
 
 ## Platform Notes
-- Windows-only DLL. Guard platform-specific code with `cfg(windows)` if needed.
-- Ensure `HeliosLaserDAC.dll` is present in the runtime directory.
+- Platform-specific shared library: `HeliosLaserDAC.dll` (Windows), `libHeliosLaserDAC.so` (Linux), `libHeliosLaserDAC.dylib` (macOS)
+- Library name selected at compile time via `#[cfg(target_os)]` constants
+- On Windows: ensure `HeliosLaserDAC.dll` is present in the runtime directory (copied by `build.rs`)
+- On Linux (Raspberry Pi): ensure `libHeliosLaserDAC.so` is in `LD_LIBRARY_PATH` or alongside the binary
+- DAC initialization is gracefully handled — server continues without hardware if the library fails to load
 
 ## Reference SDK
 - https://github.com/Grix/helios_dac/tree/master/sdk (Helios DAC SDK and know-how)

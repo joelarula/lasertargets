@@ -15,7 +15,8 @@ use common::scene::SceneSetupPlugin;
 use common::state::{CalibrationState, GameState, ServerState};
 use hunter::common::HunterGamePlugin;
 use hunter::server::HunterGameServerPlugin;
-use snake::plugin::SnakeGamePlugin;
+use snake::common::SnakeGamePlugin;
+use snake::server::SnakeGameServerPlugin;
 
 pub mod plugins;
 pub mod dac;
@@ -50,5 +51,6 @@ pub fn add_common_server_plugins(app: &mut App) {
     .add_plugins(HunterGamePlugin)
     .add_plugins(HunterGameServerPlugin)
     .add_plugins(SnakeGamePlugin)
+    .add_plugins(SnakeGameServerPlugin)
     .add_plugins(GamePlugin);
 }
