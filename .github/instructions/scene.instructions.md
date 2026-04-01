@@ -30,7 +30,7 @@ You are working with the LaserTargets scene system. The scene defines the physic
 
 ### SceneConfiguration
 Defined in `common/src/config.rs`:
-- `scene_dimension`: Width and height in pixels (UVec2)
+- `scene_dimension`: Width and height in meters (Vec2)
 - `y_difference`: Y-offset from scene origin
 - `origin`: Position, rotation, and scale in world space (ConfigTransform)
 

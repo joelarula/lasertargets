@@ -10,7 +10,7 @@ use bevy::{
 #[test]
 fn test_get_camera_view_dimensions() {
     let scene_config = SceneConfiguration {
-        scene_dimension: UVec2::new(10, 10),
+        scene_dimension: Vec2::new(10.0, 10.0),
         y_difference: 0.0,
         origin: ConfigTransform {
             translation: Vec3::ZERO,
@@ -49,7 +49,7 @@ fn test_get_camera_view_dimensions() {
 #[test]
 fn test_get_projector_view_dimensions() {
     let scene_config = SceneConfiguration {
-        scene_dimension: UVec2::new(10, 10),
+        scene_dimension: Vec2::new(10.0, 10.0),
         y_difference: 0.0,
         origin: ConfigTransform {
             translation: Vec3::ZERO,
@@ -91,7 +91,7 @@ fn test_get_projector_view_dimensions() {
 #[test]
 fn test_get_camera_center_on_scene_plane() {
     let scene_config = SceneConfiguration {
-        scene_dimension: UVec2::new(10, 10),
+        scene_dimension: Vec2::new(10.0, 10.0),
         y_difference: 0.0,
         origin: ConfigTransform {
             translation: Vec3::ZERO,
@@ -128,7 +128,7 @@ fn test_get_camera_center_on_scene_plane() {
 #[test]
 fn test_get_common_viewport_stats_full_overlap() {
     let scene_config = SceneConfiguration {
-        scene_dimension: UVec2::new(10, 10),
+        scene_dimension: Vec2::new(10.0, 10.0),
         y_difference: 0.0,
         origin: ConfigTransform {
             translation: Vec3::ZERO,
@@ -184,7 +184,7 @@ fn test_get_common_viewport_stats_full_overlap() {
 #[test]
 fn test_get_common_viewport_stats_partial_overlap() {
     let scene_config = SceneConfiguration {
-        scene_dimension: UVec2::new(10, 10),
+        scene_dimension: Vec2::new(10.0, 10.0),
         y_difference: 0.0,
         origin: ConfigTransform {
             translation: Vec3::ZERO,

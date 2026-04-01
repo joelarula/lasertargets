@@ -3,7 +3,6 @@
 #
 # Prerequisites:
 #   - Docker installed and running
-#   - cargo install cross
 #
 # Usage:
 #   ./scripts/build-pi.sh
@@ -18,6 +17,13 @@ DIST_DIR="$PROJECT_ROOT/dist/pi"
 
 echo "=== LaserTargets Raspberry Pi Build ==="
 
+# Step 0: Free up Docker disk space
+echo ""
+echo "--- Cleaning up Docker (dangling images, stopped containers, build cache) ---"
+docker system prune -f
+echo ""
+docker system df
+
 # Step 1: Build the custom cross-compilation Docker image
 echo ""
 echo "--- Building cross Docker image: $IMAGE_NAME ---"
@@ -26,11 +32,14 @@ docker build \
     -t "$IMAGE_NAME" \
     "$PROJECT_ROOT"
 
-# Step 2: Cross-compile the server
+# Step 2: Cross-compile the server inside the Docker container
 echo ""
 echo "--- Cross-compiling server for $TARGET ---"
-cd "$PROJECT_ROOT"
-cross build -p server --target "$TARGET" --release
+docker run --rm \
+    -v "$PROJECT_ROOT:/project" \
+    -w /project \
+    "$IMAGE_NAME" \
+    cargo build -p server --target "$TARGET" --release
 
 # Step 3: Stage output for deployment
 echo ""

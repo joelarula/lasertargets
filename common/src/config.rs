@@ -1,6 +1,6 @@
 use bevy::{
     ecs::resource::Resource,
-    math::{Quat, UVec2, Vec3},
+    math::{Quat, UVec2, Vec2, Vec3},
     transform::components::Transform,
 };
 use serde::{Deserialize, Serialize};
@@ -24,8 +24,8 @@ impl Default for ConfigTransform {
 
 #[derive(Resource, Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SceneConfiguration {
-    /// Defines the dimensions (width, height) of the scene in pixels.
-    pub scene_dimension: UVec2,
+    /// Defines the dimensions (width, height) of the scene in meters.
+    pub scene_dimension: Vec2,
     /// Defines the y-difference from the scene origin.
     pub y_difference: f32,
     /// Defines the position and orientation of the scene in world space.
@@ -35,7 +35,7 @@ pub struct SceneConfiguration {
 impl Default for SceneConfiguration {
     fn default() -> Self {
         Self {
-            scene_dimension: UVec2::new(10, 6), 
+            scene_dimension: Vec2::new(10.0, 6.0), 
             y_difference: 0.0, 
             origin: ConfigTransform {
                 translation: Vec3::new(0.0, 3.0, -10.0),

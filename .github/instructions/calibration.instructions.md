@@ -31,7 +31,7 @@ In `common/src/config.rs`:
 #[derive(Debug, Clone, Serialize, Deserialize, Resource, PartialEq)]
 pub struct SceneConfiguration {
     /// Defines the dimensions (width, height) of the scene in pixels
-    pub scene_dimension: UVec2,
+    pub scene_dimension: Vec2,
     /// Defines the y-difference from the scene origin
     pub y_difference: f32,
     /// Defines the position and orientation of the scene in world space

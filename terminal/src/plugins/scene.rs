@@ -4,10 +4,11 @@ use common::config::SceneConfiguration;
 use common::scene::{SceneData, SceneEntity, SceneSetup, SceneSystemSet};
 use crate::plugins::camera::{CameraTag};
 use crate::plugins::instructions::InstructionState;
-use bevy::prelude::Vec2;
 
 
 const INSTRUCTION_TEXT_A: &str = "Press [Up][Down] to adjust target distance";
+
+const STEP: f32 = 0.25;
 
 
 pub struct ScenePlugin;
@@ -21,7 +22,7 @@ impl Plugin for ScenePlugin {
         app.init_resource::<SceneSetup>();
         app.init_resource::<SceneData>();
         app.add_systems(Startup, (setup_scene, setup_scene_entity).in_set(SceneSystemSet));
-        app.add_systems(Update, (update_scene, sync_scene_transform).in_set(SceneSystemSet));  
+        app.add_systems(Update, (update_scene, sync_scene_transform, handle_scene_keyboard).in_set(SceneSystemSet));  
     }
 }
 
@@ -50,7 +51,7 @@ fn update_scene(
                 .with_scale(scene_setup.scene.origin.scale)
                 .into(); // Convert to GlobalTransform
 
-            let scene_dimensions = Vec2::new(scene_setup.scene.scene_dimension.x as f32, scene_setup.scene.scene_dimension.y as f32);
+            let scene_dimensions = scene_setup.scene.scene_dimension;
 
             if let Some(ray) = cursor_ray {
                 let scene_position = scene_transform.translation();
@@ -98,5 +99,42 @@ fn sync_scene_transform(
             transform.rotation = scene_setup.scene.origin.rotation;
             transform.scale = scene_setup.scene.origin.scale;
         }
+    }
+}
+
+fn handle_scene_keyboard(
+    keyboard_input: Res<ButtonInput<KeyCode>>,
+    mut scene_config: ResMut<SceneConfiguration>,
+) {
+    // Arrow Up/Down: adjust scene middle point (origin Y)
+    if keyboard_input.just_pressed(KeyCode::ArrowUp) {
+        scene_config.origin.translation.y += STEP;
+    }
+    if keyboard_input.just_pressed(KeyCode::ArrowDown) {
+        scene_config.origin.translation.y -= STEP;
+    }
+
+    // Numpad +/-: adjust target distance (origin Z, negative = farther)
+    if keyboard_input.just_pressed(KeyCode::NumpadAdd) {
+        scene_config.origin.translation.z += STEP;
+    }
+    if keyboard_input.just_pressed(KeyCode::NumpadSubtract) {
+        scene_config.origin.translation.z -= STEP;
+    }
+
+    // Arrow Left/Right: adjust scene width
+    if keyboard_input.just_pressed(KeyCode::ArrowRight) {
+        scene_config.scene_dimension.x += STEP;
+    }
+    if keyboard_input.just_pressed(KeyCode::ArrowLeft) {
+        scene_config.scene_dimension.x = (scene_config.scene_dimension.x - STEP).max(STEP);
+    }
+
+    // Page Up/Down: adjust scene height
+    if keyboard_input.just_pressed(KeyCode::PageUp) {
+        scene_config.scene_dimension.y += STEP;
+    }
+    if keyboard_input.just_pressed(KeyCode::PageDown) {
+        scene_config.scene_dimension.y = (scene_config.scene_dimension.y - STEP).max(STEP);
     }
 }

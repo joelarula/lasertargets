@@ -165,14 +165,16 @@ pub fn overlay_ui_system(
                                         ui.horizontal(|ui| {
                                             ui.add(
                                                 egui::DragValue::new(&mut scene_config_ref.scene_dimension.x)
-                                                    .range(1..=4000)
-                                                    .speed(1.0)
+                                                    .range(0.25..=100.0)
+                                                    .speed(0.25)
+                                                    .suffix(" m")
                                                     .prefix("W: "),
                                             );
                                             ui.add(
                                                 egui::DragValue::new(&mut scene_config_ref.scene_dimension.y)
-                                                    .range(1..=4000)
-                                                    .speed(1.0)
+                                                    .range(0.25..=100.0)
+                                                    .speed(0.25)
+                                                    .suffix(" m")
                                                     .prefix("H: "),
                                             );
                                         });

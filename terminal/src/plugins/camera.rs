@@ -100,8 +100,8 @@ fn get_projection(display_mode: DisplayMode, camera_angle: f32, scene_config: &S
         
         DisplayMode::Mode2D => {
             // Calculate the scene dimensions to fit the camera view
-            let scene_width = scene_config.scene_dimension.x as f32;
-            let scene_height = scene_config.scene_dimension.y as f32;
+            let scene_width = scene_config.scene_dimension.x;
+            let scene_height = scene_config.scene_dimension.y;
             
             // Add some padding to ensure the scene is fully visible
             let padding = 50.0;

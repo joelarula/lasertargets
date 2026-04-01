@@ -1,27 +1,40 @@
 # Custom cross-compilation image for Raspberry Pi 4 (aarch64)
-# Extends the official cross-rs base image with Helios DAC C++ SDK build
+# All build tooling (Rust, C++ cross-compiler, Helios DAC SDK) lives inside this image.
+# No host-side Rust or `cross` tool needed — just Docker.
 #
 # Usage:
 #   docker build -f docker/Dockerfile.aarch64 -t lasertargets-cross-aarch64 .
-#   cross build -p server --target aarch64-unknown-linux-gnu --release
+#   docker run --rm -v "%cd%:/project" -w /project lasertargets-cross-aarch64 \
+#     cargo build -p server --target aarch64-unknown-linux-gnu --release
 
 FROM ghcr.io/cross-rs/aarch64-unknown-linux-gnu:main
 
 # Pin Helios DAC SDK to a known-good commit for reproducible builds
 ARG HELIOS_DAC_COMMIT=b32c4c4ed1e1121c8c6e7f3ce452948ad6cf8a5a
 
-# Enable arm64 architecture and install cross-compilation dependencies
+# Enable arm64 architecture and install cross-compilation dependencies.
+# The base image already has arm64 ports in /etc/apt/sources.list.d/ports.list.
 RUN dpkg --add-architecture arm64 && \
-    # Add arm64 package sources (needed for libusb-1.0-0-dev:arm64)
-    sed -i 's/^deb /deb [arch=amd64] /' /etc/apt/sources.list 2>/dev/null || true && \
-    echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports $(. /etc/os-release && echo $VERSION_CODENAME) main restricted universe multiverse" >> /etc/apt/sources.list && \
-    echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports $(. /etc/os-release && echo $VERSION_CODENAME)-updates main restricted universe multiverse" >> /etc/apt/sources.list && \
     apt-get update && \
     apt-get install -y --no-install-recommends \
         git \
+        curl \
         g++-aarch64-linux-gnu \
         libusb-1.0-0-dev:arm64 \
     && rm -rf /var/lib/apt/lists/*
+
+# Install Rust toolchain with aarch64 target inside the image
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
+    sh -s -- -y --default-toolchain stable --profile minimal && \
+    . "$HOME/.cargo/env" && \
+    rustup target add aarch64-unknown-linux-gnu
+
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+# Configure cargo to use the aarch64 cross-linker
+RUN mkdir -p /root/.cargo && \
+    echo '[target.aarch64-unknown-linux-gnu]' >> /root/.cargo/config.toml && \
+    echo 'linker = "aarch64-linux-gnu-gcc"' >> /root/.cargo/config.toml
 
 # Clone and build Helios DAC shared library for aarch64
 RUN git clone https://github.com/Grix/helios_dac.git /tmp/helios_dac && \

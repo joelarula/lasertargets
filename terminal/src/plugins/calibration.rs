@@ -172,7 +172,7 @@ fn update_grid(mut gizmos: Gizmos, scene_configuration: Res<SceneConfiguration>,
     if *display_mode == DisplayMode::Mode3D {
         gizmos.grid(
             Quat::from_rotation_x(PI / 2.),
-            UVec2::new((scene_configuration.scene_dimension.x as f32 * 4.) as u32, (scene_configuration.origin.translation.z.abs() * 4.) as u32),
+            UVec2::new((scene_configuration.scene_dimension.x * 4.) as u32, (scene_configuration.origin.translation.z.abs() * 4.) as u32),
             Vec2::new(GRID_SPACING, GRID_SPACING),
             DARK_GREY
         );  
@@ -193,8 +193,8 @@ fn draw_billboard_gizmos(
     
     for(_camera, camera_transform) in camera_query.iter(){ // Prefixed with underscore to ignore unused camera variable
         let billboard_position = scene_configuration.origin.translation;
-        let width = scene_configuration.scene_dimension.x as f32;
-        let height = scene_configuration.scene_dimension.y as f32;
+        let width = scene_configuration.scene_dimension.x;
+        let height = scene_configuration.scene_dimension.y;
         
         // Get the scene plane rotation
         let billboard_rotation = scene_configuration.origin.rotation;
@@ -381,7 +381,7 @@ fn update_calibration_text(
 ) {
     let is_visible = *calibration_state.get() == CalibrationState::On;
 
-    let scene_dims = scene_setup.scene.scene_dimension.as_vec2();
+    let scene_dims = scene_setup.scene.scene_dimension;
     let scene_distance = scene_setup.scene.origin.translation.z.abs();
     let half_width = scene_dims.x / 2.0;
     let half_height = scene_dims.y / 2.0;

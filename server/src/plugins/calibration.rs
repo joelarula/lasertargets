@@ -10,7 +10,7 @@ pub struct CalibrationPlugin;
 
 #[derive(Resource, Debug, Clone)]
 pub struct CalibrationSceneSnapshot {
-    pub scene_dimension: UVec2,
+    pub scene_dimension: Vec2,
     pub translation: Vec3,
     pub rotation: Quat,
     pub scale: Vec3,
@@ -19,7 +19,7 @@ pub struct CalibrationSceneSnapshot {
 impl Default for CalibrationSceneSnapshot {
     fn default() -> Self {
         Self {
-            scene_dimension: UVec2::ZERO,
+            scene_dimension: Vec2::ZERO,
             translation: Vec3::ZERO,
             rotation: Quat::IDENTITY,
             scale: Vec3::ONE,
@@ -331,7 +331,7 @@ fn spawn_projection_area_rectangle(
     _parent_entity: Entity,
     scene_transform: &Transform,
 ) {
-    let scene_dimensions = scene_setup.scene.scene_dimension.as_vec2();
+    let scene_dimensions = scene_setup.scene.scene_dimension;
     let half_width = scene_dimensions.x / 2.0;
     let half_height = scene_dimensions.y / 2.0;
 
