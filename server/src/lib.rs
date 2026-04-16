@@ -3,10 +3,12 @@ use crate::plugins::actor::ActorPlugin;
 use crate::plugins::projector::ProjectorPlugin;
 use crate::plugins::camera::CameraPlugin;
 use crate::plugins::game::GamePlugin;
+use crate::plugins::gamepad::GamepadInputPlugin;
 use crate::plugins::scene::ScenePlugin;
 use crate::plugins::calibration::CalibrationPlugin;
 use crate::plugins::path::PathNetworkPlugin;
 use bevy::app::ScheduleRunnerPlugin;
+use bevy::input::InputPlugin;
 use bevy::prelude::*;
 use bevy::state::app::StatesPlugin;
 use bevy_quinnet::server::QuinnetServerPlugin;
@@ -26,6 +28,11 @@ const FIXED_TIMESTEP: f64 = 1.0 / 50.0;
 pub fn create_server_app(schedule_runner: ScheduleRunnerPlugin) -> App {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins.set(schedule_runner));
+    app.add_plugins(InputPlugin);
+    // On Linux (Raspberry Pi), gilrs uses evdev which works headlessly.
+    // On Windows, gilrs uses WGI which requires a focused window — we use XInput directly instead.
+    #[cfg(not(target_os = "windows"))]
+    app.add_plugins(bevy::gilrs::GilrsPlugin);
     add_common_server_plugins(&mut app);
     app
 }
@@ -52,5 +59,15 @@ pub fn add_common_server_plugins(app: &mut App) {
     .add_plugins(HunterGameServerPlugin)
     .add_plugins(SnakeGamePlugin)
     .add_plugins(SnakeGameServerPlugin)
-    .add_plugins(GamePlugin);
+    .add_plugins(GamePlugin)
+    .add_plugins(GamepadInputPlugin)
+    // Log state transitions for states without existing handlers
+    .add_systems(OnExit(ServerState::Menu), || info!("Exiting ServerState::Menu"))
+    .add_systems(OnEnter(ServerState::InGame), || info!("Entering ServerState::InGame"))
+    .add_systems(OnEnter(GameState::InGame), || info!("Entering GameState::InGame"))
+    .add_systems(OnExit(GameState::InGame), || info!("Exiting GameState::InGame"))
+    .add_systems(OnEnter(GameState::Paused), || info!("Entering GameState::Paused"))
+    .add_systems(OnExit(GameState::Paused), || info!("Exiting GameState::Paused"))
+    .add_systems(OnEnter(GameState::Finished), || info!("Entering GameState::Finished"))
+    .add_systems(OnExit(GameState::Finished), || info!("Exiting GameState::Finished"));
 }

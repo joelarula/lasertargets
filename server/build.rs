@@ -4,16 +4,16 @@ use std::path::PathBuf;
 
 fn main() {
     let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
-    let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
-    let profile_dir = out_dir
-        .ancestors()
-        .nth(3)
-        .expect("Failed to find profile directory");
+    let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
+    // Navigate from server/ up to workspace root, then into target/<profile>
+    let workspace_root = manifest_dir.parent().expect("Failed to find workspace root");
+    let profile = env::var("PROFILE").unwrap_or_else(|_| "debug".to_string());
+    let profile_dir = workspace_root.join("target").join(&profile);
 
     if target_os == "windows" {
-        copy_windows_dll(profile_dir);
+        copy_windows_dll(&profile_dir);
     } else if target_os == "linux" {
-        copy_linux_so(profile_dir);
+        copy_linux_so(&profile_dir);
     }
 }
 

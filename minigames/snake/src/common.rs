@@ -1,6 +1,7 @@
 use bevy::app::{App, Plugin, Startup, Update};
 use bevy::ecs::message::MessageReader;
 use bevy::ecs::system::ResMut;
+use bevy::log::info;
 use bevy::prelude::StateSet;
 use bevy::state::app::AppExtStates;
 use bevy::state::state::{NextState, OnEnter, SubStates};
@@ -63,5 +64,6 @@ fn set_snake_game_state_on_update(
 }
 
 fn set_snake_game_state_off(mut state: ResMut<NextState<SnakeGameState>>) {
+    info!("Entering ServerState::Menu (snake: setting SnakeGameState::Off)");
     state.set(SnakeGameState::Off);
 }

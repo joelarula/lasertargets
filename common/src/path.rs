@@ -275,7 +275,7 @@ impl UniversalPath {
     }
 
     /// Flatten path to line segments for gizmo rendering
-    pub fn flatten(&self, tolerance: f32) -> Vec<Vec2> {
+    pub fn flatten(&self) -> Vec<Vec2> {
         let mut result = Vec::new();
         
         for segment in &self.segments {

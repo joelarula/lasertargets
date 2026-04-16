@@ -2,9 +2,10 @@ use bevy::prelude::*;
 use common::config::ProjectorConfiguration;
 use common::scene::SceneEntity;
 use common::scene::SceneSetup;
-use common::path::{UniversalPath, PathSegment};
+use common::path::UniversalPath;
 use crate::plugins::calibration::CalibrationPath;
 use crate::dac::helios::{HeliosDacController, HeliosPoint, HELIOS_FLAGS_DEFAULT, HELIOS_MAX_COORD};
+use laserlogic::{LaserPoint, LaserSegment, OptimizeConfig};
 use std::sync::{Arc, Mutex};
 use std::sync::mpsc::{self, Sender};
 use std::thread;
@@ -385,8 +386,13 @@ fn update_projector(
         if projector_config.locked_to_scene {
             // Lock projector to scene center
             let scene_center = scene_setup.scene.origin.translation;
-            let _new_rotation = Transform::from_translation(projector_config.origin.translation)
+            let new_rotation = Transform::from_translation(projector_config.origin.translation)
                 .looking_at(scene_center, Vec3::Y).rotation;
+            // Only update if rotation actually changed
+            let rotation_dot = projector_config.origin.rotation.dot(new_rotation).abs();
+            if rotation_dot < 0.999_999 {
+                projector_config.origin.rotation = new_rotation;
+            }
         }
     }
 }
@@ -404,15 +410,14 @@ fn update_point_buffer(
     if !projector_config.switched_on {
         return;
     }
-    
+
     let path_count = path_query.iter().count();
     if path_count > 0 {
         debug!("Update buffer: Found {} UniversalPath entities", path_count);
     }
-    
-    // Convert all paths to Helios points
-    let mut helios_points = Vec::new();
-    
+
+    // Collect all segments in DAC coordinate space
+    let mut all_segments: Vec<LaserSegment> = Vec::new();
     let scene_transform = scene_query.single().ok();
 
     for (universal_path, transform, _parent, calibration_path) in path_query.iter() {
@@ -425,215 +430,45 @@ fn update_point_buffer(
             GlobalTransform::from(*transform)
         };
 
-        debug!("Converting path with {} segments at {:?}", 
+        debug!("Converting path with {} segments at {:?}",
               universal_path.segments.len(), global_transform.translation());
-        
-        let points = convert_universal_path_to_helios_points(
-            universal_path,
-            &global_transform,
-            &projector_config,
-        );
-        
-        debug!("Generated {} points from path", points.len());
-        
-        // Add transition blanking between shapes (if not the first shape)
-        if !helios_points.is_empty() && !points.is_empty() {
-            // Get the coordinates of the last point of previous shape and first point of new shape
-            let (last_x, last_y) = {
-                let last_prev: &HeliosPoint = helios_points.last().unwrap();
-                (last_prev.x, last_prev.y)
-            };
-            let (first_x, first_y) = {
-                let first_next: &HeliosPoint = &points[0];
-                (first_next.x, first_next.y)
-            };
-            
-            // Professional blanking technique between different shapes:
-            // End Dwell: Ensure galvos stopped and laser fully off before leaving previous shape
-            for _ in 0..15 {
-                helios_points.push(HeliosPoint::blanked(last_x, last_y));
-            }
-            
-            // Create blanked line with many blanked points between shapes
-            let jump_steps = 60;
-            for step in 1..jump_steps {
-                let t = step as f32 / jump_steps as f32;
-                let interp_x = (last_x as f32 * (1.0 - t) + first_x as f32 * t) as u16;
-                let interp_y = (last_y as f32 * (1.0 - t) + first_y as f32 * t) as u16;
-                // Explicitly create blanked points (laser off, r=g=b=0)
-                helios_points.push(HeliosPoint::blanked(interp_x, interp_y));
-            }
-            
-            // Start Dwell: Ensure galvos settled and laser stays off before turning ON
-            for _ in 0..15 {
-                helios_points.push(HeliosPoint::blanked(first_x, first_y));
-            }
-        }
-        
-        helios_points.extend(points);
-    }
-    
-    debug!("Total points collected: {}", helios_points.len());
-    
-    // Update the shared buffer - background thread will continuously send it to DAC
-    if let Ok(mut buffer) = point_buffer.points.lock() {
-        *buffer = helios_points;
-    }
-}
 
-/// Convert a UniversalPath to Helios points using projector coordinate transformation
-fn convert_universal_path_to_helios_points(
-    universal_path: &UniversalPath,
-    global_transform: &GlobalTransform,
-    projector_config: &ProjectorConfiguration,
-) -> Vec<HeliosPoint> {
-    let mut points = Vec::new();
-    
-    debug!("Converting UniversalPath with {} segments at position {:?}", 
-          universal_path.segments.len(), global_transform.translation());
-    
-    for (i, segment) in universal_path.segments.iter().enumerate() {
-        let segment_points = convert_path_segment_to_helios_points(
-            segment,
-            global_transform,
-            projector_config,
-        );
-        debug!("Segment {}: {} points", i, segment_points.len());
-        
-        // Add smooth blanked galvo transition between segments
-        if !points.is_empty() && !segment_points.is_empty() {
-            let (last_x, last_y) = {
-                let last_prev: &HeliosPoint = points.last().unwrap();
-                (last_prev.x, last_prev.y)
-            };
-            let (first_x, first_y) = {
-                let first_next: &HeliosPoint = &segment_points[0];
-                (first_next.x, first_next.y)
-            };
-            
-            // End dwell: Ensure galvos stopped and laser fully off before leaving previous segment
-            for _ in 0..12 {
-                points.push(HeliosPoint::blanked(last_x, last_y));
+        for segment in &universal_path.segments {
+            if segment.points.is_empty() {
+                continue;
             }
-            
-            // Create blanked line with many blanked points for smooth transition between segments
-            let jump_steps = 50;
-            for step in 1..jump_steps {
-                let t = step as f32 / jump_steps as f32;
-                let interp_x = (last_x as f32 * (1.0 - t) + first_x as f32 * t) as u16;
-                let interp_y = (last_y as f32 * (1.0 - t) + first_y as f32 * t) as u16;
-                // Explicitly create blanked points (laser off: r=0, g=0, b=0, i=0)
-                points.push(HeliosPoint::blanked(interp_x, interp_y));
-            }
-            
-            // Start dwell: Ensure galvos settled and laser stays off before turning ON
-            for _ in 0..12 {
-                points.push(HeliosPoint::blanked(first_x, first_y));
-            }
-        }
-        
-        points.extend(segment_points);
-    }
-    
-    debug!("Total points from UniversalPath: {}", points.len());
-    points
-}
 
-/// Convert a single path segment to Helios points
-fn convert_path_segment_to_helios_points(
-    segment: &PathSegment,
-    global_transform: &GlobalTransform,
-    projector_config: &ProjectorConfiguration,
-) -> Vec<HeliosPoint> {
-    let mut helios_points = Vec::new();
-    
-    if segment.points.is_empty() {
-        return helios_points;
-    }
-    
-    let mut prev_point: Option<&common::path::PathPoint> = None;
-    
-    // Transform and convert all points directly
-    for point in &segment.points {
-        // Check if we need interpolation between previous and current point
-        if let Some(prev) = prev_point {
-            let dx = point.x - prev.x;
-            let dy = point.y - prev.y;
-            let distance = (dx * dx + dy * dy).sqrt();
-            
-            if distance > 20.0 {
-                // Add interpolated points between distant points
-                let num_interp = (distance / 10.0).ceil() as usize;
-                for i in 1..num_interp {
-                    let t = i as f32 / num_interp as f32;
-                    let interp_x = prev.x + dx * t;
-                    let interp_y = prev.y + dy * t;
-                    
-                    let world_pos = Vec3::new(interp_x, interp_y, 0.0);
-                    let transformed_world_pos = global_transform.transform_point(world_pos);
-                    
-                    if let Some((x, y)) = world_to_projector_coordinates(
-                        transformed_world_pos,
-                        projector_config,
-                    ) {
-                        // Use color from previous point with dwell=1 (single point)
-                        helios_points.push(HeliosPoint::new(
-                            x,
-                            y,
-                            prev.r,
-                            prev.g,
-                            prev.b,
-                            255,
-                        ));
+            let mut laser_points = Vec::new();
+            for point in &segment.points {
+                let world_pos = Vec3::new(point.x, point.y, 0.0);
+                let transformed = global_transform.transform_point(world_pos);
+
+                if let Some((x, y)) = world_to_projector_coordinates(transformed, &projector_config) {
+                    // Dwell value controls repetition count (minimum 1 point)
+                    let repeat_count = if point.dwell == 0 { 1 } else { point.dwell as usize };
+                    for _ in 0..repeat_count {
+                        laser_points.push(LaserPoint::new(x, y, point.r, point.g, point.b, 255));
                     }
                 }
             }
-        }
-        
-        let world_pos = Vec3::new(point.x, point.y, 0.0);
-        let transformed_world_pos = global_transform.transform_point(world_pos);
-        
-        if let Some((x, y)) = world_to_projector_coordinates(
-            transformed_world_pos,
-            projector_config,
-        ) {
-            // Add blank points at the start of segment to ensure laser is off on arrival
-            if helios_points.is_empty() {
-                for _ in 0..3 {
-                    helios_points.push(HeliosPoint::blanked(x, y));
-                }
-            }
-            
-            // Dwell value directly controls repetition count (minimum 1 point)
-            let repeat_count = if point.dwell == 0 { 1 } else { point.dwell as usize };
-            
-            for _ in 0..repeat_count {
-                helios_points.push(HeliosPoint::new(
-                    x,
-                    y,
-                    point.r,
-                    point.g,
-                    point.b,
-                    255, // Full intensity
-                ));
+
+            if !laser_points.is_empty() {
+                all_segments.push(LaserSegment::new(laser_points));
             }
         }
-        
-        prev_point = Some(point);
     }
-    
-    // Add blank points at the end of segment for smooth fade-out
-    if !helios_points.is_empty() {
-        let (last_x, last_y) = {
-            let last = helios_points.last().unwrap();
-            (last.x, last.y)
-        };
-        for _ in 0..3 {
-            helios_points.push(HeliosPoint::blanked(last_x, last_y));
-        }
+
+    // Optimize all segments through laserlogic (blanking, corner dwells, interpolation)
+    let config = OptimizeConfig::default();
+    let optimized = laserlogic::optimize::optimize(&all_segments, &config);
+
+    debug!("Total points after optimization: {}", optimized.len());
+
+    // Convert to HeliosPoints and update the shared buffer
+    let helios_points: Vec<HeliosPoint> = optimized.into_iter().map(HeliosPoint::from).collect();
+    if let Ok(mut buffer) = point_buffer.points.lock() {
+        *buffer = helios_points;
     }
-    
-    helios_points
 }
 
 /// Transform world coordinates to projector coordinates using perspective projection

@@ -1,0 +1,33 @@
+=== HUNTER GAME REPORT ===
+
+--- CONFIGURATION ---
+Scene:
+  Dimensions: 4.75 x 5.75
+  Origin: (0.000, 2.750, -10.000)
+  Rotation: (0.000, 0.000, 0.000, 1.000)
+  Y Difference: 0.000
+Camera:
+  Resolution: 256 x 192
+  Position: (0.000, 1.500, 5.000)
+  FOV: 45.0 deg
+  Locked to Scene: true
+Projector:
+  Resolution: 4095 x 4095
+  Position: (0.000, 1.500, 0.000)
+  Angle: 60.0 deg
+  Enabled: true
+  Connected: true
+  Locked to Scene: true
+
+--- STATISTICS ---
+Game Duration: 1.19s
+Targets Spawned: 0
+Targets Popped: 0
+Misses: 0
+Score: 0
+Avg Spawn Interval: 0.00s
+Avg Target Lifetime: 0.00s
+
+--- EVENT TIMELINE (scene coordinates) ---
+
+=== END REPORT ===

@@ -1,4 +1,4 @@
-use crate::{actor::Actor, state::GameState};
+use crate::{state::GameState};
 use serde::{Deserialize, Serialize};
 use bevy::{asset::uuid::Uuid, platform::collections::HashMap, prelude::*};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -72,21 +72,19 @@ impl GameSession {
     }
 
     pub fn stop(&mut self) {
-        if(self.start_timestamp.is_some()) {
-            let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).expect("Time went backwards").as_secs();
-            self.end_timestamp = Some(timestamp);
-            self.state = crate::state::GameState::Finished;
-        }
+        let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).expect("Time went backwards").as_secs();
+        self.end_timestamp = Some(timestamp);
+        self.state = crate::state::GameState::Finished;
     }
 
     pub fn pause(&mut self) {
-        if(self.start_timestamp.is_some() && self.end_timestamp.is_none()) {
+        if self.start_timestamp.is_some() && self.end_timestamp.is_none()  {
             self.state = crate::state::GameState::Paused;
         }
     }
 
     pub fn resume(&mut self) {
-        if(self.start_timestamp.is_some() && self.end_timestamp.is_none()) {
+        if self.start_timestamp.is_some() && self.end_timestamp.is_none()  {
             self.state = crate::state::GameState::InGame;
         }
     }

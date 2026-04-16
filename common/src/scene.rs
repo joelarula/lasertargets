@@ -1,5 +1,5 @@
 use crate::config::{
-    CameraConfiguration, ConfigTransform, ProjectorConfiguration, SceneConfiguration,
+    CameraConfiguration, ProjectorConfiguration, SceneConfiguration,
 };
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};

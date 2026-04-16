@@ -54,6 +54,7 @@ fn cleanup_paths_on_game_exit(
     path_query: Query<Entity, (With<UniversalPath>, Without<CalibrationPath>)>,
     mut despawn_writer: MessageWriter<BroadcastDespawnPath>,
 ) {
+    info!("Exiting ServerState::InGame");
     for entity in path_query.iter() {
         if let Some(path_id) = registry.by_entity.remove(&entity) {
             despawn_writer.write(BroadcastDespawnPath { uuid: path_id });

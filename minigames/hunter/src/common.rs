@@ -1,4 +1,5 @@
 use bevy::{app::{App, Plugin, Startup, Update}, ecs::{message::MessageReader, system::{Res, ResMut}}, state::{app::AppExtStates, state::{NextState, OnEnter, SubStates}}, time::Time};
+use bevy::log::info;
 use common::{game::{Game, GameRegistry, GameSessionCreated, GameSessionUpdate}, scene::SceneSetup, state::ServerState};
 use serde::{Deserialize, Serialize};
 use bevy::prelude::StateSet;
@@ -62,6 +63,7 @@ fn set_hunter_game_state_on_update(
 }
 
 fn set_hunter_game_state_off(mut state: ResMut<NextState<HunterGameState>>) {
+        info!("Entering ServerState::Menu (hunter: setting HunterGameState::Off)");
         state.set(HunterGameState::Off);
 }
 

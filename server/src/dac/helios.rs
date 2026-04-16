@@ -32,6 +32,19 @@ impl HeliosPoint {
     }
 }
 
+impl From<laserlogic::LaserPoint> for HeliosPoint {
+    fn from(p: laserlogic::LaserPoint) -> Self {
+        Self {
+            x: p.x,
+            y: p.y,
+            r: p.r,
+            g: p.g,
+            b: p.b,
+            i: p.i,
+        }
+    }
+}
+
 // Helios DAC coordinate limits
 pub const HELIOS_MAX_COORD: u16 = 0xFFF; // 4095 for 12-bit
 pub const HELIOS_CENTER_COORD: u16 = 2048; // Center point
@@ -90,7 +103,7 @@ struct HeliosLib {
 impl HeliosLib {
     fn load() -> Result<Self, String> {
         unsafe {
-            // The build script should have copied the DLL to the target directory
+            // The build script copies the DLL to target/<profile>/ next to the executable
             info!("Loading Helios DAC library: {}", LIB_NAME);
             let lib = libloading::Library::new(LIB_NAME)
                 .map_err(|e| format!("Failed to load Helios DAC library {}: {}", LIB_NAME, e))?;

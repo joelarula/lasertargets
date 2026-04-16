@@ -147,7 +147,7 @@ fn spawn_hunter_targets(
         };
 
         // Update stats for this session
-        if let Some(mut stats) = stats.as_mut() {
+    if let Some(stats) = stats.as_mut() {
             stats.targets_spawned += 1;
             session_id = stats.session_id;
 
@@ -402,7 +402,7 @@ fn check_balloon_out_of_bounds(
             // Balloon escaped the scene
             info!("Balloon {} escaped at y={:.2}", target.uuid, transform.translation.y);
             
-            if let Some(mut stats) = stats.as_mut() {
+            if let Some(stats) = stats.as_mut() {
                 stats.misses += 1;
                 stats_events.write(BroadcastStatsUpdateEvent {
                     session_id: target.session_id,

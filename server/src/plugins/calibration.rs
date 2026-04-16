@@ -1,10 +1,9 @@
 use bevy::prelude::*;
 use bevy_quinnet::server::ConnectionLostEvent;
 use common::path::{UniversalPath, PathSegment};
-use common::scene::{SceneEntity, SceneSetup};
+use common::scene::{SceneSetup, SceneSystemSet};
 use common::state::CalibrationState;
 use crate::plugins::network::{MousePositionEvent, KeyboardInputEvent};
-
 
 pub struct CalibrationPlugin;
 
@@ -75,19 +74,17 @@ impl Plugin for CalibrationPlugin {
                 update_crosshair_positions,
                 cleanup_disconnected_clients,
                 refresh_calibration_visuals_on_scene_change,
-            ));
+            ).after(SceneSystemSet));
     }
 }
 
 fn spawn_calibration_on_enable(
     mut commands: Commands,
-    scene_query: Query<(Entity, &Transform), With<SceneEntity>>,
     scene_setup: Res<SceneSetup>,
 ) {
-    if let Ok((scene_entity, scene_transform)) = scene_query.single() {
-        spawn_projection_area_rectangle(&mut commands, &scene_setup, scene_entity, scene_transform);
-        spawn_center_crosshair(&mut commands, &scene_setup);
-    }
+    info!("Entering CalibrationState::On");
+    spawn_projection_area_rectangle(&mut commands, &scene_setup);
+    spawn_center_crosshair(&mut commands, &scene_setup);
 }
 
 fn cleanup_calibration_on_disable(
@@ -97,6 +94,7 @@ fn cleanup_calibration_on_disable(
     crosshair_query: Query<Entity, With<CalibrationCrosshair>>,
     path_query: Query<Entity, With<CalibrationPath>>,
 ) {
+    info!("Exiting CalibrationState::On");
     for entity in rectangle_query.iter() {
         commands.entity(entity).despawn();
     }
@@ -115,7 +113,6 @@ fn cleanup_calibration_on_disable(
 fn initialize_calibration(
     mut commands: Commands,
     calibration_state: Res<State<CalibrationState>>,
-    scene_query: Query<(Entity, &Transform), With<SceneEntity>>,
     scene_setup: Res<SceneSetup>,
 ) {
     info!("Initializing calibration system. State: {:?}", calibration_state.get());
@@ -126,13 +123,9 @@ fn initialize_calibration(
         return;
     }
     
-    if let Some((scene_entity, scene_transform)) = scene_query.iter().next() {
-        info!("Found scene entity, spawning projection area rectangle and center crosshair");
-        spawn_projection_area_rectangle(&mut commands, &scene_setup, scene_entity, scene_transform);
-        spawn_center_crosshair(&mut commands, &scene_setup);
-    } else {
-        warn!("No scene entity found during calibration initialization");
-    }
+    info!("Spawning projection area rectangle and center crosshair");
+    spawn_projection_area_rectangle(&mut commands, &scene_setup);
+    spawn_center_crosshair(&mut commands, &scene_setup);
 }
 
 fn handle_mouse_position_updates(
@@ -152,7 +145,6 @@ fn handle_mouse_position_updates(
 fn update_crosshair_positions(
     calibration_state: Res<State<CalibrationState>>,
     calibration_data: Res<CalibrationData>,
-    scene_setup: Res<SceneSetup>,
     mut crosshair_query: Query<(&mut Transform, &mut GlobalTransform, &CalibrationCrosshair)>,
 ) {
     // Only update if calibration is enabled
@@ -193,36 +185,25 @@ fn cleanup_disconnected_clients(
 fn spawn_calibration_elements(
     commands: &mut Commands,
     world_position: Vec3,
-    scene_query: &Query<(Entity, &Transform), With<SceneEntity>>,
     scene_setup: &SceneSetup,
     calibration_data: &CalibrationData,
 ) {
-    // Find the scene entity to parent the calibration elements to
-    if let Ok((scene_entity, scene_transform)) = scene_query.single() {
-        // Convert world position to local position relative to scene
-        let scene_matrix = Mat4::from_scale_rotation_translation(
-            scene_transform.scale, 
-            scene_transform.rotation, 
-            scene_transform.translation
-        );
-        let local_position = scene_matrix.inverse().transform_point3(world_position);
-        
-        // Spawn crosshairs for all currently connected clients
-        for &client_id in calibration_data.mouse_positions.keys() {
-            spawn_crosshair_at_position(commands, client_id, local_position);
-        }
-        
-        // Spawn single projection area rectangle (shared for all clients)
-        spawn_projection_area_rectangle(commands, &scene_setup, scene_entity, scene_transform);
-    } else {
-        warn!("No scene entity found to parent calibration elements to");
-        
-        // Fallback: spawn without parenting
-        for &client_id in calibration_data.mouse_positions.keys() {
-            spawn_crosshair_at_position(commands, client_id, world_position);
-        }
-        spawn_projection_area_rectangle(commands, &scene_setup, Entity::PLACEHOLDER, &Transform::IDENTITY);
+    // Convert world position to local position relative to scene
+    let origin = &scene_setup.scene.origin;
+    let scene_matrix = Mat4::from_scale_rotation_translation(
+        origin.scale,
+        origin.rotation,
+        origin.translation,
+    );
+    let local_position = scene_matrix.inverse().transform_point3(world_position);
+
+    // Spawn crosshairs for all currently connected clients
+    for &client_id in calibration_data.mouse_positions.keys() {
+        spawn_crosshair_at_position(commands, client_id, local_position);
     }
+
+    // Spawn single projection area rectangle (shared for all clients)
+    spawn_projection_area_rectangle(commands, scene_setup);
 }
 
 /// Spawn crosshair at specific position
@@ -234,26 +215,21 @@ fn spawn_crosshair_at_position(
     let crosshair_size = 0.5; // 0.5m crosshair (same as center)
     let half_size = crosshair_size / 2.0;
     let blue = Color::srgb(0.0, 0.0, 0.5); // Blue color to distinguish from red center
-    let blank = Color::srgb(0.0, 0.0, 0.0); // Black for blanking
     
-    // Create single segment with crosshair points
-    let mut segment = common::path::PathSegment::empty();
+    // Horizontal line segment
+    let mut h_segment = common::path::PathSegment::empty();
+    h_segment.push(-half_size, 0.0, blue, 0);
+    h_segment.push(0.0, 0.0, blue, 0);
+    h_segment.push(half_size, 0.0, blue, 0);
     
-    // Draw full horizontal line: left through center to right
-    segment.push(-half_size, 0.0, blue, 3);
-    segment.push(0.0, 0.0, blue, 2); // Center point
-    segment.push(half_size, 0.0, blue, 3);
-    segment.push(half_size, 0.0, blank, 3);
-    
-    segment.push(0.0, -half_size, blank, 3); // Blank transition
-    
-    // Draw full vertical line: bottom through center to top
-    segment.push(0.0, -half_size, blue, 3);
-    segment.push(0.0, 0.0, blue, 2); // Center point
-    segment.push(0.0, half_size, blue, 3);
+    // Vertical line segment
+    let mut v_segment = common::path::PathSegment::empty();
+    v_segment.push(0.0, -half_size, blue, 0);
+    v_segment.push(0.0, 0.0, blue, 0);
+    v_segment.push(0.0, half_size, blue, 0);
     
     let crosshair_universal_path = UniversalPath {
-        segments: vec![segment],
+        segments: vec![h_segment, v_segment],
     };
     
     // Spawn at world position in XY plane (flat, not rotated)
@@ -285,27 +261,24 @@ fn spawn_center_crosshair(
     
     info!("Spawning center crosshair at scene center (projection surface) {:?}", center_world_pos);
                                                    
-    // Create single segment with crosshair points
+    // Create two segments: horizontal line and vertical line
     let red = Color::srgb(0.5, 0.0, 0.0); // Reduced red intensity
-    let blank = Color::srgb(0.0, 0.0, 0.0); // Black for blanking
-    let mut segment = common::path::PathSegment::empty();
+    let mut h_segment = common::path::PathSegment::empty();
     
-    // Draw full horizontal line: left through center to right
-    segment.push(-half_size, 0.0, red, 5);
-    segment.push(0.0, 0.0, red, 3); // Center point
-    segment.push(half_size, 0.0, red, 5);
-    segment.push(half_size, 0.0, blank, 3);
+    // Horizontal line: left through center to right
+    h_segment.push(-half_size, 0.0, red, 0);
+    h_segment.push(0.0, 0.0, red, 0);
+    h_segment.push(half_size, 0.0, red, 0);
 
-    segment.push(0.0, -half_size, blank, 5); // Blank at start of vertical
+    let mut v_segment = common::path::PathSegment::empty();
     
-    // Draw full vertical line: bottom through center to top
-    segment.push(0.0, -half_size, red, 5);
-    segment.push(0.0, 0.0, red, 3); // Center point
-    segment.push(0.0, half_size, red, 5);
-    segment.push(half_size, 0.0, blank, 3);
+    // Vertical line: bottom through center to top
+    v_segment.push(0.0, -half_size, red, 0);
+    v_segment.push(0.0, 0.0, red, 0);
+    v_segment.push(0.0, half_size, red, 0);
     
     let crosshair_universal_path = UniversalPath {
-        segments: vec![segment],
+        segments: vec![h_segment, v_segment],
     };
     
     // Spawn at world position in XY plane (flat, not rotated)
@@ -328,8 +301,6 @@ fn spawn_center_crosshair(
 fn spawn_projection_area_rectangle(
     commands: &mut Commands,
     scene_setup: &SceneSetup,
-    _parent_entity: Entity,
-    scene_transform: &Transform,
 ) {
     let scene_dimensions = scene_setup.scene.scene_dimension;
     let half_width = scene_dimensions.x / 2.0;
@@ -348,15 +319,11 @@ fn spawn_projection_area_rectangle(
     ];
 
     let green = Color::srgb(0.0, 1.0, 0.0);
-    let blank = Color::srgb(0.0, 0.0, 0.0);
-    let corner_dwell = 12;
 
     let mut segments = Vec::new();
     for corner in &corners {
         let mut segment = PathSegment::empty();
-        segment.push(corner.x, corner.y, blank, corner_dwell);
-        segment.push(corner.x, corner.y, green, corner_dwell * 2);
-        segment.push(corner.x, corner.y, blank, corner_dwell);
+        segment.push(corner.x, corner.y, green, 0);
         segments.push(segment);
     }
 
@@ -364,10 +331,11 @@ fn spawn_projection_area_rectangle(
         segments,
     };
 
+    let origin = &scene_setup.scene.origin;
     let transform = Transform {
-        translation: scene_transform.translation,
-        rotation: scene_transform.rotation,
-        scale: scene_transform.scale,
+        translation: origin.translation,
+        rotation: origin.rotation,
+        scale: origin.scale,
     };
 
     let _rectangle_entity = commands.spawn((
@@ -382,7 +350,7 @@ fn spawn_projection_area_rectangle(
 
     info!(
         "Spawned scene corner markers at {:?}, {} segments",
-        scene_transform.translation,
+        origin.translation,
         rectangle_universal_path.segments.len()
     );
 }
@@ -392,7 +360,7 @@ fn spawn_crosshairs_for_new_clients(
     mut mouse_events: MessageReader<MousePositionEvent>,
     calibration_state: Res<State<CalibrationState>>,
     mut commands: Commands,
-    scene_query: Query<(Entity, &Transform), With<SceneEntity>>,
+    scene_setup: Res<SceneSetup>,
     crosshair_query: Query<&CalibrationCrosshair>,
 ) {
     if *calibration_state.get() == CalibrationState::Off {
@@ -414,11 +382,8 @@ fn spawn_crosshairs_for_new_clients(
                   client_id, event.position);
             
             // Spawn crosshair at the mouse position (or scene center if None)
-            let world_position = event.position.unwrap_or_else(|| {
-                scene_query.single()
-                    .map(|(_, transform)| transform.translation)
-                    .unwrap_or(Vec3::ZERO)
-            });
+            let world_position = event.position
+                .unwrap_or(scene_setup.scene.origin.translation);
             
             spawn_crosshair_at_position(&mut commands, client_id, world_position);
             existing_clients.insert(client_id);
@@ -430,7 +395,6 @@ fn refresh_calibration_visuals_on_scene_change(
     mut commands: Commands,
     calibration_state: Res<State<CalibrationState>>,
     scene_setup: Res<SceneSetup>,
-    scene_query: Query<(Entity, &Transform), With<SceneEntity>>,
     rectangle_query: Query<Entity, With<ProjectionAreaRectangle>>,
     center_crosshair_query: Query<Entity, With<CalibrationCenterCrosshair>>,
     mut snapshot: ResMut<CalibrationSceneSnapshot>,
@@ -457,10 +421,8 @@ fn refresh_calibration_visuals_on_scene_change(
         commands.entity(entity).despawn();
     }
 
-    if let Some((scene_entity, scene_transform)) = scene_query.iter().next() {
-        spawn_projection_area_rectangle(&mut commands, &scene_setup, scene_entity, scene_transform);
-        spawn_center_crosshair(&mut commands, &scene_setup);
-    }
+    spawn_projection_area_rectangle(&mut commands, &scene_setup);
+    spawn_center_crosshair(&mut commands, &scene_setup);
 
     snapshot.scene_dimension = scene_config.scene_dimension;
     snapshot.translation = scene_config.origin.translation;
