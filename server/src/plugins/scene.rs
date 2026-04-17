@@ -3,8 +3,6 @@ use common::scene::{SceneEntity, SceneSetup, SceneSystemSet};
 
 pub struct ScenePlugin;
 
-
-
 impl Plugin for ScenePlugin {
     fn build(&self, app: &mut App) {
         app

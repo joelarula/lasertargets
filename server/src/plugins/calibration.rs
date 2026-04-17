@@ -3,28 +3,9 @@ use bevy_quinnet::server::ConnectionLostEvent;
 use common::path::{UniversalPath, PathSegment};
 use common::scene::{SceneSetup, SceneSystemSet};
 use common::state::CalibrationState;
-use crate::plugins::network::{MousePositionEvent, KeyboardInputEvent};
+use crate::plugins::network::{MousePositionEvent};
 
 pub struct CalibrationPlugin;
-
-#[derive(Resource, Debug, Clone)]
-pub struct CalibrationSceneSnapshot {
-    pub scene_dimension: Vec2,
-    pub translation: Vec3,
-    pub rotation: Quat,
-    pub scale: Vec3,
-}
-
-impl Default for CalibrationSceneSnapshot {
-    fn default() -> Self {
-        Self {
-            scene_dimension: Vec2::ZERO,
-            translation: Vec3::ZERO,
-            rotation: Quat::IDENTITY,
-            scale: Vec3::ONE,
-        }
-    }
-}
 
 /// Resource to track calibration data (server singleton)
 #[derive(Resource)]
@@ -62,10 +43,8 @@ impl Plugin for CalibrationPlugin {
     fn build(&self, app: &mut App) {
         app
             .init_resource::<CalibrationData>()
-            .init_resource::<CalibrationSceneSnapshot>()
-            .add_systems(PostStartup, initialize_calibration)
-            .add_systems(OnEnter(CalibrationState::On), spawn_calibration_on_enable)
-            .add_systems(OnExit(CalibrationState::On), cleanup_calibration_on_disable)
+            .add_systems(OnEnter(CalibrationState::On), spawn_calibration_overlays)
+            .add_systems(OnExit(CalibrationState::On), despawn_calibration_overlays)
             .add_systems(Update, (
                 handle_mouse_position_updates,
                 spawn_crosshairs_for_new_clients,
@@ -73,21 +52,14 @@ impl Plugin for CalibrationPlugin {
             .add_systems(Update, (
                 update_crosshair_positions,
                 cleanup_disconnected_clients,
-                refresh_calibration_visuals_on_scene_change,
-            ).after(SceneSystemSet));
+            ).after(SceneSystemSet))
+            .add_systems(Update, update_projection_area_rectangle)
+            .add_systems(Update, update_center_crosshair);
     }
 }
 
-fn spawn_calibration_on_enable(
-    mut commands: Commands,
-    scene_setup: Res<SceneSetup>,
-) {
-    info!("Entering CalibrationState::On");
-    spawn_projection_area_rectangle(&mut commands, &scene_setup);
-    spawn_center_crosshair(&mut commands, &scene_setup);
-}
 
-fn cleanup_calibration_on_disable(
+fn despawn_calibration_overlays(
     mut commands: Commands,
     rectangle_query: Query<Entity, With<ProjectionAreaRectangle>>,
     center_query: Query<Entity, With<CalibrationCenterCrosshair>>,
@@ -109,24 +81,7 @@ fn cleanup_calibration_on_disable(
     }
 }
 
-/// Initialize calibration on startup - spawn projection area rectangle
-fn initialize_calibration(
-    mut commands: Commands,
-    calibration_state: Res<State<CalibrationState>>,
-    scene_setup: Res<SceneSetup>,
-) {
-    info!("Initializing calibration system. State: {:?}", calibration_state.get());
-    
-    // Spawn projection area rectangle if calibration is enabled
-    if *calibration_state.get() == CalibrationState::Off {
-        info!("Calibration disabled, skipping projection area rectangle spawn");
-        return;
-    }
-    
-    info!("Spawning projection area rectangle and center crosshair");
-    spawn_projection_area_rectangle(&mut commands, &scene_setup);
-    spawn_center_crosshair(&mut commands, &scene_setup);
-}
+
 
 fn handle_mouse_position_updates(
     mut mouse_events: MessageReader<MousePositionEvent>,
@@ -182,29 +137,7 @@ fn cleanup_disconnected_clients(
     }
 }
 
-fn spawn_calibration_elements(
-    commands: &mut Commands,
-    world_position: Vec3,
-    scene_setup: &SceneSetup,
-    calibration_data: &CalibrationData,
-) {
-    // Convert world position to local position relative to scene
-    let origin = &scene_setup.scene.origin;
-    let scene_matrix = Mat4::from_scale_rotation_translation(
-        origin.scale,
-        origin.rotation,
-        origin.translation,
-    );
-    let local_position = scene_matrix.inverse().transform_point3(world_position);
 
-    // Spawn crosshairs for all currently connected clients
-    for &client_id in calibration_data.mouse_positions.keys() {
-        spawn_crosshair_at_position(commands, client_id, local_position);
-    }
-
-    // Spawn single projection area rectangle (shared for all clients)
-    spawn_projection_area_rectangle(commands, scene_setup);
-}
 
 /// Spawn crosshair at specific position
 fn spawn_crosshair_at_position(
@@ -391,41 +324,77 @@ fn spawn_crosshairs_for_new_clients(
     }
 }
 
-fn refresh_calibration_visuals_on_scene_change(
+
+/// Spawns overlays only if not already present (called on entering calibration state)
+fn spawn_calibration_overlays(
     mut commands: Commands,
-    calibration_state: Res<State<CalibrationState>>,
     scene_setup: Res<SceneSetup>,
     rectangle_query: Query<Entity, With<ProjectionAreaRectangle>>,
-    center_crosshair_query: Query<Entity, With<CalibrationCenterCrosshair>>,
-    mut snapshot: ResMut<CalibrationSceneSnapshot>,
+    center_query: Query<Entity, With<CalibrationCenterCrosshair>>,
 ) {
-    if *calibration_state.get() == CalibrationState::Off {
+    info!("Entering CalibrationState::On");
+    if rectangle_query.iter().next().is_none() {
+        spawn_projection_area_rectangle(&mut commands, &scene_setup);
+    }
+    if center_query.iter().next().is_none() {
+        spawn_center_crosshair(&mut commands, &scene_setup);
+    }
+}
+
+// --- Calibration overlay update systems ---
+fn update_projection_area_rectangle(
+    scene_setup: Res<SceneSetup>,
+    mut query: Query<(&mut Transform, &mut UniversalPath), With<ProjectionAreaRectangle>>,
+) {
+    if !scene_setup.is_changed() {
         return;
     }
+    let scene_dimensions = scene_setup.scene.scene_dimension;
+    let half_width = scene_dimensions.x / 2.0;
+    let half_height = scene_dimensions.y / 2.0;
+    let corners = [
+        Vec2::new(-half_width, -half_height),
+        Vec2::new(half_width, -half_height),
+        Vec2::new(half_width, half_height),
+        Vec2::new(-half_width, half_height),
+    ];
+    for (mut transform, mut path) in query.iter_mut() {
+        let green = Color::srgb(0.0, 1.0, 0.0);
+        let mut segments = Vec::new();
+        for corner in &corners {
+            let mut segment = PathSegment::empty();
+            segment.push(corner.x, corner.y, green, 0);
+            segments.push(segment);
+        }
+        path.segments = segments;
+        let origin = &scene_setup.scene.origin;
+        transform.translation = origin.translation;
+        transform.rotation = origin.rotation;
+        transform.scale = origin.scale;
+    }
+}
 
-    let scene_config = &scene_setup.scene;
-    let should_update = snapshot.scene_dimension != scene_config.scene_dimension
-        || snapshot.translation != scene_config.origin.translation
-        || snapshot.rotation != scene_config.origin.rotation
-        || snapshot.scale != scene_config.origin.scale;
-
-    if !should_update {
+fn update_center_crosshair(
+    scene_setup: Res<SceneSetup>,
+    mut query: Query<(&mut Transform, &mut UniversalPath), With<CalibrationCenterCrosshair>>,
+) {
+    if !scene_setup.is_changed() {
         return;
     }
-
-    for entity in rectangle_query.iter() {
-        commands.entity(entity).despawn();
+    let crosshair_size = 0.5;
+    let half_size = crosshair_size / 2.0;
+    let center_world_pos = scene_setup.scene.origin.translation;
+    for (mut transform, mut path) in query.iter_mut() {
+        let red = Color::srgb(0.5, 0.0, 0.0);
+        let mut h_segment = PathSegment::empty();
+        h_segment.push(-half_size, 0.0, red, 0);
+        h_segment.push(0.0, 0.0, red, 0);
+        h_segment.push(half_size, 0.0, red, 0);
+        let mut v_segment = PathSegment::empty();
+        v_segment.push(0.0, -half_size, red, 0);
+        v_segment.push(0.0, 0.0, red, 0);
+        v_segment.push(0.0, half_size, red, 0);
+        path.segments = vec![h_segment, v_segment];
+        transform.translation = center_world_pos;
     }
-
-    for entity in center_crosshair_query.iter() {
-        commands.entity(entity).despawn();
-    }
-
-    spawn_projection_area_rectangle(&mut commands, &scene_setup);
-    spawn_center_crosshair(&mut commands, &scene_setup);
-
-    snapshot.scene_dimension = scene_config.scene_dimension;
-    snapshot.translation = scene_config.origin.translation;
-    snapshot.rotation = scene_config.origin.rotation;
-    snapshot.scale = scene_config.origin.scale;
 }
