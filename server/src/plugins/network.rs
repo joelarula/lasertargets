@@ -13,7 +13,7 @@ use common::network::{NetworkMessage, SERVER_HOST, SERVER_PORT};
 use common::scene::SceneSetup;
 use common::state::{CalibrationState, GameState, ServerState};
 use std::collections::{HashMap, HashSet};
-use std::net::{IpAddr, Ipv6Addr};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use hunter::model::{BroadcastStatsUpdateEvent, HunterClickEvent};
 use hunter::server::SpawnHunterTargetEvent;
 use snake::model::{BroadcastSnakeStatsEvent, ChangeSnakeDirectionEvent, SnakeDirection, SnakeState, GAME_ID as SNAKE_GAME_ID};
@@ -33,7 +33,7 @@ pub struct NetworkingConfiguration {
 impl Default for NetworkingConfiguration {
     fn default() -> Self {
         Self {
-            ip: IpAddr::V6(Ipv6Addr::LOCALHOST),
+            ip: IpAddr::V4(Ipv4Addr::UNSPECIFIED), // Binds to 0.0.0.0 (all interfaces)
             port: SERVER_PORT,
         }
     }

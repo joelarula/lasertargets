@@ -1,21 +1,6 @@
 /// Toggle calibration mode with Y (North) button
 use bevy::prelude::NextState;
 use bevy::prelude::State;
-fn gamepad_toggle_calibration(
-    state: Res<GamepadState>,
-    prev: Res<PrevGamepadState>,
-    calibration_state: Res<State<CalibrationState>>,
-    mut next_calibration_state: ResMut<NextState<CalibrationState>>,
-) {
-    if state.just_pressed(&prev, Btn::North) {
-        let next = match calibration_state.get() {
-            CalibrationState::On => CalibrationState::Off,
-            CalibrationState::Off => CalibrationState::On,
-        };
-        info!("Gamepad: Calibration mode toggled to {:?}", next);
-        next_calibration_state.set(next);
-    }
-}
 use crate::plugins::projector::LaserOptimizeConfig;
 /// Adjust dwell parameters with A (decrease) and B (increase) buttons
 fn gamepad_adjust_dwell(
@@ -415,6 +400,22 @@ fn gamepad_laser_toggle(
     if state.just_pressed(&prev, Btn::West) {
         projector_config.switched_on = !projector_config.switched_on;
         info!("Gamepad: Laser {}", if projector_config.switched_on { "ON" } else { "OFF" });
+    }
+}
+
+fn gamepad_toggle_calibration(
+    state: Res<GamepadState>,
+    prev: Res<PrevGamepadState>,
+    calibration_state: Res<State<CalibrationState>>,
+    mut next_calibration_state: ResMut<NextState<CalibrationState>>,
+) {
+    if state.just_pressed(&prev, Btn::North) {
+        let next = match calibration_state.get() {
+            CalibrationState::On => CalibrationState::Off,
+            CalibrationState::Off => CalibrationState::On,
+        };
+        info!("Gamepad: Calibration mode toggled to {:?}", next);
+        next_calibration_state.set(next);
     }
 }
 

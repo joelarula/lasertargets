@@ -29,8 +29,9 @@ pub struct NetworkingConfiguration {
 
 impl Default for NetworkingConfiguration {
     fn default() -> Self {
+        use std::net::Ipv4Addr;
         Self {
-            ip: IpAddr::V6(Ipv6Addr::LOCALHOST),
+            ip: IpAddr::V4(Ipv4Addr::new(192, 168, 1, 110)),
             port: SERVER_PORT,
         }
     }
@@ -93,6 +94,23 @@ fn start_client(
         }
         Err(e) => warn!("Failed to initiate connection: {:?}", e),
     }
+        info!("Connecting to server at {}:{}...", config.ip, config.port);
+        match client.open_connection(ClientConnectionConfiguration {
+            addr_config: ClientAddrConfiguration::from_ips(
+                config.ip,
+                config.port,
+                IpAddr::V6(Ipv6Addr::UNSPECIFIED),
+                0,
+            ),
+            cert_mode: CertificateVerificationMode::SkipVerification,
+            defaultables: Default::default(),
+        }) {
+            Ok(_) => {
+                attempt.in_flight = true;
+                info!("Connection initiated successfully (in_flight set to true)");
+            }
+            Err(e) => warn!("Failed to initiate connection: {:?}", e),
+        }
 }
 
 fn handle_client_connection_events(
@@ -139,6 +157,46 @@ fn handle_client_connection_events(
         }
         attempt.in_flight = false;
     }
+        // Only log state transitions, not every update
+        if client.is_connected() {
+            if *current_state.get() != TerminalState::Connected {
+                info!("Connected to server!");
+                next_state.set(TerminalState::Connected);
+                attempt.in_flight = false;
+                debug!("Set TerminalState::Connected, in_flight = false");
+
+                if let Some(connection) = client.get_connection_mut() {
+                    let queries = [
+                        NetworkMessage::QueryServerState,
+                        NetworkMessage::QueryGameState,
+                        NetworkMessage::QueryCalibrationState,
+                        NetworkMessage::QueryGameSession,
+                        NetworkMessage::QueryProjectorConfig,
+                        NetworkMessage::QueryCameraConfig,
+                        NetworkMessage::QuerySceneConfig,
+                        NetworkMessage::QuerySceneSetup,
+                    ];
+                    debug!("Sending initial queries to server: {:?}", queries);
+                    for query in queries {
+                        match connection.send_payload(query.to_bytes().unwrap()) {
+                            Ok(_) => debug!("Sent query: {:?}", query),
+                            Err(e) => warn!("Failed to send {:?}: {e}", query),
+                        }
+                    }
+                } else {
+                    warn!("No connection available after is_connected()");
+                }
+            }
+        } else {
+            if *current_state.get() != TerminalState::Connecting {
+                info!("Disconnected from server, attempting to reconnect...");
+                next_state.set(TerminalState::Connecting);
+                next_server_state.set(ServerState::Menu);
+                next_game_state.set(GameState::Paused);
+                debug!("Set TerminalState::Connecting, ServerState::Menu, GameState::Paused");
+            }
+            attempt.in_flight = false;
+        }
 }
 
 

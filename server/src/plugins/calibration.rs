@@ -44,8 +44,9 @@ impl Plugin for CalibrationPlugin {
     fn build(&self, app: &mut App) {
         app
             .init_resource::<CalibrationData>()
-            .add_systems(OnEnter(CalibrationState::On), spawn_calibration_overlays)
-            .add_systems(OnExit(CalibrationState::On), despawn_calibration_overlays)
+            .add_systems(Startup, spawn_calibration_overlays.after(SceneSystemSet))
+            .add_systems(OnEnter(CalibrationState::On), spawn_calibration_overlays.after(SceneSystemSet))
+            .add_systems(OnExit(CalibrationState::On), despawn_calibration_overlays.after(SceneSystemSet))
             .add_systems(Update, (
                 handle_mouse_position_updates,
                 spawn_crosshairs_for_new_clients,
@@ -193,20 +194,24 @@ fn spawn_crosshair_at_position(
         let half_size = crosshair_size / 2.0;
         let red = Color::srgb(0.5, 0.0, 0.0);
         let blank = Color::srgb(0.0, 0.0, 0.0);
-        let mut segment = common::path::PathSegment::empty();
-        // Horizontal line with dwell and blanking
-        segment.push(-half_size, 0.0, red, 5);
-        segment.push(0.0, 0.0, red, 3);
-        segment.push(half_size, 0.0, red, 5);
-        segment.push(half_size, 0.0, blank, 3);
-        segment.push(0.0, -half_size, blank, 3);
-        // Vertical line with dwell and blanking
-        segment.push(0.0, -half_size, red, 5);
-        segment.push(0.0, 0.0, red, 3);
-        segment.push(0.0, half_size, red, 5);
-        segment.push(half_size, 0.0, blank, 3);
+        // Horizontal line segment
+        let mut h_segment = common::path::PathSegment::empty();
+        h_segment.push(-half_size, 0.0, blank, 3); // Move to start, blanked
+        h_segment.push(-half_size, 0.0, red, 5);
+        h_segment.push(0.0, 0.0, red, 3);
+        h_segment.push(half_size, 0.0, red, 5);
+        h_segment.push(half_size, 0.0, blank, 3); // Blank at end
+
+        // Vertical line segment
+        let mut v_segment = common::path::PathSegment::empty();
+        v_segment.push(0.0, -half_size, blank, 3); // Move to start, blanked
+        v_segment.push(0.0, -half_size, red, 5);
+        v_segment.push(0.0, 0.0, red, 3);
+        v_segment.push(0.0, half_size, red, 5);
+        v_segment.push(0.0, half_size, blank, 3); // Blank at end
+
         let crosshair_universal_path = UniversalPath {
-            segments: vec![segment],
+            segments: vec![h_segment, v_segment],
         };
         let transform = *scene_transform;
         let child_entity = commands.spawn((
@@ -332,16 +337,38 @@ fn spawn_crosshairs_for_new_clients(
 // --- Calibration overlay update systems ---
 fn update_projection_area_rectangle(
     scene_setup: Res<SceneSetup>,
-    mut query: Query<&mut Transform, With<ProjectionAreaRectangle>>,
+    mut query: Query<(&mut Transform, &mut UniversalPath), With<ProjectionAreaRectangle>>,
 ) {
     if !scene_setup.is_changed() {
         return;
     }
     let origin = &scene_setup.scene.origin;
-    for mut transform in query.iter_mut() {
+    let scene_dimensions = scene_setup.scene.scene_dimension;
+    let half_width = scene_dimensions.x / 2.0;
+    let half_height = scene_dimensions.y / 2.0;
+    let corners = [
+        Vec2::new(-half_width, -half_height), // Bottom-left
+        Vec2::new(half_width, -half_height),  // Bottom-right
+        Vec2::new(half_width, half_height),   // Top-right
+        Vec2::new(-half_width, half_height),  // Top-left
+    ];
+    let green = Color::srgb(0.0, 1.0, 0.0);
+    let blank = Color::srgb(0.0, 0.0, 0.0);
+    let corner_dwell = 12;
+    let mut segments = Vec::new();
+    for corner in &corners {
+        let mut segment = PathSegment::empty();
+        segment.push(corner.x, corner.y, blank, corner_dwell);
+        segment.push(corner.x, corner.y, green, corner_dwell * 2);
+        segment.push(corner.x, corner.y, blank, corner_dwell);
+        segment.push(corner.x, corner.y, green, 0);
+        segments.push(segment);
+    }
+    for (mut transform, mut path) in query.iter_mut() {
         transform.translation = origin.translation;
         transform.rotation = origin.rotation;
         transform.scale = origin.scale;
+        path.segments = segments.clone();
     }
 }
 
