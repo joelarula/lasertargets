@@ -75,6 +75,14 @@ pub struct OptimizeConfig {
     pub simplify_min_distance: f32,
     /// Remove near-collinear points with angle above this threshold in degrees (0.0 = disabled)
     pub simplify_collinear_angle: f32,
+    /// Enable dynamic dwell calculation based on point-to-point distance
+    pub dynamic_dwell: bool,
+    /// Minimum dwell (repeats) for dynamic dwell
+    pub min_dwell: u8,
+    /// Maximum dwell (repeats) for dynamic dwell
+    pub max_dwell: u8,
+    /// Distance below which dwell is max_dwell, above which dwell is min_dwell
+    pub dwell_distance_threshold: f32,
 }
 
 impl Default for OptimizeConfig {
@@ -91,6 +99,10 @@ impl Default for OptimizeConfig {
             interp_spacing: 100.0,
             simplify_min_distance: 0.0,
             simplify_collinear_angle: 0.0,
+            dynamic_dwell: true,
+            min_dwell: 1,
+            max_dwell: 8,
+            dwell_distance_threshold: 20.0,
         }
     }
 }

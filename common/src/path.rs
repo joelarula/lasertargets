@@ -10,7 +10,7 @@ pub struct PathPoint {
     pub r: u8,
     pub g: u8,
     pub b: u8,
-    pub dwell: u8, // 0 = normal, 1-7 = dwell count
+    pub dwell: u8, // 0 = normal, 1-7 = dwell count (also used as dwell hint)
 }
 
 impl PathPoint {
@@ -108,12 +108,10 @@ impl PathSegment {
             .iter()
             .map(|p| PathPoint::new(p.x, p.y, r, g, b, dwell))
             .collect();
-        
         // Add first point again to close the loop
         if !points.is_empty() {
             path_points.push(PathPoint::new(points[0].x, points[0].y, r, g, b, dwell));
         }
-        
         Self { points: path_points }
     }
     
@@ -121,7 +119,6 @@ impl PathSegment {
     pub fn from_lyon_path(path: &Path, color: Color, _line_width: f32) -> Self {
         let mut points = Vec::new();
         let (r, g, b) = PathPoint::color_to_rgb(color);
-        
         for event in path.iter() {
             match event {
                 PathEvent::Begin { at } => {
@@ -142,7 +139,6 @@ impl PathSegment {
                 PathEvent::End { .. } => {}
             }
         }
-        
         Self { points }
     }
 }

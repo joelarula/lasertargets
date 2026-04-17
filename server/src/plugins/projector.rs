@@ -4,8 +4,11 @@ use common::scene::SceneEntity;
 use common::scene::SceneSetup;
 use common::path::UniversalPath;
 use crate::plugins::calibration::CalibrationPath;
-use crate::dac::helios::{HeliosDacController, HeliosPoint, HELIOS_FLAGS_DEFAULT, HELIOS_MAX_COORD};
+use crate::dac::helios::{HeliosDacController, HeliosPoint, HELIOS_MAX_COORD};
 use laserlogic::{LaserPoint, LaserSegment, OptimizeConfig};
+
+#[derive(Resource, Clone)]
+pub struct LaserOptimizeConfig(pub OptimizeConfig);
 use std::sync::{Arc, Mutex};
 use std::sync::mpsc::{self, Sender};
 use std::thread;
@@ -70,11 +73,35 @@ impl Plugin for ProjectorPlugin {
         })
             .insert_resource(ProjectorDacController::default())
             .insert_resource(LaserPointBuffer::default())
+            .insert_resource(LaserOptimizeConfig(OptimizeConfig::default()))
             .init_resource::<DacReconnectTimer>()
             .add_systems(Startup, initialize_projector_dac)
             .add_systems(Update, update_projector)
             .add_systems(Update, update_point_buffer)
+            .add_systems(Update, update_laser_optimize_config)
             .add_systems(Last, shutdown_projector_dac.run_if(on_message::<AppExit>));
+    /// System to update LaserOptimizeConfig with fixed, safe values
+    fn update_laser_optimize_config(
+        mut config: ResMut<LaserOptimizeConfig>,
+    ) {
+        config.0 = OptimizeConfig {
+            start_dwell_points: 4,
+            end_dwell_points: 4,
+            blank_end_dwell: 0,
+            blank_start_dwell: 0,
+            blank_jump_steps: 0,
+            interp_distance_threshold: 20.0,
+            interp_spacing: 10.0,
+            corner_dwell_points: 4,
+            corner_angle_threshold: 135.0,
+            simplify_min_distance: 0.0,
+            simplify_collinear_angle: 0.0,
+            dynamic_dwell: true,
+            min_dwell: 1,
+            max_dwell: 32,
+            dwell_distance_threshold: 18.0,
+        };
+    }
     }
 }
 
@@ -268,7 +295,7 @@ fn start_dac_output_thread(
                     } else {
                         // Projector is switched off: always send a blanked frame
                         let blank = vec![HeliosPoint::blanked(2048, 2048)];
-                        if let Err(e) = controller.write_frame_native(0, pps, flags, &blank) {
+                        if let Err(_e) = controller.write_frame_native(0, pps, flags, &blank) {
                             consecutive_write_failures += 1;
                             if consecutive_write_failures >= max_write_failures {
                                 error!("✗ CRITICAL: DAC write failures on blank frames. Thread exiting.");
@@ -403,6 +430,7 @@ fn update_projector(
 fn update_point_buffer(
     projector_config: Res<ProjectorConfiguration>,
     point_buffer: Res<LaserPointBuffer>,
+    optimize_config: Res<LaserOptimizeConfig>,
     path_query: Query<(&UniversalPath, &Transform, Option<&ChildOf>, Option<&CalibrationPath>)>,
     scene_query: Query<&Transform, With<SceneEntity>>,
 ) {
@@ -458,9 +486,9 @@ fn update_point_buffer(
         }
     }
 
+ 
     // Optimize all segments through laserlogic (blanking, corner dwells, interpolation)
-    let config = OptimizeConfig::default();
-    let optimized = laserlogic::optimize::optimize(&all_segments, &config);
+    let optimized = laserlogic::optimize::optimize(&all_segments, &optimize_config.0);
 
     debug!("Total points after optimization: {}", optimized.len());
 

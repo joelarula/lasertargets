@@ -1,3 +1,32 @@
+use crate::plugins::projector::LaserOptimizeConfig;
+/// Adjust dwell parameters with A (decrease) and B (increase) buttons
+fn gamepad_adjust_dwell(
+    state: Res<GamepadState>,
+    prev: Res<PrevGamepadState>,
+    mut laser_opt: ResMut<LaserOptimizeConfig>,
+) {
+    let mut changed = false;
+    // B button increases dwell
+    if state.just_pressed(&prev, Btn::East) {
+        laser_opt.0.max_dwell = (laser_opt.0.max_dwell + 1).min(64);
+        laser_opt.0.start_dwell_points = (laser_opt.0.start_dwell_points + 1).min(64);
+        laser_opt.0.end_dwell_points = (laser_opt.0.end_dwell_points + 1).min(64);
+        laser_opt.0.corner_dwell_points = (laser_opt.0.corner_dwell_points + 1).min(64);
+        changed = true;
+    }
+    // A button decreases dwell
+    if state.just_pressed(&prev, Btn::South) {
+        laser_opt.0.max_dwell = laser_opt.0.max_dwell.saturating_sub(1).max(1);
+        laser_opt.0.start_dwell_points = laser_opt.0.start_dwell_points.saturating_sub(1).max(1);
+        laser_opt.0.end_dwell_points = laser_opt.0.end_dwell_points.saturating_sub(1).max(1);
+        laser_opt.0.corner_dwell_points = laser_opt.0.corner_dwell_points.saturating_sub(1).max(1);
+        changed = true;
+    }
+    if changed {
+        info!("Gamepad: Dwell updated: max_dwell={}, start={}, end={}, corner={}",
+            laser_opt.0.max_dwell, laser_opt.0.start_dwell_points, laser_opt.0.end_dwell_points, laser_opt.0.corner_dwell_points);
+    }
+}
 use bevy::prelude::*;
 use common::config::{ProjectorConfiguration, SceneConfiguration};
 use common::game::{ExitGameEvent, GameSession, InitGameSessionEvent};
@@ -191,7 +220,8 @@ impl Plugin for GamepadInputPlugin {
             .add_systems(Update, gamepad_calibration_controls.run_if(in_state(CalibrationState::On)))
             .add_systems(Update, gamepad_laser_toggle)
             .add_systems(Update, gamepad_start_game.run_if(in_state(ServerState::Menu)))
-            .add_systems(Update, gamepad_exit_game.run_if(in_state(ServerState::InGame)));
+            .add_systems(Update, gamepad_exit_game.run_if(in_state(ServerState::InGame)))
+            .add_systems(Update, gamepad_adjust_dwell);
     }
 }
 

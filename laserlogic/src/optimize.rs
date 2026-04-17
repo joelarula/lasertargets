@@ -43,19 +43,23 @@ pub fn optimize(segments: &[LaserSegment], config: &OptimizeConfig) -> Vec<Laser
         }
 
         // --- Emit lit points with interpolation and corner dwells ---
+        // Center of DAC space (for adaptive dwell)
         for i in 0..pts.len() {
             // Interpolation between previous and current point
             if i > 0 {
                 emit_interpolated_points(&mut output, &pts[i - 1], &pts[i], config);
             }
 
+
             // The actual point (possibly repeated for dwell)
             let p = pts[i];
+            // Dwell logic must be handled before conversion to LaserPoint.
             output.push(p);
 
-            // Corner dwell: repeat corner points
+            // Corner dwell: repeat corner points (still applies, but boost for crosshair/corners)
             if corners[i] {
-                for _ in 0..config.corner_dwell_points {
+                let corner_boost = if pts.len() <= 5 { config.corner_dwell_points * 2 } else { config.corner_dwell_points };
+                for _ in 0..corner_boost {
                     output.push(p);
                 }
             }
@@ -67,7 +71,6 @@ pub fn optimize(segments: &[LaserSegment], config: &OptimizeConfig) -> Vec<Laser
             output.push(LaserPoint::blanked(last.x, last.y));
         }
     }
-
     output
 }
 
