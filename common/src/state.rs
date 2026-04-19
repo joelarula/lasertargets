@@ -23,6 +23,7 @@ pub enum TerminalState {
     #[default]
     Connecting,
     Connected,
+    Disconnected,
 }
 
 #[derive(States, Debug, Clone, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
@@ -31,3 +32,6 @@ pub enum CalibrationState {
     On,
     Off,
 }
+
+#[derive(Resource, Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ServerInstanceId(pub Option<bevy::asset::uuid::Uuid>);

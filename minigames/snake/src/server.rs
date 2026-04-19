@@ -21,7 +21,7 @@ impl Plugin for SnakeGameServerPlugin {
             ),
         );
         app.add_systems(FixedUpdate, snake_move_tick);
-        app.add_systems(OnExit(ServerState::InGame), cleanup_snake_game);
+        app.add_systems(OnExit(ServerState::InGame), (save_snake_report, cleanup_snake_game).chain());
     }
 }
 
@@ -434,4 +434,44 @@ fn cleanup_snake_game(
         commands.remove_resource::<SnakeMoveTimer>();
     }
     info!("Snake game cleaned up");
+}
+
+/// Save snake game stats to file on game exit
+fn save_snake_report(
+    state: Option<Res<SnakeState>>,
+) {
+    let Some(state) = state else { return; };
+
+    let session_id = state.session_id;
+    let stats_dir = format!("stats/snake/{}", session_id);
+
+    if let Err(e) = std::fs::create_dir_all(&stats_dir) {
+        warn!("Failed to create snake stats directory {}: {}", stats_dir, e);
+        return;
+    }
+
+    // Prepare markdown report
+    let mut text = String::new();
+    text.push_str("# Snake Game Report\n\n");
+    text.push_str(&format!("- **Session ID**: {}\n", session_id));
+    text.push_str(&format!("- **Final Score (Gems Eaten)**: {}\n", state.gems_eaten));
+    text.push_str(&format!("- **Final Length**: {}\n", state.segments.len()));
+    text.push_str(&format!("- **Grid Dimensions**: {}x{}\n", state.grid_w, state.grid_h));
+    text.push_str(&format!("- **Game Over State**: {}\n", state.game_over));
+    text.push_str("\n---");
+
+    let md_path = format!("{}/report.md", stats_dir);
+    match std::fs::write(&md_path, &text) {
+        Ok(_) => info!("Snake game report saved to {}", md_path),
+        Err(e) => warn!("Failed to save snake markdown report {}: {}", md_path, e),
+    }
+
+    let json_path = format!("{}/report.json", stats_dir);
+    match serde_json::to_string_pretty(&*state) {
+        Ok(json) => match std::fs::write(&json_path, &json) {
+            Ok(_) => info!("Snake game report (JSON) saved to {}", json_path),
+            Err(e) => warn!("Failed to save snake JSON report {}: {}", json_path, e),
+        },
+        Err(e) => warn!("Failed to serialize snake state to JSON: {}", e),
+    }
 }

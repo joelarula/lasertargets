@@ -110,6 +110,13 @@ pub enum NetworkMessage {
         game_over: bool,
     },
 
+    // Lifecycle
+    /// Broadcast server instance ID on connection/restart
+    ServerInfo {
+        instance_id: Uuid,
+    },
+    /// Command to shutdown the server
+    ShutdownServer,
 }
 
 

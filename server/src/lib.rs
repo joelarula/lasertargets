@@ -41,6 +41,7 @@ pub fn add_common_server_plugins(app: &mut App) {
   
     app
     .insert_resource(Time::<Fixed>::from_seconds(FIXED_TIMESTEP))
+    .insert_resource(ServerInstanceId(Some(bevy::asset::uuid::Uuid::new_v4())))
     .add_plugins(StatesPlugin)
     .init_state::<ServerState>()
     .init_state::<CalibrationState>()

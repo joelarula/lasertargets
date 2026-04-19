@@ -91,6 +91,7 @@ impl Plugin for NetworkingPlugin {
             .add_systems(Update, handle_snake_direction_input)
             .add_systems(Update, broadcast_path_events)
             .add_systems(Update, send_ping_periodically)
+            .add_systems(Update, handle_lifecycle_messages)
             .add_systems(Update, handle_game_session_created)
             .add_systems(Update, send_game_session_updates)
             .add_systems(Update, handle_game_actor_update_event)
@@ -201,6 +202,7 @@ fn handle_config_messages(
     mut camera_config: ResMut<CameraConfiguration>,
     mut scene_config: ResMut<SceneConfiguration>,
     scene_setup: Res<SceneSetup>,
+    instance_id: Res<ServerInstanceId>,
     current_state: Res<State<ServerState>>,
     current_game_state: Res<State<GameState>>,
     current_calibration_state: Res<State<CalibrationState>>,
@@ -236,6 +238,13 @@ fn handle_config_messages(
                 send_payload_and_log_error(endpoint, msg.client_id, payload, "SceneSetupResponse");
             }
             NetworkMessage::QueryServerState => {
+                // Send both ServerState and InstanceInfo
+                if let Some(uuid) = instance_id.0 {
+                    let info_msg = NetworkMessage::ServerInfo { instance_id: uuid };
+                    let info_payload = info_msg.to_bytes().expect("Serialize ServerInfo");
+                    send_payload_and_log_error(endpoint, msg.client_id, info_payload, "ServerInfoResponse");
+                }
+
                 let message = NetworkMessage::ServerStateUpdate(current_state.get().clone());
                 let payload = message.to_bytes().expect("Serialize ServerStateResponse");
                 send_payload_and_log_error(endpoint, msg.client_id, payload, "ServerStateResponse");
@@ -320,9 +329,7 @@ fn handle_game_session_messages(
     mut resume_game_events: MessageWriter<ResumeGameEvent>,
     mut finish_game_events: MessageWriter<FinishGameEvent>,
     mut exit_game_events: MessageWriter<ExitGameEvent>,
-    mut next_server_state: ResMut<NextState<ServerState>>,
-    mut game_sessions: Query<&mut GameSession>,
-    mut broadcast_events: MessageWriter<GameSessionUpdate>,
+    game_sessions: Query<&GameSession>,
 ) {
     let Some(endpoint) = server.get_endpoint_mut() else {
         return;
@@ -849,6 +856,19 @@ fn handle_snake_direction_input(
         };
         if let Some(dir) = direction {
             direction_events.write(ChangeSnakeDirectionEvent { direction: dir });
+        }
+    }
+}
+
+/// Handle server lifecycle messages (Shutdown)
+fn handle_lifecycle_messages(
+    mut messages: MessageReader<FromClientMessage>,
+    mut exit_writer: EventWriter<bevy::app::AppExit>,
+) {
+    for msg in messages.read() {
+        if matches!(msg.message, NetworkMessage::ShutdownServer) {
+            info!("Received ShutdownServer from client {}. Exiting...", msg.client_id);
+            exit_writer.send(bevy::app::AppExit::Success);
         }
     }
 }

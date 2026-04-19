@@ -11,5 +11,6 @@ bevy = { workspace = true }
 log = { workspace = true }
 common = { path = "../../common" }
 serde = { workspace = true }
+serde_json = { workspace = true }
 rand = { workspace = true }
 bevy_quinnet = { workspace = true }

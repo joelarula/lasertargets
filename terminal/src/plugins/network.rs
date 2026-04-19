@@ -1,10 +1,9 @@
-use common::state::{CalibrationState, GameState, ServerState};
+use common::state::{CalibrationState, GameState, ServerState, TerminalState, ServerInstanceId};
 use bevy::prelude::*;
 use bevy_quinnet::client::connection::ClientSideConnection;
 use bevy_quinnet::client::{certificate::CertificateVerificationMode, connection::ClientAddrConfiguration, ClientConnectionConfiguration, QuinnetClient, QuinnetClientPlugin};
 use common::config::{CameraConfiguration, ProjectorConfiguration, SceneConfiguration};
 use common::network::{NetworkMessage, SERVER_PORT};
-use common::state::TerminalState;
 use common::toolbar::{Docking, ItemState, ToolbarItem};
 use std::net::{IpAddr, Ipv6Addr};
 use common::game::{GameSessionUpdate, GameSessionCreated};
@@ -14,6 +13,7 @@ use snake::model::SnakeGameStats;
 use crate::plugins::path::{SpawnPathEvent, DespawnPathEvent, UpdatePathPositionEvent};
 
 const CONN_BTN_NAME: &str = "connection_status";
+const SHUTDOWN_BTN_NAME: &str = "shutdown_server";
 
 /// Marker component for the connection status toolbar button
 #[derive(Component)]
@@ -51,6 +51,7 @@ impl Plugin for NetworkPlugin {
         app.add_plugins(QuinnetClientPlugin::default())
             .init_resource::<NetworkingConfiguration>()
             .init_resource::<ConnectionAttempt>()
+            .init_resource::<ServerInstanceId>()
             .add_message::<GameSessionCreated>()
             .add_message::<GameSessionUpdate>()
             .add_message::<SpawnHunterTargetEvent>()
@@ -60,9 +61,11 @@ impl Plugin for NetworkPlugin {
             .init_resource::<ReconnectTimer>()
             .add_systems(Startup, start_client)
             .add_systems(Startup, register_connection_toolbar_button)
+            .add_systems(Startup, register_shutdown_toolbar_button)
             .add_systems(Update, handle_client_connection_events)
             .add_systems(Update, reconnect_if_needed)
             .add_systems(Update, update_connection_toolbar_button)
+            .add_systems(Update, handle_shutdown_button)
             .add_systems(Update, receive_server_messages)
             .add_systems(Update, send_projector_config_updates)
             .add_systems(Update, send_camera_config_updates)
@@ -77,7 +80,7 @@ fn start_client(
     config: Res<NetworkingConfiguration>,
     mut attempt: ResMut<ConnectionAttempt>,
 ) {
-    info!("Connecting to server...");
+    info!("Connecting to server at {}:{}...", config.ip, config.port);
     match client.open_connection(ClientConnectionConfiguration {
         addr_config: ClientAddrConfiguration::from_ips(
             config.ip,
@@ -90,73 +93,20 @@ fn start_client(
     }) {
         Ok(_) => {
             attempt.in_flight = true;
-            info!("Connection initiated successfully");
+            info!("Connection initiated successfully (in_flight set to true)");
         }
         Err(e) => warn!("Failed to initiate connection: {:?}", e),
     }
-        info!("Connecting to server at {}:{}...", config.ip, config.port);
-        match client.open_connection(ClientConnectionConfiguration {
-            addr_config: ClientAddrConfiguration::from_ips(
-                config.ip,
-                config.port,
-                IpAddr::V6(Ipv6Addr::UNSPECIFIED),
-                0,
-            ),
-            cert_mode: CertificateVerificationMode::SkipVerification,
-            defaultables: Default::default(),
-        }) {
-            Ok(_) => {
-                attempt.in_flight = true;
-                info!("Connection initiated successfully (in_flight set to true)");
-            }
-            Err(e) => warn!("Failed to initiate connection: {:?}", e),
-        }
 }
 
 fn handle_client_connection_events(
     mut client: ResMut<QuinnetClient>,
-    config: Res<NetworkingConfiguration>,
     current_state: Res<State<TerminalState>>,
     mut next_state: ResMut<NextState<TerminalState>>,
     mut next_server_state: ResMut<NextState<ServerState>>,
     mut next_game_state: ResMut<NextState<GameState>>,
-    mut next_calibration_state: ResMut<NextState<CalibrationState>>,
     mut attempt: ResMut<ConnectionAttempt>,
 ) {
-    if client.is_connected() {
-        if *current_state.get() != TerminalState::Connected {
-            info!("Connected to server!");
-            next_state.set(TerminalState::Connected);
-            attempt.in_flight = false;
-
-            if let Some(connection) = client.get_connection_mut() {
-                let queries = [
-                    NetworkMessage::QueryServerState,
-                    NetworkMessage::QueryGameState,
-                    NetworkMessage::QueryCalibrationState,
-                    NetworkMessage::QueryGameSession,
-                    NetworkMessage::QueryProjectorConfig,
-                    NetworkMessage::QueryCameraConfig,
-                    NetworkMessage::QuerySceneConfig,
-                    NetworkMessage::QuerySceneSetup,
-                ];
-
-                for query in queries {
-                    if let Err(e) = connection.send_payload(query.to_bytes().unwrap()) {
-                        warn!("Failed to send {:?}: {e}", query);
-                    }
-                }
-            }
-        }
-    } else {
-        if *current_state.get() != TerminalState::Connecting {
-            info!("Disconnected from server, attempting to reconnect...");
-            next_state.set(TerminalState::Connecting);
-            next_server_state.set(ServerState::Menu);
-            next_game_state.set(GameState::Paused);
-        }
-        attempt.in_flight = false;
-    }
         // Only log state transitions, not every update
         if client.is_connected() {
             if *current_state.get() != TerminalState::Connected {
@@ -187,16 +137,18 @@ fn handle_client_connection_events(
                     warn!("No connection available after is_connected()");
                 }
             }
-        } else {
-            if *current_state.get() != TerminalState::Connecting {
-                info!("Disconnected from server, attempting to reconnect...");
-                next_state.set(TerminalState::Connecting);
-                next_server_state.set(ServerState::Menu);
-                next_game_state.set(GameState::Paused);
-                debug!("Set TerminalState::Connecting, ServerState::Menu, GameState::Paused");
-            }
-            attempt.in_flight = false;
+    } else {
+        if *current_state.get() == TerminalState::Connected {
+            info!("Disconnected from server!");
+            next_state.set(TerminalState::Disconnected);
+            next_server_state.set(ServerState::Menu);
+            next_game_state.set(GameState::Paused);
+        } else if *current_state.get() == TerminalState::Disconnected {
+            // After being Disconnected, transition to Connecting to trigger automated reconnection
+            next_state.set(TerminalState::Connecting);
         }
+        attempt.in_flight = false;
+    }
 }
 
 
@@ -223,7 +175,8 @@ fn update_connection_toolbar_button(
     if terminal_state.is_changed() {
         let (icon, state) = match *terminal_state.get() {
             TerminalState::Connected => ("\u{f058}".to_string(), ItemState::On), // check-circle icon for connected
-            TerminalState::Connecting => ("\u{f057}".to_string(), ItemState::Disabled), // times-circle icon for connecting
+            TerminalState::Connecting => ("\u{f057}".to_string(), ItemState::Off), // times-circle icon for connecting
+            TerminalState::Disconnected => ("\u{f057}".to_string(), ItemState::Disabled), // times-circle icon for disconnected
         };
         
         if let Ok(mut item) = button_query.single_mut() {
@@ -250,6 +203,7 @@ fn receive_server_messages(
     mut next_server_state: ResMut<NextState<ServerState>>,
     mut next_game_state: ResMut<NextState<GameState>>,
     mut next_calibration_state: ResMut<NextState<CalibrationState>>,
+    mut local_instance_id: ResMut<ServerInstanceId>,
 ) {
     if !client.is_connected() {
         return;
@@ -392,6 +346,25 @@ fn receive_server_messages(
                                     });
                                 }
                             }
+                            NetworkMessage::ServerInfo { instance_id } => {
+                                if local_instance_id.0 != Some(instance_id) {
+                                    if local_instance_id.0.is_some() {
+                                        info!("Detected Server RESTART (Instance ID changed). Clearing local state.");
+                                        // Reset configurations to default
+                                        *projector_config = ProjectorConfiguration::default();
+                                        *camera_config = CameraConfiguration::default();
+                                        *scene_config = SceneConfiguration::default();
+                                        *scene_setup = common::scene::SceneSetup::default();
+                                        
+                                        // Clear game stats
+                                        if let Some(mut stats) = hunter_stats.as_mut() {
+                                            **stats = HunterGameStats::default();
+                                        }
+                                        commands.remove_resource::<SnakeGameStats>();
+                                    }
+                                    local_instance_id.0 = Some(instance_id);
+                                }
+                            }
                             NetworkMessage::SnakeStatsUpdate { session_id, score, length, game_over } => {
                                 commands.insert_resource(SnakeGameStats {
                                     session_id,
@@ -523,3 +496,34 @@ fn send_payload_and_log_error(
             attempt.in_flight = false;
         }
     }
+
+fn register_shutdown_toolbar_button(mut commands: Commands) {
+    commands.spawn((
+        ToolbarItem {
+            name: SHUTDOWN_BTN_NAME.to_string(),
+            order: 99, // Place it at the far right/bottom
+            text: Some("Shutdown".to_string()),
+            icon: Some("\u{f011}".to_string()), // power-off icon
+            state: ItemState::Off,
+            docking: Docking::Right,
+            button_size: 36.0,
+            ..default()
+        },
+    ));
+}
+
+fn handle_shutdown_button(
+    mut client: ResMut<QuinnetClient>,
+    terminal_state: Res<State<TerminalState>>,
+    mut toolbar_items: Query<&mut ToolbarItem>,
+    interaction_query: Query<(&Interaction, &ToolbarItem), (Changed<Interaction>, With<Button>)>,
+) {
+    for (interaction, item) in interaction_query.iter() {
+        if item.name == SHUTDOWN_BTN_NAME && *interaction == Interaction::Pressed {
+            if let Some(connection) = client.get_connection_mut() {
+                let _ = connection.send_payload(NetworkMessage::ShutdownServer.to_bytes().unwrap());
+                info!("Sent ShutdownServer command");
+            }
+        }
+    }
+}
