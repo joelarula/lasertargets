@@ -11,9 +11,9 @@ use common::config::{CameraConfiguration, ProjectorConfiguration, SceneConfigura
 use common::game::{ExitGameEvent, FinishGameEvent, GameSession, GameSessionCreated, GameSessionUpdate, InitGameSessionEvent, PauseGameEvent, ResumeGameEvent, StartGameEvent};
 use common::network::{NetworkMessage, SERVER_HOST, SERVER_PORT};
 use common::scene::SceneSetup;
-use common::state::{CalibrationState, GameState, ServerState};
+use common::state::{CalibrationState, GameState, ServerInstanceId, ServerState};
 use std::collections::{HashMap, HashSet};
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::net::{IpAddr, Ipv4Addr};
 use hunter::model::{BroadcastStatsUpdateEvent, HunterClickEvent};
 use hunter::server::SpawnHunterTargetEvent;
 use snake::model::{BroadcastSnakeStatsEvent, ChangeSnakeDirectionEvent, SnakeDirection, SnakeState, GAME_ID as SNAKE_GAME_ID};
@@ -863,12 +863,12 @@ fn handle_snake_direction_input(
 /// Handle server lifecycle messages (Shutdown)
 fn handle_lifecycle_messages(
     mut messages: MessageReader<FromClientMessage>,
-    mut exit_writer: EventWriter<bevy::app::AppExit>,
+    mut exit_writer: MessageWriter<bevy::app::AppExit>,
 ) {
     for msg in messages.read() {
         if matches!(msg.message, NetworkMessage::ShutdownServer) {
             info!("Received ShutdownServer from client {}. Exiting...", msg.client_id);
-            exit_writer.send(bevy::app::AppExit::Success);
+            exit_writer.write(bevy::app::AppExit::Success);
         }
     }
 }

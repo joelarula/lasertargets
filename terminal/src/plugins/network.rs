@@ -200,9 +200,11 @@ fn receive_server_messages(
     mut spawn_path_writer: MessageWriter<SpawnPathEvent>,
     mut despawn_path_writer: MessageWriter<DespawnPathEvent>,
     mut update_path_position_writer: MessageWriter<UpdatePathPositionEvent>,
-    mut next_server_state: ResMut<NextState<ServerState>>,
-    mut next_game_state: ResMut<NextState<GameState>>,
-    mut next_calibration_state: ResMut<NextState<CalibrationState>>,
+    mut next_states: ParamSet<(
+        ResMut<NextState<ServerState>>,
+        ResMut<NextState<GameState>>,
+        ResMut<NextState<CalibrationState>>,
+    )>,
     mut local_instance_id: ResMut<ServerInstanceId>,
 ) {
     if !client.is_connected() {
@@ -275,15 +277,15 @@ fn receive_server_messages(
                             }
                             NetworkMessage::ServerStateUpdate(server_state) => {
                                 info!("Received ServerStateUpdate from server: {:?}", server_state);
-                                next_server_state.set(server_state);
+                                next_states.p0().set(server_state);
                             }
                             NetworkMessage::GameStateUpdate(game_state) => {
                                 info!("Received GameStateUpdate from server: {:?}", game_state);
-                                next_game_state.set(game_state);
+                                next_states.p1().set(game_state);
                             }
                             NetworkMessage::CalibrationStateUpdate(calibration_state) => {
                                 info!("Received CalibrationStateUpdate from server: {:?}", calibration_state);
-                                next_calibration_state.set(calibration_state);
+                                next_states.p2().set(calibration_state);
                             }
                             NetworkMessage::ExitGameSession(uuid) => {
                                 info!("Received ExitGameSession from server for session: {:?}", uuid);

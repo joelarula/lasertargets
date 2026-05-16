@@ -2,7 +2,7 @@ use bevy::{app::{App, Plugin, Update}, ecs::{component::Component, entity::Entit
 use bevy_quinnet::client::QuinnetClient;
 use common::{network::NetworkMessage, path::UniversalPath, scene::{SceneData, SceneSetup}, state::{GameState, ServerState, TerminalState}, toolbar::{Docking, ItemState, ToolbarButton, ToolbarItem}};
 use crate::common::{GAME_ID, HunterGameState, generate_game_report};
-use crate::model::{HunterGameStats, CollisionIndicator};
+use crate::model::{HunterGameStats};
 use bevy::prelude::*;
 
 /// Extension trait to add gizmo drawing to UniversalPath
@@ -329,23 +329,6 @@ fn draw_drag_gizmo(
     }
 }
 
-/// Spawn collision indicator at click position
-fn spawn_collision_indicator(commands: &mut Commands, position: Vec3) {
-    let indicator_path = UniversalPath::circle(
-        Vec2::new(position.x, position.y),
-        0.02, // 4cm diameter (small marker)
-        Color::srgb(1.0, 0.0, 0.0) // Red color
-    );
-    
-    commands.spawn((
-        CollisionIndicator,
-        Transform::from_translation(position),
-        GlobalTransform::default(),
-        Visibility::default(),
-        indicator_path,
-        common::path::PathRenderable::default(),
-    ));
-}
 
 /// Spawn stats UI in bottom toolbar
 fn spawn_hunter_stats_ui(mut commands: Commands) {

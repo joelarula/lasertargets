@@ -1,6 +1,7 @@
 use bevy::state::state::{States, SubStates};
 use serde::{Deserialize, Serialize};
 use bevy::prelude::StateSet;
+use bevy::prelude::Resource;
 
 #[derive(States, Debug, Clone, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 pub enum ServerState {

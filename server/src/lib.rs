@@ -14,7 +14,7 @@ use bevy::state::app::StatesPlugin;
 use bevy_quinnet::server::QuinnetServerPlugin;
 use common::game::GameRegistryPlugin;
 use common::scene::SceneSetupPlugin;
-use common::state::{CalibrationState, GameState, ServerState};
+use common::state::{CalibrationState, GameState, ServerInstanceId, ServerState};
 use hunter::common::HunterGamePlugin;
 use hunter::server::HunterGameServerPlugin;
 use snake::common::SnakeGamePlugin;
