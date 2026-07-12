@@ -1,7 +1,7 @@
 use bevy::{app::{App, Plugin, Update}, ecs::{component::Component, message::{MessageReader, MessageWriter}, system::Commands}, prelude::*};
 use common::{
     game::GameSession,
-    path::UniversalPath,
+    path::{LaserTextOptions, UniversalPath},
     scene::{SceneEntity, SceneSetup},
     state::ServerState,
     target::HunterTarget,
@@ -25,6 +25,9 @@ pub struct HunterTargetEntity {
     pub session_id: bevy::asset::uuid::Uuid,
 }
 
+#[derive(Component)]
+struct HunterTitlePath;
+
 pub struct HunterGameServerPlugin;
 
 impl Plugin for HunterGameServerPlugin {
@@ -36,7 +39,79 @@ impl Plugin for HunterGameServerPlugin {
         app.add_systems(FixedUpdate, update_balloon_positions);
         app.add_systems(OnExit(ServerState::InGame), (save_hunter_report, reset_hunter_session).chain());
         app.add_systems(Update, reset_hunter_on_new_session);
+        app.add_systems(Update, spawn_hunter_title_on_new_session);
     }
+}
+
+fn spawn_hunter_title_on_new_session(
+    mut commands: Commands,
+    mut created_events: MessageReader<common::game::GameSessionCreated>,
+    scene_query: Query<Entity, With<SceneEntity>>,
+    scene_setup: Res<SceneSetup>,
+    existing_titles: Query<Entity, With<HunterTitlePath>>,
+) {
+    for event in created_events.read() {
+        if event.game_session.game_id != GAME_ID {
+            continue;
+        }
+
+        for title in existing_titles.iter() {
+            commands.entity(title).despawn();
+        }
+
+        let half_w = scene_setup.scene.scene_dimension.x as f32 / 2.0;
+        let half_h = scene_setup.scene.scene_dimension.y as f32 / 2.0;
+        let text_height = (scene_setup.scene.scene_dimension.y as f32 * 0.14).clamp(0.18, 0.45);
+        let text_origin = Vec2::new(-half_w + text_height * 0.6, half_h - text_height * 1.5);
+        let Some(title_path) = build_title_path("HUNTER", text_origin, text_height) else {
+            warn!("No usable TTF font found for HUNTER title; skipping projector title");
+            continue;
+        };
+
+        let title_entity = commands
+            .spawn((
+                HunterTitlePath,
+                Transform::default(),
+                GlobalTransform::default(),
+                Visibility::default(),
+                title_path,
+                common::path::PathRenderable::default(),
+            ))
+            .id();
+
+        if let Ok(scene_entity) = scene_query.single() {
+            commands.entity(scene_entity).add_child(title_entity);
+        }
+    }
+}
+
+fn build_title_path(text: &str, origin: Vec2, height: f32) -> Option<UniversalPath> {
+    let options = LaserTextOptions {
+        origin,
+        height,
+        color: Color::WHITE,
+        center_on_origin: false,
+        ..Default::default()
+    };
+
+    let mut font_paths = Vec::new();
+    if let Ok(env_path) = std::env::var("LASERTARGETS_FONT_TTF") {
+        font_paths.push(env_path);
+    }
+    font_paths.push("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf".to_string());
+    font_paths.push("/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf".to_string());
+    font_paths.push("C:/Windows/Fonts/arial.ttf".to_string());
+
+    for path in font_paths {
+        if let Ok(data) = std::fs::read(&path) {
+            if let Ok(text_path) = UniversalPath::from_ttf_text(&data, text, &options) {
+                info!("Using font-based projector title from {}", path);
+                return Some(text_path);
+            }
+        }
+    }
+
+    None
 }
 
 fn reset_hunter_session(

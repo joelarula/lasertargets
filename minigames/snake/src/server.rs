@@ -1,11 +1,14 @@
 use bevy::prelude::*;
-use common::path::{PathRenderable, UniversalPath};
+use common::path::{LaserTextOptions, PathRenderable, UniversalPath};
 use common::scene::{SceneEntity, SceneSetup};
 use common::state::ServerState;
 
 use crate::model::*;
 
 pub struct SnakeGameServerPlugin;
+
+#[derive(Component)]
+struct SnakeTitlePath;
 
 impl Plugin for SnakeGameServerPlugin {
     fn build(&self, app: &mut App) {
@@ -91,6 +94,7 @@ fn init_snake_game(
     head_query: Query<Entity, With<SnakeHead>>,
     seg_query: Query<Entity, With<SnakeSegment>>,
     gem_query: Query<Entity, With<DiamondFood>>,
+    title_query: Query<Entity, With<SnakeTitlePath>>,
     mut stats_events: MessageWriter<BroadcastSnakeStatsEvent>,
 ) {
     let mut should_init: Option<bevy::asset::uuid::Uuid> = None;
@@ -111,7 +115,12 @@ fn init_snake_game(
     };
 
     // Clean previous entities
-    for e in head_query.iter().chain(seg_query.iter()).chain(gem_query.iter()) {
+    for e in head_query
+        .iter()
+        .chain(seg_query.iter())
+        .chain(gem_query.iter())
+        .chain(title_query.iter())
+    {
         commands.entity(e).despawn();
     }
 
@@ -163,6 +172,9 @@ fn init_snake_game(
     // Spawn gem
     spawn_gem_entity(&mut commands, &state, scene_entity);
 
+    // Spawn title
+    spawn_title_entity(&mut commands, &scene_setup, scene_entity);
+
     // Insert resources
     commands.insert_resource(state.clone());
     commands.insert_resource(SnakeMoveTimer::new(INITIAL_TICK_INTERVAL));
@@ -175,6 +187,61 @@ fn init_snake_game(
     });
 
     info!("Snake game initialized: {}x{} grid, session {}", grid_w, grid_h, session_id);
+}
+
+fn spawn_title_entity(commands: &mut Commands, scene_setup: &SceneSetup, scene_entity: Option<Entity>) {
+    let half_w = scene_setup.scene.scene_dimension.x as f32 / 2.0;
+    let half_h = scene_setup.scene.scene_dimension.y as f32 / 2.0;
+    let text_height = (scene_setup.scene.scene_dimension.y as f32 * 0.14).clamp(0.18, 0.45);
+    let text_origin = Vec2::new(-half_w + text_height * 0.6, half_h - text_height * 1.5);
+    let Some(path) = build_title_path("SNAKE", text_origin, text_height) else {
+        warn!("No usable TTF font found for SNAKE title; skipping projector title");
+        return;
+    };
+
+    let id = commands
+        .spawn((
+            SnakeTitlePath,
+            Transform::default(),
+            GlobalTransform::default(),
+            Visibility::default(),
+            path,
+            PathRenderable::default(),
+        ))
+        .id();
+
+    if let Some(scene) = scene_entity {
+        commands.entity(scene).add_child(id);
+    }
+}
+
+fn build_title_path(text: &str, origin: Vec2, height: f32) -> Option<UniversalPath> {
+    let options = LaserTextOptions {
+        origin,
+        height,
+        color: Color::WHITE,
+        center_on_origin: false,
+        ..Default::default()
+    };
+
+    let mut font_paths = Vec::new();
+    if let Ok(env_path) = std::env::var("LASERTARGETS_FONT_TTF") {
+        font_paths.push(env_path);
+    }
+    font_paths.push("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf".to_string());
+    font_paths.push("/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf".to_string());
+    font_paths.push("C:/Windows/Fonts/arial.ttf".to_string());
+
+    for path in font_paths {
+        if let Ok(data) = std::fs::read(&path) {
+            if let Ok(text_path) = UniversalPath::from_ttf_text(&data, text, &options) {
+                info!("Using font-based projector title from {}", path);
+                return Some(text_path);
+            }
+        }
+    }
+
+    None
 }
 
 fn spawn_head_entity(commands: &mut Commands, state: &SnakeState, scene_entity: Option<Entity>) {

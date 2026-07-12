@@ -1887,6 +1887,7 @@ dependencies = [
  "lyon_path",
  "lyon_tessellation",
  "serde",
+ "ttf-parser 0.21.1",
 ]
 
 [[package]]
