@@ -64,20 +64,24 @@ pub fn calculate_corner_dwells(
         return dwells;
     }
 
-    // Check if segment is a closed loop polygon (first and last point are identical)
-    let is_closed = len > 2
-        && points[0].x == points[len - 1].x
-        && points[0].y == points[len - 1].y;
+    // Check if segment is a closed loop polygon (first and last point within 40 DAC units)
+    let is_closed = len > 2 && {
+        let dx = points[0].x as i32 - points[len - 1].x as i32;
+        let dy = points[0].y as i32 - points[len - 1].y as i32;
+        (dx * dx + dy * dy) <= 1600
+    };
 
     if is_closed {
         // Calculate seam interior angle between last-1 point -> seam point -> 1st point
         let angle = angle_at_point(&points[len - 2], &points[0], &points[1]);
-        if angle < angle_threshold {
-            let turn_angle = (180.0 - angle).max(0.0);
+        let turn_angle = (180.0 - angle).max(0.0);
+        if turn_angle >= 25.0 && angle < angle_threshold {
             let calculated = ((turn_angle / 90.0) * base_corner_dwell as f32).round() as usize;
-            let seam_dwell = calculated.max(1);
-            dwells[0] = seam_dwell;
-            dwells[len - 1] = seam_dwell;
+            dwells[0] = calculated;
+            dwells[len - 1] = 0;
+        } else {
+            dwells[0] = 0;
+            dwells[len - 1] = 0;
         }
     } else {
         dwells[0] = base_corner_dwell;

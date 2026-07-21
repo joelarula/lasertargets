@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use bevy_quinnet::server::ConnectionLostEvent;
-use common::path::{UniversalPath, PathSegment};
+use common::path::{UniversalPath, PathSegment, LineStyle};
 use common::scene::SceneEntity;
 use common::scene::{SceneSetup, SceneSystemSet};
 use common::state::CalibrationState;
@@ -81,15 +81,23 @@ impl Plugin for CalibrationPlugin {
 }
 
 fn build_circle_path(center_local: Vec2, radius: f32, color: Color) -> UniversalPath {
-    let num_points = 24;
+    // Dynamic point count based on arc length so expanding circles remain ultra-smooth at every radius
+    let num_points = ((std::f32::consts::TAU * radius) / 0.12).clamp(32.0, 96.0) as usize;
     let mut segment = PathSegment::empty();
 
-    for i in 0..=num_points {
+    let first_x = center_local.x + radius;
+    let first_y = center_local.y;
+    segment.push(first_x, first_y, color, 0);
+
+    for i in 1..num_points {
         let angle = (i as f32 / num_points as f32) * std::f32::consts::TAU;
         let px = center_local.x + radius * angle.cos();
         let py = center_local.y + radius * angle.sin();
         segment.push(px, py, color, 0);
     }
+
+    // Explicitly push exact first point to guarantee bitwise closed loop seam
+    segment.push(first_x, first_y, color, 0);
 
     UniversalPath {
         segments: vec![segment],
@@ -306,8 +314,9 @@ fn build_calibration_rectangle_path(scene_dimensions: Vec2) -> UniversalPath {
 
     let mut segments = Vec::new();
 
-    // 1. Single continuous perimeter bounding box rectangle segment (closed loop)
+    // 1. Single continuous perimeter bounding box rectangle segment (closed loop dotted line)
     let mut rect_seg = PathSegment::empty();
+    rect_seg.line_style = LineStyle::Dotted;
     rect_seg.push(-half_w, -half_h, green, 0); // BL corner
     rect_seg.push(half_w, -half_h, green, 0);  // BR corner
     rect_seg.push(half_w, half_h, green, 0);   // TR corner

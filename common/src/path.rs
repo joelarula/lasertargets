@@ -109,19 +109,116 @@ impl PathPoint {
     }
 }
 
+/// Line style pattern for UniversalPath segments
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum LineStyle {
+    #[default]
+    Continuous,
+    Dashed,
+    Dotted,
+}
+
 /// A segment of a path with simple point representation
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PathSegment {
     pub points: Vec<PathPoint>,
+    #[serde(default)]
+    pub line_style: LineStyle,
 }
 
 impl PathSegment {
     pub fn new(points: Vec<PathPoint>) -> Self {
-        Self { points }
+        Self {
+            points,
+            line_style: LineStyle::Continuous,
+        }
     }
     
     pub fn empty() -> Self {
-        Self { points: Vec::new() }
+        Self {
+            points: Vec::new(),
+            line_style: LineStyle::Continuous,
+        }
+    }
+
+    /// Expand line style (Continuous, Dashed, Dotted) into styled points with lit and blanked sections
+    pub fn expand_line_style(&self) -> Vec<PathPoint> {
+        if self.points.len() < 2 || self.line_style == LineStyle::Continuous {
+            return self.points.clone();
+        }
+
+        let (dash_period, lit_length, step_size) = match self.line_style {
+            LineStyle::Continuous => return self.points.clone(),
+            LineStyle::Dashed => (2.0, 1.2, 0.25),   // 1.2m dash, 0.8m gap -> ~16 points per 32m perimeter
+            LineStyle::Dotted => (1.5, 0.15, 0.15),  // 0.15m dot, 1.35m gap -> ~20 points per 32m perimeter
+        };
+
+        let mut styled_points = Vec::new();
+        let mut accum_dist = 0.0;
+
+        for window in self.points.windows(2) {
+            let p1 = &window[0];
+            let p2 = &window[1];
+
+            let dx = p2.x - p1.x;
+            let dy = p2.y - p1.y;
+            let edge_len = (dx * dx + dy * dy).sqrt();
+
+            if edge_len <= 0.0001 {
+                let phase = accum_dist % dash_period;
+                let is_lit = phase < lit_length;
+                let (r, g, b) = if is_lit { (p1.r, p1.g, p1.b) } else { (0, 0, 0) };
+                styled_points.push(PathPoint::new(p1.x, p1.y, r, g, b, p1.dwell));
+                continue;
+            }
+
+            let steps = (edge_len / step_size).ceil() as usize;
+            for i in 0..steps {
+                let t = i as f32 / steps as f32;
+                let x = p1.x + dx * t;
+                let y = p1.y + dy * t;
+                let curr_dist = accum_dist + edge_len * t;
+
+                let phase = curr_dist % dash_period;
+                let is_lit = phase < lit_length;
+
+                let (r, g, b) = if is_lit {
+                    (p1.r, p1.g, p1.b)
+                } else {
+                    (0, 0, 0)
+                };
+
+                styled_points.push(PathPoint::new(x, y, r, g, b, p1.dwell));
+            }
+
+            accum_dist += edge_len;
+        }
+
+        if let Some(last) = self.points.last() {
+            let phase = accum_dist % dash_period;
+            let is_lit = phase < lit_length;
+            let (r, g, b) = if is_lit { (last.r, last.g, last.b) } else { (0, 0, 0) };
+            styled_points.push(PathPoint::new(last.x, last.y, r, g, b, last.dwell));
+        }
+
+        // Preserve closed loop seam integrity
+        let is_closed_loop = self.points.len() > 2 && {
+            let dx = self.points[0].x - self.points.last().unwrap().x;
+            let dy = self.points[0].y - self.points.last().unwrap().y;
+            (dx * dx + dy * dy) <= 0.0001
+        };
+
+        if is_closed_loop && styled_points.len() > 1 {
+            let first = styled_points[0].clone();
+            let last_idx = styled_points.len() - 1;
+            styled_points[last_idx].x = first.x;
+            styled_points[last_idx].y = first.y;
+            styled_points[last_idx].r = first.r;
+            styled_points[last_idx].g = first.g;
+            styled_points[last_idx].b = first.b;
+        }
+
+        styled_points
     }
     
     /// Create a builder for constructing path segments point by point
@@ -156,6 +253,7 @@ impl PathSegment {
                 PathPoint::new(start.x, start.y, r, g, b, dwell),
                 PathPoint::new(end.x, end.y, r, g, b, dwell),
             ],
+            line_style: LineStyle::Continuous,
         }
     }
     
@@ -166,7 +264,10 @@ impl PathSegment {
             .iter()
             .map(|p| PathPoint::new(p.x, p.y, r, g, b, dwell))
             .collect();
-        Self { points: path_points }
+        Self {
+            points: path_points,
+            line_style: LineStyle::Continuous,
+        }
     }
     
     /// Create a closed polygon (last point connects to first)
@@ -180,7 +281,10 @@ impl PathSegment {
         if !points.is_empty() {
             path_points.push(PathPoint::new(points[0].x, points[0].y, r, g, b, dwell));
         }
-        Self { points: path_points }
+        Self {
+            points: path_points,
+            line_style: LineStyle::Continuous,
+        }
     }
     
     /// Create from Lyon path (for backward compatibility)
@@ -207,7 +311,10 @@ impl PathSegment {
                 PathEvent::End { .. } => {}
             }
         }
-        Self { points }
+        Self {
+            points,
+            line_style: LineStyle::Continuous,
+        }
     }
 }
 
@@ -241,6 +348,7 @@ impl PathSegmentBuilder {
     pub fn build(self) -> PathSegment {
         PathSegment {
             points: self.points,
+            line_style: LineStyle::Continuous,
         }
     }
 }

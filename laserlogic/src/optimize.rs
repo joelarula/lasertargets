@@ -18,6 +18,24 @@ pub fn optimize(segments: &[LaserSegment], config: &OptimizeConfig) -> Vec<Laser
             continue;
         }
 
+        let mut pts_cloned = simplified.points.clone();
+
+        // Check if segment is a closed loop polygon (start and end points within 40 DAC units)
+        let is_closed_segment = pts_cloned.len() > 2 && {
+            let dx = pts_cloned[0].x as i32 - pts_cloned.last().unwrap().x as i32;
+            let dy = pts_cloned[0].y as i32 - pts_cloned.last().unwrap().y as i32;
+            (dx * dx + dy * dy) <= 1600
+        };
+
+        if is_closed_segment {
+            // Snap last point coordinates exactly to first point to close seam seamlessly
+            let last_idx = pts_cloned.len() - 1;
+            pts_cloned[last_idx].x = pts_cloned[0].x;
+            pts_cloned[last_idx].y = pts_cloned[0].y;
+        }
+
+        let pts = &pts_cloned;
+
         // --- Angle-proportional Corner Dwell Calculation ---
         let corner_dwells = calculate_corner_dwells(pts, config.corner_angle_threshold, config.corner_dwell_points as usize);
 
@@ -28,10 +46,12 @@ pub fn optimize(segments: &[LaserSegment], config: &OptimizeConfig) -> Vec<Laser
             emit_blanking_jump(&mut output, &last, &first, config);
         }
 
-        // --- Start blank dwell ---
-        let first = pts[0];
-        for _ in 0..config.start_dwell_points {
-            output.push(LaserPoint::blanked(first.x, first.y));
+        // --- Start blank dwell (only for open segments) ---
+        if !is_closed_segment {
+            let first = pts[0];
+            for _ in 0..config.start_dwell_points {
+                output.push(LaserPoint::blanked(first.x, first.y));
+            }
         }
 
         // --- Emit lit points with interpolation and angle-based corner dwells ---
@@ -51,10 +71,12 @@ pub fn optimize(segments: &[LaserSegment], config: &OptimizeConfig) -> Vec<Laser
             }
         }
 
-        // --- End blank dwell ---
-        let last = pts[pts.len() - 1];
-        for _ in 0..config.end_dwell_points {
-            output.push(LaserPoint::blanked(last.x, last.y));
+        // --- End blank dwell (only for open segments) ---
+        if !is_closed_segment {
+            let last = pts[pts.len() - 1];
+            for _ in 0..config.end_dwell_points {
+                output.push(LaserPoint::blanked(last.x, last.y));
+            }
         }
     }
 

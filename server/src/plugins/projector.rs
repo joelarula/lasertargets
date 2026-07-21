@@ -89,9 +89,9 @@ impl Plugin for ProjectorPlugin {
             end_dwell_points: 3,
             blank_end_dwell: 3,
             blank_start_dwell: 4,
-            blank_jump_steps: 12,
-            interp_distance_threshold: 40.0,
-            interp_spacing: 80.0,
+            blank_jump_steps: 10,
+            interp_distance_threshold: 250.0,
+            interp_spacing: 350.0,
             corner_dwell_points: 6,
             corner_angle_threshold: 135.0,
             simplify_min_distance: 0.0,
@@ -474,41 +474,52 @@ fn update_point_buffer(
               universal_path.segments.len(), global_transform.translation());
 
         for segment in &universal_path.segments {
-            if segment.points.is_empty() {
+            let styled_points = segment.expand_line_style();
+            if styled_points.is_empty() {
                 continue;
             }
 
-            let mut laser_points = Vec::new();
-            for point in &segment.points {
+            let mut active_sub_segment: Vec<LaserPoint> = Vec::new();
+
+            for point in &styled_points {
                 let world_pos = Vec3::new(point.x, point.y, 0.0);
-                let mut transformed = global_transform.transform_point(world_pos);
+                let transformed = global_transform.transform_point(world_pos);
 
-                // Automatic Scene Boundary Culling & Blanking:
-                // If point is outside scene rectangle bounds, clamp to edge and set laser color to blanked (0, 0, 0)
-                let is_outside_scene = transformed.x < min_x
-                    || transformed.x > max_x
-                    || transformed.y < min_y
-                    || transformed.y > max_y;
+                // Automatic Scene Boundary Culling:
+                // Check if point is inside scene rectangle bounds
+                let is_inside_scene = transformed.x >= min_x
+                    && transformed.x <= max_x
+                    && transformed.y >= min_y
+                    && transformed.y <= max_y;
 
-                let (r, g, b) = if is_outside_scene {
-                    transformed.x = transformed.x.clamp(min_x, max_x);
-                    transformed.y = transformed.y.clamp(min_y, max_y);
-                    (0, 0, 0)
+                if is_inside_scene {
+                    if let Some((x, y)) = world_to_projector_coordinates(transformed, &projector_config) {
+                        let repeat_count = if point.dwell == 0 { 1 } else { point.dwell as usize };
+                        for _ in 0..repeat_count {
+                            active_sub_segment.push(LaserPoint::new(x, y, point.r, point.g, point.b, 255));
+                        }
+                    }
                 } else {
-                    (point.r, point.g, point.b)
-                };
-
-                if let Some((x, y)) = world_to_projector_coordinates(transformed, &projector_config) {
-                    // Dwell value controls repetition count (minimum 1 point)
-                    let repeat_count = if point.dwell == 0 { 1 } else { point.dwell as usize };
-                    for _ in 0..repeat_count {
-                        laser_points.push(LaserPoint::new(x, y, r, g, b, 255));
+                    // Out-of-scene point: finish current inside sub-segment
+                    if !active_sub_segment.is_empty() {
+                        let clamped_border = Vec3::new(
+                            transformed.x.clamp(min_x, max_x),
+                            transformed.y.clamp(min_y, max_y),
+                            transformed.z,
+                        );
+                        if let Some((x, y)) = world_to_projector_coordinates(clamped_border, &projector_config) {
+                            if let Some(last) = active_sub_segment.last() {
+                                active_sub_segment.push(LaserPoint::new(x, y, last.r, last.g, last.b, 255));
+                            }
+                        }
+                        all_segments.push(LaserSegment::new(active_sub_segment));
+                        active_sub_segment = Vec::new();
                     }
                 }
             }
 
-            if !laser_points.is_empty() {
-                all_segments.push(LaserSegment::new(laser_points));
+            if !active_sub_segment.is_empty() {
+                all_segments.push(LaserSegment::new(active_sub_segment));
             }
         }
     }
