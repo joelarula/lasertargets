@@ -429,6 +429,7 @@ fn update_projector(
 /// Background thread will continuously send these points to the DAC
 fn update_point_buffer(
     projector_config: Res<ProjectorConfiguration>,
+    scene_setup: Res<SceneSetup>,
     point_buffer: Res<LaserPointBuffer>,
     optimize_config: Res<LaserOptimizeConfig>,
     path_query: Query<(&UniversalPath, &Transform, Option<&ChildOf>, Option<&CalibrationPath>)>,
@@ -443,6 +444,17 @@ fn update_point_buffer(
     if path_count > 0 {
         debug!("Update buffer: Found {} UniversalPath entities", path_count);
     }
+
+    // Scene boundaries for automatic out-of-scene culling & blanking
+    let scene_origin = scene_setup.scene.origin.translation;
+    let scene_dim = scene_setup.scene.scene_dimension;
+    let half_w = scene_dim.x / 2.0;
+    let half_h = scene_dim.y / 2.0;
+
+    let min_x = scene_origin.x - half_w;
+    let max_x = scene_origin.x + half_w;
+    let min_y = scene_origin.y - half_h;
+    let max_y = scene_origin.y + half_h;
 
     // Collect all segments in DAC coordinate space
     let mut all_segments: Vec<LaserSegment> = Vec::new();
@@ -469,13 +481,28 @@ fn update_point_buffer(
             let mut laser_points = Vec::new();
             for point in &segment.points {
                 let world_pos = Vec3::new(point.x, point.y, 0.0);
-                let transformed = global_transform.transform_point(world_pos);
+                let mut transformed = global_transform.transform_point(world_pos);
+
+                // Automatic Scene Boundary Culling & Blanking:
+                // If point is outside scene rectangle bounds, clamp to edge and set laser color to blanked (0, 0, 0)
+                let is_outside_scene = transformed.x < min_x
+                    || transformed.x > max_x
+                    || transformed.y < min_y
+                    || transformed.y > max_y;
+
+                let (r, g, b) = if is_outside_scene {
+                    transformed.x = transformed.x.clamp(min_x, max_x);
+                    transformed.y = transformed.y.clamp(min_y, max_y);
+                    (0, 0, 0)
+                } else {
+                    (point.r, point.g, point.b)
+                };
 
                 if let Some((x, y)) = world_to_projector_coordinates(transformed, &projector_config) {
                     // Dwell value controls repetition count (minimum 1 point)
                     let repeat_count = if point.dwell == 0 { 1 } else { point.dwell as usize };
                     for _ in 0..repeat_count {
-                        laser_points.push(LaserPoint::new(x, y, point.r, point.g, point.b, 255));
+                        laser_points.push(LaserPoint::new(x, y, r, g, b, 255));
                     }
                 }
             }

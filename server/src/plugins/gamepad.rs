@@ -4,6 +4,7 @@ use common::game::{ExitGameEvent, GameSession, InitGameSessionEvent};
 use common::state::{CalibrationState, GameState, ServerState};
 use gamepad::{Btn, GamepadBasePlugin, GamepadState, PrevGamepadState, ServerGamepadCursor, GAMEPAD_STICK_DEADZONE, SERVER_GAMEPAD_CLIENT_ID};
 use crate::plugins::actor::ActorLink;
+use crate::plugins::calibration::SpawnCalibrationRippleEvent;
 use crate::plugins::network::MousePositionEvent;
 use crate::plugins::status::LogStatusReportEvent;
 use hunter::model::HunterClickEvent;
@@ -102,11 +103,21 @@ fn gamepad_actor_click_handler(
     state: Res<GamepadState>,
     prev: Res<PrevGamepadState>,
     cursor: Res<ServerGamepadCursor>,
+    calibration_state: Option<Res<State<CalibrationState>>>,
     game_sessions: Query<&GameSession>,
     mut click_events: MessageWriter<HunterClickEvent>,
+    mut ripple_events: MessageWriter<SpawnCalibrationRippleEvent>,
 ) {
     if state.just_pressed(&prev, Btn::East) {
         info!("Gamepad B Button CLICK at position {:?}", cursor.position);
+
+        if let Some(cal) = &calibration_state {
+            if *cal.get() == CalibrationState::On {
+                ripple_events.write(SpawnCalibrationRippleEvent {
+                    position: cursor.position,
+                });
+            }
+        }
 
         for session in game_sessions.iter() {
             if session.game_id == HUNTER_GAME_ID && session.state == GameState::InGame {

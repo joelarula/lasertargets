@@ -40,10 +40,25 @@ pub struct CalibrationCenterCrosshair;
 #[derive(Component)]
 pub struct CalibrationPath;
 
+/// Event to trigger an expanding yellow circle click ripple in calibration mode
+#[derive(Message, Debug, Clone)]
+pub struct SpawnCalibrationRippleEvent {
+    pub position: Vec3,
+}
+
+/// Component for active calibration click ripple animations expanding out of the scene
+#[derive(Component)]
+pub struct CalibrationClickRipple {
+    pub current_radius: f32,
+    pub expansion_speed: f32,
+    pub center_local_pos: Vec2,
+}
+
 impl Plugin for CalibrationPlugin {
     fn build(&self, app: &mut App) {
         app
             .init_resource::<CalibrationData>()
+            .add_message::<SpawnCalibrationRippleEvent>()
             .add_systems(Startup, spawn_calibration_overlays.after(SceneSystemSet))
             .add_systems(OnEnter(CalibrationState::On), spawn_calibration_overlays.after(SceneSystemSet))
             .add_systems(OnExit(CalibrationState::On), despawn_calibration_overlays.after(SceneSystemSet))
@@ -56,7 +71,117 @@ impl Plugin for CalibrationPlugin {
                 cleanup_disconnected_clients,
             ).after(SceneSystemSet))
             .add_systems(Update, update_projection_area_rectangle)
-            .add_systems(Update, update_center_crosshair);
+            .add_systems(Update, update_center_crosshair)
+            .add_systems(Update, (
+                handle_spawn_calibration_ripple_events,
+                animate_calibration_click_ripples,
+                handle_mouse_click_calibration_ripple,
+            ));
+    }
+}
+
+fn build_circle_path(center_local: Vec2, radius: f32, color: Color) -> UniversalPath {
+    let num_points = 24;
+    let mut segment = PathSegment::empty();
+
+    for i in 0..=num_points {
+        let angle = (i as f32 / num_points as f32) * std::f32::consts::TAU;
+        let px = center_local.x + radius * angle.cos();
+        let py = center_local.y + radius * angle.sin();
+        segment.push(px, py, color, 0);
+    }
+
+    UniversalPath {
+        segments: vec![segment],
+    }
+}
+
+fn animate_calibration_click_ripples(
+    mut commands: Commands,
+    time: Res<Time>,
+    scene_setup: Res<SceneSetup>,
+    mut ripple_query: Query<(Entity, &mut CalibrationClickRipple, &mut UniversalPath)>,
+) {
+    let dt = time.delta_secs();
+    let scene_dim = scene_setup.scene.scene_dimension;
+
+    // Farthest possible radius before circle is completely outside 10m x 6m scene rectangle
+    let max_scene_radius = (scene_dim.x / 2.0).hypot(scene_dim.y / 2.0) + 2.0;
+
+    for (entity, mut ripple, mut universal_path) in ripple_query.iter_mut() {
+        ripple.current_radius += ripple.expansion_speed * dt;
+
+        if ripple.current_radius > max_scene_radius + ripple.center_local_pos.length() {
+            info!("★ Calibration click ripple expanded out of scene bounds -> despawned");
+            commands.entity(entity).despawn();
+            continue;
+        }
+
+        let yellow = Color::srgb(1.0, 0.95, 0.1);
+        *universal_path = build_circle_path(ripple.center_local_pos, ripple.current_radius, yellow);
+    }
+}
+
+fn handle_spawn_calibration_ripple_events(
+    mut commands: Commands,
+    mut events: MessageReader<SpawnCalibrationRippleEvent>,
+    calibration_state: Res<State<CalibrationState>>,
+    scene_setup: Res<SceneSetup>,
+    scene_query: Query<Entity, With<SceneEntity>>,
+) {
+    if *calibration_state.get() == CalibrationState::Off {
+        events.clear();
+        return;
+    }
+
+    let Ok(scene_entity) = scene_query.single() else { return; };
+    let scene_origin = scene_setup.scene.origin.translation;
+
+    for event in events.read() {
+        let local_center = Vec2::new(
+            event.position.x - scene_origin.x,
+            event.position.y - scene_origin.y,
+        );
+
+        let initial_radius = 0.08;
+        let yellow = Color::srgb(1.0, 0.95, 0.1);
+        let circle_path = build_circle_path(local_center, initial_radius, yellow);
+
+        let transform = Transform::from_translation(scene_origin);
+
+        let child_entity = commands.spawn((
+            transform,
+            GlobalTransform::from(transform),
+            Visibility::default(),
+            CalibrationPath,
+            CalibrationClickRipple {
+                current_radius: initial_radius,
+                expansion_speed: 20.0, // Rapid 20 m/s expansion
+                center_local_pos: local_center,
+            },
+            circle_path,
+            common::path::PathRenderable::default(),
+        )).id();
+
+        commands.entity(scene_entity).add_child(child_entity);
+        info!("★ Spawned rapid expanding yellow ripple at local center {:?}", local_center);
+    }
+}
+
+fn handle_mouse_click_calibration_ripple(
+    mouse_button: Res<ButtonInput<MouseButton>>,
+    calibration_data: Res<CalibrationData>,
+    calibration_state: Res<State<CalibrationState>>,
+    mut ripple_events: MessageWriter<SpawnCalibrationRippleEvent>,
+) {
+    if *calibration_state.get() == CalibrationState::Off {
+        return;
+    }
+
+    if mouse_button.just_pressed(MouseButton::Left) {
+        if let Some(pos) = calibration_data.mouse_positions.values().next() {
+            ripple_events.write(SpawnCalibrationRippleEvent { position: *pos });
+        }
     }
 }
 
