@@ -225,8 +225,12 @@ fn spawn_snake_title_entity(commands: &mut Commands, scene_setup: &SceneSetup, s
     };
 
     let font_paths = [
+        // Project-bundled fonts (checked first)
+        "assets/fonts/FiraCodeNerdFont-Regular.ttf",
+        // Windows system fonts
         "C:/Windows/Fonts/arial.ttf",
         "C:/Windows/Fonts/seguiemj.ttf",
+        // Linux system fonts
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
         "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
     ];
@@ -281,7 +285,9 @@ fn animate_snake_title_announcement(
 
 fn spawn_head_entity(commands: &mut Commands, state: &SnakeState, scene_entity: Option<Entity>) {
     let pos = grid_to_local(state.segments[0], state.grid_w, state.grid_h);
-    let path = UniversalPath::circle(Vec2::ZERO, SEGMENT_RADIUS, Color::WHITE);
+    let (r, g, b) = state.segment_colors.get(0).copied().unwrap_or((1.0, 1.0, 1.0));
+    let head_color = Color::srgb(r, g, b);
+    let path = UniversalPath::circle(Vec2::ZERO, SEGMENT_RADIUS, head_color);
     let id = commands
         .spawn((
             SnakeHead,
@@ -449,9 +455,11 @@ fn snake_move_tick(
     state.segment_colors.insert(0, (1.0, 1.0, 1.0)); // head always white
 
     if ate_gem {
-        // Grow: add color from gem to the new segment behind head
-        // The segment at index 1 (old head position) gets the gem color
-        state.segment_colors[1] = state.gem_color;
+        // Snake turns the color of the eaten diamond rectangle
+        let eaten_color = state.gem_color;
+        for col in state.segment_colors.iter_mut() {
+            *col = eaten_color;
+        }
         state.gems_eaten += 1;
 
         // Speed up

@@ -154,8 +154,12 @@ fn spawn_hunter_title_on_session_start(
         };
 
         let font_paths = [
+            // Project-bundled fonts (checked first)
+            "assets/fonts/FiraCodeNerdFont-Regular.ttf",
+            // Windows system fonts
             "C:/Windows/Fonts/arial.ttf",
             "C:/Windows/Fonts/seguiemj.ttf",
+            // Linux system fonts
             "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
             "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
         ];

@@ -33,6 +33,7 @@ impl Plugin for GamepadInputPlugin {
             gamepad_toggle_calibration,
             gamepad_cursor_movement,
             gamepad_actor_click_handler,
+            gamepad_snake_direction_handler,
         ))
         .add_systems(Update, gamepad_calibration_controls.run_if(in_state(CalibrationState::On)))
         .add_systems(Update, gamepad_laser_toggle)
@@ -315,5 +316,55 @@ fn gamepad_trigger_status_report(
 ) {
     if state.just_pressed(&prev, Btn::South) {
         status_events.write(LogStatusReportEvent);
+    }
+}
+
+/// Handles snake direction input from gamepad left thumbstick and DPad
+fn gamepad_snake_direction_handler(
+    state: Res<GamepadState>,
+    prev: Res<PrevGamepadState>,
+    game_sessions: Query<&GameSession>,
+    mut snake_dir_events: MessageWriter<snake::model::ChangeSnakeDirectionEvent>,
+) {
+    if !state.connected { return; }
+
+    let snake_active = game_sessions
+        .iter()
+        .any(|s| s.game_id == SNAKE_GAME_ID && s.state == GameState::InGame);
+
+    if !snake_active { return; }
+
+    let mut desired_dir = None;
+
+    // Check Left Thumbstick Movement (with deadzone)
+    let lx = state.left_stick_x;
+    let ly = state.left_stick_y;
+    let deadzone = 0.35;
+
+    if ly > deadzone && ly.abs() >= lx.abs() {
+        desired_dir = Some(snake::model::SnakeDirection::Up);
+    } else if ly < -deadzone && ly.abs() >= lx.abs() {
+        desired_dir = Some(snake::model::SnakeDirection::Down);
+    } else if lx < -deadzone && lx.abs() >= ly.abs() {
+        desired_dir = Some(snake::model::SnakeDirection::Left);
+    } else if lx > deadzone && lx.abs() >= ly.abs() {
+        desired_dir = Some(snake::model::SnakeDirection::Right);
+    }
+
+    // Check DPad buttons (just_pressed or pressed)
+    if state.just_pressed(&prev, Btn::DPadUp) {
+        desired_dir = Some(snake::model::SnakeDirection::Up);
+    } else if state.just_pressed(&prev, Btn::DPadDown) {
+        desired_dir = Some(snake::model::SnakeDirection::Down);
+    } else if state.just_pressed(&prev, Btn::DPadLeft) {
+        desired_dir = Some(snake::model::SnakeDirection::Left);
+    } else if state.just_pressed(&prev, Btn::DPadRight) {
+        desired_dir = Some(snake::model::SnakeDirection::Right);
+    }
+
+    if let Some(dir) = desired_dir {
+        snake_dir_events.write(snake::model::ChangeSnakeDirectionEvent {
+            direction: dir,
+        });
     }
 }

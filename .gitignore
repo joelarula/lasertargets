@@ -53,4 +53,6 @@ Thumbs.db
 mcp-server/node_modules/
 mcp-server/dist/
 mcp-server/*.log
-target/.rustc_info.json
+# Game statistics reports
+stats/
+**/stats/
