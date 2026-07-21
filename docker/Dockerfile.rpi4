@@ -1,0 +1,22 @@
+# syntax=docker/dockerfile:1.7
+
+ARG BASE_IMAGE=lasertargets-cross-aarch64
+FROM ${BASE_IMAGE} AS build
+
+ARG TARGET_TRIPLE=aarch64-unknown-linux-gnu
+
+WORKDIR /project
+COPY . .
+
+RUN cargo build -p server --target ${TARGET_TRIPLE} --release
+
+RUN mkdir -p /dist \
+    && cp /project/target/${TARGET_TRIPLE}/release/server /dist/server \
+    && if [ -f /project/target/${TARGET_TRIPLE}/release/libHeliosLaserDAC.so ]; then \
+        cp /project/target/${TARGET_TRIPLE}/release/libHeliosLaserDAC.so /dist/libHeliosLaserDAC.so; \
+    elif [ -f /opt/libHeliosLaserDAC.so ]; then \
+        cp /opt/libHeliosLaserDAC.so /dist/libHeliosLaserDAC.so; \
+    fi
+
+FROM scratch AS artifact
+COPY --from=build /dist/ /dist/

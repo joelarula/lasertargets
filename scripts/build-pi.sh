@@ -13,6 +13,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 TARGET="aarch64-unknown-linux-gnu"
 IMAGE_NAME="lasertargets-cross-aarch64"
+ARTIFACT_IMAGE_NAME="lasertargets-server-rpi4-artifact"
 DIST_DIR="$PROJECT_ROOT/dist/pi"
 
 echo "=== LaserTargets Raspberry Pi Build ==="
@@ -32,36 +33,40 @@ docker build \
     -t "$IMAGE_NAME" \
     "$PROJECT_ROOT"
 
-# Step 2: Cross-compile the server inside the Docker container
+# Step 2: Build artifact image for Raspberry Pi 4
 echo ""
-echo "--- Cross-compiling server for $TARGET ---"
-docker run --rm \
-    -v "$PROJECT_ROOT:/project" \
-    -w /project \
-    "$IMAGE_NAME" \
-    cargo build -p server --target "$TARGET" --release
+echo "--- Building server artifact image: $ARTIFACT_IMAGE_NAME ---"
+docker build \
+    --build-arg BASE_IMAGE="$IMAGE_NAME" \
+    --build-arg TARGET_TRIPLE="$TARGET" \
+    -f "$PROJECT_ROOT/docker/Dockerfile.rpi4" \
+    -t "$ARTIFACT_IMAGE_NAME" \
+    "$PROJECT_ROOT"
 
 # Step 3: Stage output for deployment
 echo ""
 echo "--- Staging build artifacts ---"
 mkdir -p "$DIST_DIR"
 
-BINARY="$PROJECT_ROOT/target/$TARGET/release/server"
-SO_FILE="$PROJECT_ROOT/target/$TARGET/release/libHeliosLaserDAC.so"
+CID="$(docker create "$ARTIFACT_IMAGE_NAME")"
+cleanup() {
+    docker rm -f "$CID" >/dev/null 2>&1 || true
+}
+trap cleanup EXIT
 
-if [ -f "$BINARY" ]; then
-    cp "$BINARY" "$DIST_DIR/"
+docker cp "$CID:/dist/." "$DIST_DIR/"
+
+if [ -f "$DIST_DIR/server" ]; then
     echo "  Binary: $DIST_DIR/server"
 else
-    echo "  ERROR: Binary not found at $BINARY"
+    echo "  ERROR: Binary not found in artifact image at /dist/server"
     exit 1
 fi
 
-if [ -f "$SO_FILE" ]; then
-    cp "$SO_FILE" "$DIST_DIR/"
+if [ -f "$DIST_DIR/libHeliosLaserDAC.so" ]; then
     echo "  Library: $DIST_DIR/libHeliosLaserDAC.so"
 else
-    echo "  WARNING: libHeliosLaserDAC.so not found — DAC will be unavailable on Pi"
+    echo "  WARNING: libHeliosLaserDAC.so not found in artifact image — DAC will be unavailable on Pi"
 fi
 
 echo ""

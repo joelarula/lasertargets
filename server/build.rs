@@ -4,16 +4,27 @@ use std::path::PathBuf;
 
 fn main() {
     let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+    let target_triple = env::var("TARGET").unwrap_or_default();
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
     // Navigate from server/ up to workspace root, then into target/<profile>
     let workspace_root = manifest_dir.parent().expect("Failed to find workspace root");
     let profile = env::var("PROFILE").unwrap_or_else(|_| "debug".to_string());
     let profile_dir = workspace_root.join("target").join(&profile);
 
+    // Cross-target builds write artifacts to target/<target-triple>/<profile>.
+    let cross_profile_dir = if target_triple.is_empty() {
+        profile_dir.clone()
+    } else {
+        workspace_root.join("target").join(&target_triple).join(&profile)
+    };
+
     if target_os == "windows" {
         copy_windows_dll(&profile_dir);
     } else if target_os == "linux" {
         copy_linux_so(&profile_dir);
+        if cross_profile_dir != profile_dir {
+            copy_linux_so(&cross_profile_dir);
+        }
     }
 }
 

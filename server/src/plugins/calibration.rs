@@ -63,21 +63,9 @@ impl Plugin for CalibrationPlugin {
 
 fn despawn_calibration_overlays(
     mut commands: Commands,
-    rectangle_query: Query<Entity, With<ProjectionAreaRectangle>>,
-    center_query: Query<Entity, With<CalibrationCenterCrosshair>>,
-    crosshair_query: Query<Entity, With<CalibrationCrosshair>>,
     path_query: Query<Entity, With<CalibrationPath>>,
 ) {
     info!("Exiting CalibrationState::On");
-    for entity in rectangle_query.iter() {
-        commands.entity(entity).despawn();
-    }
-    for entity in center_query.iter() {
-        commands.entity(entity).despawn();
-    }
-    for entity in crosshair_query.iter() {
-        commands.entity(entity).despawn();
-    }
     for entity in path_query.iter() {
         commands.entity(entity).despawn();
     }
@@ -183,98 +171,110 @@ fn spawn_crosshair_at_position(
     info!("Spawned mouse crosshair for client {} at world position {:?}", client_id, world_position);
 }
 
-/// Spawn a red crosshair at the scene center (projection surface)
-    fn spawn_center_crosshair(
-        commands: &mut Commands,
-        scene_setup: &SceneSetup,
-        scene_entity: Entity,
-        scene_transform: &Transform,
-    ) {
-        let crosshair_size = 0.5;
-        let half_size = crosshair_size / 2.0;
-        let red = Color::srgb(0.5, 0.0, 0.0);
-        let blank = Color::srgb(0.0, 0.0, 0.0);
-        // Horizontal line segment
-        let mut h_segment = common::path::PathSegment::empty();
-        h_segment.push(-half_size, 0.0, blank, 3); // Move to start, blanked
-        h_segment.push(-half_size, 0.0, red, 5);
-        h_segment.push(0.0, 0.0, red, 3);
-        h_segment.push(half_size, 0.0, red, 5);
-        h_segment.push(half_size, 0.0, blank, 3); // Blank at end
+/// Build calibration universal path containing perimeter rectangle and corner crosshair markers
+fn build_calibration_rectangle_path(scene_dimensions: Vec2) -> UniversalPath {
+    let half_w = scene_dimensions.x / 2.0;
+    let half_h = scene_dimensions.y / 2.0;
+    let green = Color::srgb(0.0, 1.0, 0.0);
+    let blank = Color::srgb(0.0, 0.0, 0.0);
+    let corner_arm = (scene_dimensions.x.min(scene_dimensions.y) * 0.08).clamp(0.15, 0.4);
 
-        // Vertical line segment
-        let mut v_segment = common::path::PathSegment::empty();
-        v_segment.push(0.0, -half_size, blank, 3); // Move to start, blanked
-        v_segment.push(0.0, -half_size, red, 5);
-        v_segment.push(0.0, 0.0, red, 3);
-        v_segment.push(0.0, half_size, red, 5);
-        v_segment.push(0.0, half_size, blank, 3); // Blank at end
+    let mut segments = Vec::new();
 
-        let crosshair_universal_path = UniversalPath {
-            segments: vec![h_segment, v_segment],
-        };
-        let transform = *scene_transform;
-        let child_entity = commands.spawn((
-            transform,
-            GlobalTransform::from(transform),
-            Visibility::default(),
-            CalibrationPath,
-            CalibrationCenterCrosshair,
-            crosshair_universal_path,
-            common::path::PathRenderable::default(),
-        )).id();
-        commands.entity(scene_entity).add_child(child_entity);
-        info!("Spawned red crosshair with explicit dwell and blanking");
+    // 1. Single continuous perimeter bounding box rectangle segment (closed loop)
+    let mut rect_seg = PathSegment::empty();
+    rect_seg.push(-half_w, -half_h, green, 0); // BL corner
+    rect_seg.push(half_w, -half_h, green, 0);  // BR corner
+    rect_seg.push(half_w, half_h, green, 0);   // TR corner
+    rect_seg.push(-half_w, half_h, green, 0);  // TL corner
+    rect_seg.push(-half_w, -half_h, green, 0); // Close at BL
+    segments.push(rect_seg);
+
+    // 2. Corner crosshair arm markers at each corner
+    let corners = [
+        Vec2::new(-half_w, -half_h), // BL
+        Vec2::new(half_w, -half_h),  // BR
+        Vec2::new(half_w, half_h),   // TR
+        Vec2::new(-half_w, half_h),  // TL
+    ];
+
+    for c in &corners {
+        let h_dir = if c.x < 0.0 { 1.0 } else { -1.0 };
+        let v_dir = if c.y < 0.0 { 1.0 } else { -1.0 };
+
+        let mut arm_seg = PathSegment::empty();
+        arm_seg.push(c.x + h_dir * corner_arm, c.y, blank, 1);
+        arm_seg.push(c.x + h_dir * corner_arm, c.y, green, 1);
+        arm_seg.push(c.x, c.y, green, 2);
+        arm_seg.push(c.x, c.y + v_dir * corner_arm, green, 1);
+        arm_seg.push(c.x, c.y + v_dir * corner_arm, blank, 1);
+        segments.push(arm_seg);
     }
+
+    UniversalPath { segments }
+}
+
+/// Spawn a red crosshair at the scene center (projection surface)
+fn spawn_center_crosshair(
+    commands: &mut Commands,
+    scene_setup: &SceneSetup,
+    scene_entity: Entity,
+) {
+    let crosshair_size = 0.5;
+    let half_size = crosshair_size / 2.0;
+    let red = Color::srgb(0.8, 0.0, 0.0);
+
+    let mut h_segment = PathSegment::empty();
+    h_segment.push(-half_size, 0.0, red, 0);
+    h_segment.push(half_size, 0.0, red, 0);
+
+    let mut v_segment = PathSegment::empty();
+    v_segment.push(0.0, -half_size, red, 0);
+    v_segment.push(0.0, half_size, red, 0);
+
+    let crosshair_path = UniversalPath {
+        segments: vec![h_segment, v_segment],
+    };
+    let origin = &scene_setup.scene.origin;
+    let transform = Transform::from_translation(origin.translation)
+        .with_rotation(origin.rotation)
+        .with_scale(origin.scale);
+    let child_entity = commands.spawn((
+        transform,
+        GlobalTransform::from(transform),
+        Visibility::default(),
+        CalibrationPath,
+        CalibrationCenterCrosshair,
+        crosshair_path,
+        common::path::PathRenderable::default(),
+    )).id();
+    commands.entity(scene_entity).add_child(child_entity);
+    info!("Spawned red center crosshair overlay at {:?}", transform.translation);
+}
 
 /// Spawn projection area rectangle at scene center (projection surface)
-    fn spawn_projection_area_rectangle(
-        commands: &mut Commands,
-        scene_setup: &SceneSetup,
-        scene_entity: Entity,
-        scene_transform: &Transform,
-    ) {
-        let scene_dimensions = scene_setup.scene.scene_dimension;
-        let half_width = scene_dimensions.x / 2.0;
-        let half_height = scene_dimensions.y / 2.0;
-        let corners = [
-            Vec2::new(-half_width, -half_height), // Bottom-left
-            Vec2::new(half_width, -half_height),  // Bottom-right
-            Vec2::new(half_width, half_height),   // Top-right
-            Vec2::new(-half_width, half_height),  // Top-left
-        ];
-        let green = Color::srgb(0.0, 1.0, 0.0);
-        let blank = Color::srgb(0.0, 0.0, 0.0);
-        let corner_dwell = 12;
-        let mut segments = Vec::new();
-        for corner in &corners {
-            let mut segment = PathSegment::empty();
-            segment.push(corner.x, corner.y, blank, corner_dwell);
-            segment.push(corner.x, corner.y, green, corner_dwell * 2);
-            segment.push(corner.x, corner.y, blank, corner_dwell);
-            segment.push(corner.x, corner.y, green, 0);
-            segments.push(segment);
-        }
-        let rectangle_universal_path = UniversalPath {
-            segments,
-        };
-        let transform = *scene_transform;
-        let child_entity = commands.spawn((
-            transform,
-            GlobalTransform::from(transform),
-            Visibility::default(),
-            CalibrationPath,
-            ProjectionAreaRectangle,
-            rectangle_universal_path.clone(),
-            common::path::PathRenderable::default(),
-        )).id();
-        commands.entity(scene_entity).add_child(child_entity);
-        info!(
-            "Spawned scene corner markers at {:?}, {} segments",
-            scene_transform.translation,
-            rectangle_universal_path.segments.len()
-        );
-    }
+fn spawn_projection_area_rectangle(
+    commands: &mut Commands,
+    scene_setup: &SceneSetup,
+    scene_entity: Entity,
+) {
+    let rectangle_path = build_calibration_rectangle_path(scene_setup.scene.scene_dimension);
+    let origin = &scene_setup.scene.origin;
+    let transform = Transform::from_translation(origin.translation)
+        .with_rotation(origin.rotation)
+        .with_scale(origin.scale);
+    let child_entity = commands.spawn((
+        transform,
+        GlobalTransform::from(transform),
+        Visibility::default(),
+        CalibrationPath,
+        ProjectionAreaRectangle,
+        rectangle_path,
+        common::path::PathRenderable::default(),
+    )).id();
+    commands.entity(scene_entity).add_child(child_entity);
+    info!("Spawned scene corner calibration overlay at {:?}", transform.translation);
+}
 
 /// Spawn crosshairs for new clients when they first send mouse events
 fn spawn_crosshairs_for_new_clients(
@@ -288,13 +288,11 @@ fn spawn_crosshairs_for_new_clients(
         return;
     }
     
-    // Get existing crosshair client IDs
     let mut existing_clients: std::collections::HashSet<u64> = crosshair_query
         .iter()
         .map(|crosshair| crosshair.client_id)
         .collect();
     
-    // Check for new clients in mouse events
     for event in mouse_events.read() {
         let client_id = event.client_id;
         
@@ -302,7 +300,6 @@ fn spawn_crosshairs_for_new_clients(
             info!("New client {} detected, spawning crosshair at {:?}", 
                   client_id, event.position);
             
-            // Spawn crosshair at the mouse position (or scene center if None)
             let world_position = event.position
                 .unwrap_or(scene_setup.scene.origin.translation);
             
@@ -312,27 +309,26 @@ fn spawn_crosshairs_for_new_clients(
     }
 }
 
-
 /// Spawns overlays only if not already present (called on entering calibration state)
-    fn spawn_calibration_overlays(
-        mut commands: Commands,
-        scene_setup: Res<SceneSetup>,
-        rectangle_query: Query<Entity, With<ProjectionAreaRectangle>>,
-        center_query: Query<Entity, With<CalibrationCenterCrosshair>>,
-        scene_entity_query: Query<(Entity, &Transform), With<SceneEntity>>,
-    ) {
-        info!("Entering CalibrationState::On");
-        if let Ok((scene_entity, scene_transform)) = scene_entity_query.single() {
-            if rectangle_query.iter().next().is_none() {
-                spawn_projection_area_rectangle(&mut commands, &scene_setup, scene_entity, scene_transform);
-            }
-            if center_query.iter().next().is_none() {
-                spawn_center_crosshair(&mut commands, &scene_setup, scene_entity, scene_transform);
-            }
-        } else {
-            warn!("No SceneEntity found for parenting calibration overlays");
+fn spawn_calibration_overlays(
+    mut commands: Commands,
+    scene_setup: Res<SceneSetup>,
+    rectangle_query: Query<Entity, With<ProjectionAreaRectangle>>,
+    center_query: Query<Entity, With<CalibrationCenterCrosshair>>,
+    scene_entity_query: Query<Entity, With<SceneEntity>>,
+) {
+    info!("Entering CalibrationState::On");
+    if let Ok(scene_entity) = scene_entity_query.single() {
+        if rectangle_query.iter().next().is_none() {
+            spawn_projection_area_rectangle(&mut commands, &scene_setup, scene_entity);
         }
+        if center_query.iter().next().is_none() {
+            spawn_center_crosshair(&mut commands, &scene_setup, scene_entity);
+        }
+    } else {
+        warn!("No SceneEntity found for parenting calibration overlays");
     }
+}
 
 // --- Calibration overlay update systems ---
 fn update_projection_area_rectangle(
@@ -343,32 +339,12 @@ fn update_projection_area_rectangle(
         return;
     }
     let origin = &scene_setup.scene.origin;
-    let scene_dimensions = scene_setup.scene.scene_dimension;
-    let half_width = scene_dimensions.x / 2.0;
-    let half_height = scene_dimensions.y / 2.0;
-    let corners = [
-        Vec2::new(-half_width, -half_height), // Bottom-left
-        Vec2::new(half_width, -half_height),  // Bottom-right
-        Vec2::new(half_width, half_height),   // Top-right
-        Vec2::new(-half_width, half_height),  // Top-left
-    ];
-    let green = Color::srgb(0.0, 1.0, 0.0);
-    let blank = Color::srgb(0.0, 0.0, 0.0);
-    let corner_dwell = 12;
-    let mut segments = Vec::new();
-    for corner in &corners {
-        let mut segment = PathSegment::empty();
-        segment.push(corner.x, corner.y, blank, corner_dwell);
-        segment.push(corner.x, corner.y, green, corner_dwell * 2);
-        segment.push(corner.x, corner.y, blank, corner_dwell);
-        segment.push(corner.x, corner.y, green, 0);
-        segments.push(segment);
-    }
+    let rectangle_path = build_calibration_rectangle_path(scene_setup.scene.scene_dimension);
     for (mut transform, mut path) in query.iter_mut() {
         transform.translation = origin.translation;
         transform.rotation = origin.rotation;
         transform.scale = origin.scale;
-        path.segments = segments.clone();
+        *path = rectangle_path.clone();
     }
 }
 
@@ -379,8 +355,10 @@ fn update_center_crosshair(
     if !scene_setup.is_changed() {
         return;
     }
-    let center_world_pos = scene_setup.scene.origin.translation;
+    let origin = &scene_setup.scene.origin;
     for mut transform in query.iter_mut() {
-        transform.translation = center_world_pos;
+        transform.translation = origin.translation;
+        transform.rotation = origin.rotation;
+        transform.scale = origin.scale;
     }
 }

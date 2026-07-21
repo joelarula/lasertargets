@@ -1,16 +1,8 @@
-use crate::corner::detect_corners;
+use crate::corner::calculate_corner_dwells;
 use crate::simplify::simplify_segment;
 use crate::{LaserPoint, LaserSegment, OptimizeConfig};
 
 /// Produce an optimised point buffer from a list of laser segments.
-///
-/// The pipeline for each segment:
-///   1. Optionally simplify (remove near-duplicates / near-collinear points)
-///   2. Detect corners
-///   3. Emit start blank dwell → lit points with corner dwells & interpolation → end blank dwell
-///
-/// Between segments a blanking sequence is inserted:
-///   end-dwell (blanked at last point) → interpolated jump → start-dwell (blanked at first point)
 pub fn optimize(segments: &[LaserSegment], config: &OptimizeConfig) -> Vec<LaserPoint> {
     let mut output: Vec<LaserPoint> = Vec::new();
 
@@ -26,8 +18,8 @@ pub fn optimize(segments: &[LaserSegment], config: &OptimizeConfig) -> Vec<Laser
             continue;
         }
 
-        // --- Corner detection ---
-        let corners = detect_corners(pts, config.corner_angle_threshold);
+        // --- Angle-proportional Corner Dwell Calculation ---
+        let corner_dwells = calculate_corner_dwells(pts, config.corner_angle_threshold, config.corner_dwell_points as usize);
 
         // --- Inter-segment blanking (between shapes) ---
         if !output.is_empty() {
@@ -42,26 +34,20 @@ pub fn optimize(segments: &[LaserSegment], config: &OptimizeConfig) -> Vec<Laser
             output.push(LaserPoint::blanked(first.x, first.y));
         }
 
-        // --- Emit lit points with interpolation and corner dwells ---
-        // Center of DAC space (for adaptive dwell)
+        // --- Emit lit points with interpolation and angle-based corner dwells ---
         for i in 0..pts.len() {
             // Interpolation between previous and current point
             if i > 0 {
                 emit_interpolated_points(&mut output, &pts[i - 1], &pts[i], config);
             }
 
-
-            // The actual point (possibly repeated for dwell)
             let p = pts[i];
-            // Dwell logic must be handled before conversion to LaserPoint.
             output.push(p);
 
-            // Corner dwell: repeat corner points (still applies, but boost for crosshair/corners)
-            if corners[i] {
-                let corner_boost = if pts.len() <= 5 { config.corner_dwell_points * 2 } else { config.corner_dwell_points };
-                for _ in 0..corner_boost {
-                    output.push(p);
-                }
+            // Angle-proportional corner dwell
+            let extra_dwell = corner_dwells[i];
+            for _ in 0..extra_dwell {
+                output.push(p);
             }
         }
 
@@ -71,7 +57,38 @@ pub fn optimize(segments: &[LaserSegment], config: &OptimizeConfig) -> Vec<Laser
             output.push(LaserPoint::blanked(last.x, last.y));
         }
     }
+
+    // --- Frame-wraparound blanking jump (from end of frame back to start of frame) ---
+    if !output.is_empty() {
+        let last = *output.last().unwrap();
+        let first = output[0];
+        if last.x != first.x || last.y != first.y {
+            emit_blanking_jump(&mut output, &last, &first, config);
+        }
+    }
+
+    // Apply 2-point laser diode modulation delay to compensate for galvo mirror inertia lag
+    apply_laser_color_delay(&mut output, 2);
+
     output
+}
+
+/// Shift laser diode color channels relative to XY galvo position to compensate for galvo mechanical inertia lag.
+fn apply_laser_color_delay(points: &mut [LaserPoint], delay_points: usize) {
+    let len = points.len();
+    if len <= delay_points || delay_points == 0 {
+        return;
+    }
+    let colors: Vec<(u8, u8, u8, u8)> = points.iter().map(|p| (p.r, p.g, p.b, p.i)).collect();
+
+    for i in 0..len {
+        let src_idx = (i + len - delay_points) % len;
+        let (r, g, b, intensity) = colors[src_idx];
+        points[i].r = r;
+        points[i].g = g;
+        points[i].b = b;
+        points[i].i = intensity;
+    }
 }
 
 /// Emit linearly interpolated lit points between `from` and `to` when they are far apart.
@@ -105,25 +122,28 @@ fn emit_blanking_jump(
     to: &LaserPoint,
     config: &OptimizeConfig,
 ) {
-    // End dwell: hold blanked at the departure point
+    // 1. Departure Dwell: hold blanked at departure point (laser turns off before galvos move)
     for _ in 0..config.blank_end_dwell {
         output.push(LaserPoint::blanked(from.x, from.y));
     }
 
-    // Interpolated blanked jump
-    let steps = config.blank_jump_steps;
-    if steps > 0 {
-        let dx = to.x as f32 - from.x as f32;
-        let dy = to.y as f32 - from.y as f32;
-        for step in 1..steps {
-            let t = step as f32 / steps as f32;
-            let x = (from.x as f32 + dx * t) as u16;
-            let y = (from.y as f32 + dy * t) as u16;
-            output.push(LaserPoint::blanked(x, y));
-        }
+    // 2. Distance-Adaptive Blanking Jump: interpolate galvo steps across jump
+    let dx = to.x as f32 - from.x as f32;
+    let dy = to.y as f32 - from.y as f32;
+    let dist = (dx * dx + dy * dy).sqrt();
+
+    let max_steps = config.blank_jump_steps.max(4);
+    let calc_steps = (dist / 250.0).ceil() as u16;
+    let steps = calc_steps.clamp(4, max_steps);
+
+    for step in 1..steps {
+        let t = step as f32 / steps as f32;
+        let x = (from.x as f32 + dx * t) as u16;
+        let y = (from.y as f32 + dy * t) as u16;
+        output.push(LaserPoint::blanked(x, y));
     }
 
-    // Start dwell: hold blanked at the arrival point
+    // 3. Arrival Dwell: hold blanked at arrival point (galvos settle before laser turns on)
     for _ in 0..config.blank_start_dwell {
         output.push(LaserPoint::blanked(to.x, to.y));
     }

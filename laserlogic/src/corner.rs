@@ -21,11 +21,6 @@ fn angle_at_point(a: &LaserPoint, b: &LaserPoint, c: &LaserPoint) -> f32 {
 }
 
 /// For each point in the slice, determine whether it is a "corner" that needs extra dwell.
-///
-/// A corner is any point where the angle formed by its neighbours is less than `angle_threshold`
-/// degrees. The first and last points are always marked as corners.
-///
-/// Returns a `Vec<bool>` parallel to the input slice.
 pub fn detect_corners(points: &[LaserPoint], angle_threshold: f32) -> Vec<bool> {
     let len = points.len();
     if len == 0 {
@@ -33,7 +28,6 @@ pub fn detect_corners(points: &[LaserPoint], angle_threshold: f32) -> Vec<bool> 
     }
     let mut corners = vec![false; len];
 
-    // First and last are always corners
     corners[0] = true;
     if len > 1 {
         corners[len - 1] = true;
@@ -47,6 +41,61 @@ pub fn detect_corners(points: &[LaserPoint], angle_threshold: f32) -> Vec<bool> 
     }
 
     corners
+}
+
+/// Calculate angle-proportional corner dwell count for each point in a segment.
+///
+/// The dwell count scales proportionally with the turn angle (`180.0 - interior_angle`):
+/// - 90 deg turn angle (sharp right angle corner): returns `base_corner_dwell`
+/// - 180 deg turn angle (hairpin foldback): returns `base_corner_dwell * 2`
+/// - 0 deg turn angle (collinear line): returns 0
+pub fn calculate_corner_dwells(
+    points: &[LaserPoint],
+    angle_threshold: f32,
+    base_corner_dwell: usize,
+) -> Vec<usize> {
+    let len = points.len();
+    if len == 0 {
+        return vec![0; 0];
+    }
+    let mut dwells = vec![0; len];
+
+    if base_corner_dwell == 0 {
+        return dwells;
+    }
+
+    // Check if segment is a closed loop polygon (first and last point are identical)
+    let is_closed = len > 2
+        && points[0].x == points[len - 1].x
+        && points[0].y == points[len - 1].y;
+
+    if is_closed {
+        // Calculate seam interior angle between last-1 point -> seam point -> 1st point
+        let angle = angle_at_point(&points[len - 2], &points[0], &points[1]);
+        if angle < angle_threshold {
+            let turn_angle = (180.0 - angle).max(0.0);
+            let calculated = ((turn_angle / 90.0) * base_corner_dwell as f32).round() as usize;
+            let seam_dwell = calculated.max(1);
+            dwells[0] = seam_dwell;
+            dwells[len - 1] = seam_dwell;
+        }
+    } else {
+        dwells[0] = base_corner_dwell;
+        if len > 1 {
+            dwells[len - 1] = base_corner_dwell;
+        }
+    }
+
+    for i in 1..len.saturating_sub(1) {
+        let angle = angle_at_point(&points[i - 1], &points[i], &points[i + 1]);
+        if angle < angle_threshold {
+            let turn_angle = (180.0 - angle).max(0.0);
+            let calculated = ((turn_angle / 90.0) * base_corner_dwell as f32).round() as usize;
+            dwells[i] = calculated.max(1);
+        }
+    }
+
+    dwells
 }
 
 #[cfg(test)]

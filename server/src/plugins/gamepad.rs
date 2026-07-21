@@ -1,39 +1,12 @@
-/// Toggle calibration mode with Y (North) button
-use bevy::prelude::NextState;
-use bevy::prelude::State;
-use crate::plugins::projector::LaserOptimizeConfig;
-/// Adjust dwell parameters with A (decrease) and B (increase) buttons
-fn gamepad_adjust_dwell(
-    state: Res<GamepadState>,
-    prev: Res<PrevGamepadState>,
-    mut laser_opt: ResMut<LaserOptimizeConfig>,
-) {
-    let mut changed = false;
-    // B button increases dwell
-    if state.just_pressed(&prev, Btn::East) {
-        laser_opt.0.max_dwell = (laser_opt.0.max_dwell + 1).min(64);
-        laser_opt.0.start_dwell_points = (laser_opt.0.start_dwell_points + 1).min(64);
-        laser_opt.0.end_dwell_points = (laser_opt.0.end_dwell_points + 1).min(64);
-        laser_opt.0.corner_dwell_points = (laser_opt.0.corner_dwell_points + 1).min(64);
-        changed = true;
-    }
-    // A button decreases dwell
-    if state.just_pressed(&prev, Btn::South) {
-        laser_opt.0.max_dwell = laser_opt.0.max_dwell.saturating_sub(1).max(1);
-        laser_opt.0.start_dwell_points = laser_opt.0.start_dwell_points.saturating_sub(1).max(1);
-        laser_opt.0.end_dwell_points = laser_opt.0.end_dwell_points.saturating_sub(1).max(1);
-        laser_opt.0.corner_dwell_points = laser_opt.0.corner_dwell_points.saturating_sub(1).max(1);
-        changed = true;
-    }
-    if changed {
-        info!("Gamepad: Dwell updated: max_dwell={}, start={}, end={}, corner={}",
-            laser_opt.0.max_dwell, laser_opt.0.start_dwell_points, laser_opt.0.end_dwell_points, laser_opt.0.corner_dwell_points);
-    }
-}
 use bevy::prelude::*;
 use common::config::{ProjectorConfiguration, SceneConfiguration};
 use common::game::{ExitGameEvent, GameSession, InitGameSessionEvent};
 use common::state::{CalibrationState, GameState, ServerState};
+use gamepad::{Btn, GamepadBasePlugin, GamepadState, PrevGamepadState, ServerGamepadCursor, GAMEPAD_STICK_DEADZONE, SERVER_GAMEPAD_CLIENT_ID};
+use crate::plugins::actor::ActorLink;
+use crate::plugins::network::MousePositionEvent;
+use crate::plugins::status::LogStatusReportEvent;
+use hunter::model::HunterClickEvent;
 
 const DIMENSION_STEP: f32 = 1.0;
 const DISTANCE_STEP: f32 = 1.0;
@@ -41,261 +14,108 @@ const HEIGHT_STEP: f32 = 0.25;
 const HUNTER_GAME_ID: u16 = 101;
 const SNAKE_GAME_ID: u16 = 2;
 
-// --- Cross-platform gamepad state ---
-
-/// Represents a snapshot of gamepad button/axis state each frame.
-#[derive(Resource, Default, Clone, Debug)]
-pub struct GamepadState {
-    pub connected: bool,
-    pub dpad_up: bool,
-    pub dpad_down: bool,
-    pub dpad_left: bool,
-    pub dpad_right: bool,
-    pub south: bool,
-    pub east: bool,
-    pub west: bool,
-    pub north: bool,
-    pub left_bumper: bool,
-    pub right_bumper: bool,
-    pub left_trigger: bool,
-    pub right_trigger: bool,
-    pub start: bool,
-    pub select: bool,
-    pub left_thumb: bool,
-    pub right_thumb: bool,
-    pub left_stick_x: f32,
-    pub left_stick_y: f32,
-    pub right_stick_x: f32,
-    pub right_stick_y: f32,
-}
-
-/// Tracks previous frame for just_pressed detection.
-#[derive(Resource, Default, Clone, Debug)]
-struct PrevGamepadState {
-    dpad_up: bool,
-    dpad_down: bool,
-    dpad_left: bool,
-    dpad_right: bool,
-    south: bool,
-    east: bool,
-    west: bool,
-    north: bool,
-    left_bumper: bool,
-    right_bumper: bool,
-    left_trigger: bool,
-    right_trigger: bool,
-    start: bool,
-    select: bool,
-    left_thumb: bool,
-    right_thumb: bool,
-}
-
-#[derive(Clone, Copy, Debug)]
-enum Btn {
-    DPadUp, DPadDown, DPadLeft, DPadRight,
-    South, East, West, North,
-    LeftBumper, RightBumper,
-    LeftTrigger, RightTrigger,
-    Start, Select,
-    LeftThumb, RightThumb,
-}
-
-impl GamepadState {
-    fn just_pressed(&self, prev: &PrevGamepadState, button: Btn) -> bool {
-        let (cur, old) = match button {
-            Btn::DPadUp => (self.dpad_up, prev.dpad_up),
-            Btn::DPadDown => (self.dpad_down, prev.dpad_down),
-            Btn::DPadLeft => (self.dpad_left, prev.dpad_left),
-            Btn::DPadRight => (self.dpad_right, prev.dpad_right),
-            Btn::South => (self.south, prev.south),
-            Btn::East => (self.east, prev.east),
-            Btn::West => (self.west, prev.west),
-            Btn::North => (self.north, prev.north),
-            Btn::LeftBumper => (self.left_bumper, prev.left_bumper),
-            Btn::RightBumper => (self.right_bumper, prev.right_bumper),
-            Btn::LeftTrigger => (self.left_trigger, prev.left_trigger),
-            Btn::RightTrigger => (self.right_trigger, prev.right_trigger),
-            Btn::Start => (self.start, prev.start),
-            Btn::Select => (self.select, prev.select),
-            Btn::LeftThumb => (self.left_thumb, prev.left_thumb),
-            Btn::RightThumb => (self.right_thumb, prev.right_thumb),
-        };
-        cur && !old
-    }
-}
-
-// --- Windows XInput backend ---
-
-#[cfg(target_os = "windows")]
-mod xinput_backend {
-    use super::GamepadState;
-    use bevy::prelude::*;
-    use rusty_xinput::XInputHandle;
-
-    const TRIGGER_THRESHOLD: u8 = 30;
-    const STICK_DEADZONE: i16 = 7849;
-
-    #[derive(Resource)]
-    pub struct XInputBackend {
-        handle: XInputHandle,
-        controller_id: u32,
-    }
-
-    impl XInputBackend {
-        pub fn new() -> Option<Self> {
-            let handle = XInputHandle::load_default().ok()?;
-            for id in 0..4 {
-                if handle.get_state(id).is_ok() {
-                    info!("XInput: Found controller at slot {}", id);
-                    return Some(Self { handle, controller_id: id });
-                }
-            }
-            info!("XInput: No controllers found at startup (will poll slot 0)");
-            Some(Self { handle, controller_id: 0 })
-        }
-
-        pub fn poll(&self) -> GamepadState {
-            match self.handle.get_state(self.controller_id) {
-                Ok(state) => {
-                    let gp = state.raw.Gamepad;
-                    let buttons = gp.wButtons;
-
-                    fn stick(val: i16, deadzone: i16) -> f32 {
-                        if (val as i32).abs() < deadzone as i32 { 0.0 } else { val as f32 / 32768.0 }
-                    }
-
-                    GamepadState {
-                        connected: true,
-                        dpad_up: buttons & 0x0001 != 0,
-                        dpad_down: buttons & 0x0002 != 0,
-                        dpad_left: buttons & 0x0004 != 0,
-                        dpad_right: buttons & 0x0008 != 0,
-                        start: buttons & 0x0010 != 0,
-                        select: buttons & 0x0020 != 0,
-                        left_thumb: buttons & 0x0040 != 0,
-                        right_thumb: buttons & 0x0080 != 0,
-                        left_bumper: buttons & 0x0100 != 0,
-                        right_bumper: buttons & 0x0200 != 0,
-                        south: buttons & 0x1000 != 0,
-                        east: buttons & 0x2000 != 0,
-                        west: buttons & 0x4000 != 0,
-                        north: buttons & 0x8000 != 0,
-                        left_trigger: gp.bLeftTrigger > TRIGGER_THRESHOLD,
-                        right_trigger: gp.bRightTrigger > TRIGGER_THRESHOLD,
-                        left_stick_x: stick(gp.sThumbLX, STICK_DEADZONE),
-                        left_stick_y: stick(gp.sThumbLY, STICK_DEADZONE),
-                        right_stick_x: stick(gp.sThumbRX, STICK_DEADZONE),
-                        right_stick_y: stick(gp.sThumbRY, STICK_DEADZONE),
-                    }
-                }
-                Err(_) => GamepadState { connected: false, ..Default::default() },
-            }
-        }
-    }
-}
-
-// --- Plugin ---
-
+/// App-specific plugin registering gamepad event handlers for LaserTargets server.
 pub struct GamepadInputPlugin;
 
 impl Plugin for GamepadInputPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<GamepadState>()
-            .init_resource::<PrevGamepadState>();
+        // Add core hardware gamepad polling plugin from gamepad utility crate
+        app.add_plugins(GamepadBasePlugin);
 
-        #[cfg(target_os = "windows")]
-        {
-            if let Some(backend) = xinput_backend::XInputBackend::new() {
-                app.insert_resource(backend);
-                app.add_systems(PreUpdate, poll_xinput);
-            } else {
-                warn!("Failed to load XInput — gamepad will not work on Windows");
-            }
-        }
+        // Register Server Gamepad as direct Actor on startup
+        app.add_systems(Startup, register_server_gamepad_actor);
 
-        #[cfg(not(target_os = "windows"))]
-        {
-            // On Linux, Bevy's GilrsPlugin (evdev) provides Gamepad components.
-            app.add_systems(PreUpdate, poll_bevy_gamepad);
-        }
-
-        app.add_systems(Update, log_gamepad_buttons)
-            .add_systems(Update, gamepad_toggle_calibration)
-            .add_systems(Update, gamepad_calibration_controls.run_if(in_state(CalibrationState::On)))
-            .add_systems(Update, gamepad_laser_toggle)
-            .add_systems(Update, gamepad_start_game.run_if(in_state(ServerState::Menu)))
-            .add_systems(Update, gamepad_exit_game.run_if(in_state(ServerState::InGame)))
-            .add_systems(Update, gamepad_adjust_dwell);
+        // Register application-specific gamepad event handlers & virtual cursor navigation
+        app.add_systems(Update, (
+            log_gamepad_buttons,
+            gamepad_trigger_status_report,
+            gamepad_toggle_calibration,
+            gamepad_cursor_movement,
+            gamepad_actor_click_handler,
+        ))
+        .add_systems(Update, gamepad_calibration_controls.run_if(in_state(CalibrationState::On)))
+        .add_systems(Update, gamepad_laser_toggle)
+        .add_systems(Update, gamepad_start_game.run_if(in_state(ServerState::Menu)))
+        .add_systems(Update, gamepad_exit_game.run_if(in_state(ServerState::InGame)));
     }
 }
 
-// --- Polling systems ---
-
-fn save_prev(state: &GamepadState, prev: &mut PrevGamepadState) {
-    prev.dpad_up = state.dpad_up;
-    prev.dpad_down = state.dpad_down;
-    prev.dpad_left = state.dpad_left;
-    prev.dpad_right = state.dpad_right;
-    prev.south = state.south;
-    prev.east = state.east;
-    prev.west = state.west;
-    prev.north = state.north;
-    prev.left_bumper = state.left_bumper;
-    prev.right_bumper = state.right_bumper;
-    prev.left_trigger = state.left_trigger;
-    prev.right_trigger = state.right_trigger;
-    prev.start = state.start;
-    prev.select = state.select;
-    prev.left_thumb = state.left_thumb;
-    prev.right_thumb = state.right_thumb;
+/// Spawns an ActorLink entity for the server gamepad so it is recognized as a direct Actor.
+fn register_server_gamepad_actor(mut commands: Commands) {
+    let actor = common::actor::Actor {
+        name: "Server-Gamepad".to_string(),
+        uuid: bevy::asset::uuid::Uuid::from_u128(0x53455256_4741_4d45_5041_443030303030),
+        roles: vec!["Server".to_string(), "Controller".to_string(), "Player".to_string()],
+    };
+    let actor_link = ActorLink {
+        client_id: SERVER_GAMEPAD_CLIENT_ID,
+        actor: actor.clone(),
+    };
+    commands.spawn((actor, actor_link));
+    info!("✓ Registered Server Gamepad as direct Actor (Client ID {})", SERVER_GAMEPAD_CLIENT_ID);
 }
 
-#[cfg(target_os = "windows")]
-fn poll_xinput(
-    backend: Res<xinput_backend::XInputBackend>,
-    mut state: ResMut<GamepadState>,
-    mut prev: ResMut<PrevGamepadState>,
+/// Updates the virtual mouse/cursor position based on left thumbstick input and emits MousePositionEvent.
+fn gamepad_cursor_movement(
+    state: Res<GamepadState>,
+    time: Res<Time>,
+    scene_config: Res<SceneConfiguration>,
+    mut cursor: ResMut<ServerGamepadCursor>,
+    mut mouse_events: MessageWriter<MousePositionEvent>,
 ) {
-    save_prev(&state, &mut prev);
-    *state = backend.poll();
+    if !state.connected { return; }
+
+    let dt = time.delta_secs();
+    let move_speed = cursor.sensitivity;
+
+    // Initialize cursor position to scene origin center if uninitialized
+    if cursor.position == Vec3::ZERO {
+        cursor.position = scene_config.origin.translation;
+    }
+
+    if state.left_stick_x.abs() > GAMEPAD_STICK_DEADZONE || state.left_stick_y.abs() > GAMEPAD_STICK_DEADZONE {
+        cursor.position.x += state.left_stick_x * move_speed * dt;
+        cursor.position.y += state.left_stick_y * move_speed * dt;
+    }
+
+    let half_w = (scene_config.scene_dimension.x as f32 / 2.0).max(0.5);
+    let half_h = (scene_config.scene_dimension.y as f32 / 2.0).max(0.5);
+
+    let min_x = scene_config.origin.translation.x - half_w;
+    let max_x = scene_config.origin.translation.x + half_w;
+    let min_y = scene_config.origin.translation.y - half_h;
+    let max_y = scene_config.origin.translation.y + half_h;
+
+    cursor.position.x = cursor.position.x.clamp(min_x, max_x);
+    cursor.position.y = cursor.position.y.clamp(min_y, max_y);
+    cursor.position.z = scene_config.origin.translation.z;
+
+    // Always emit current cursor position for calibration crosshairs and game aim
+    mouse_events.write(MousePositionEvent {
+        client_id: SERVER_GAMEPAD_CLIENT_ID,
+        position: Some(cursor.position),
+    });
 }
 
-#[cfg(not(target_os = "windows"))]
-fn poll_bevy_gamepad(
-    gamepads: Query<&bevy::input::gamepad::Gamepad>,
-    mut state: ResMut<GamepadState>,
-    mut prev: ResMut<PrevGamepadState>,
+/// Handles click/fire actions from the B button (Btn::East).
+fn gamepad_actor_click_handler(
+    state: Res<GamepadState>,
+    prev: Res<PrevGamepadState>,
+    cursor: Res<ServerGamepadCursor>,
+    game_sessions: Query<&GameSession>,
+    mut click_events: MessageWriter<HunterClickEvent>,
 ) {
-    use bevy::input::gamepad::{GamepadButton, GamepadAxis};
+    if state.just_pressed(&prev, Btn::East) {
+        info!("Gamepad B Button CLICK at position {:?}", cursor.position);
 
-    save_prev(&state, &mut prev);
-
-    if let Some(gamepad) = gamepads.iter().next() {
-        *state = GamepadState {
-            connected: true,
-            dpad_up: gamepad.pressed(GamepadButton::DPadUp),
-            dpad_down: gamepad.pressed(GamepadButton::DPadDown),
-            dpad_left: gamepad.pressed(GamepadButton::DPadLeft),
-            dpad_right: gamepad.pressed(GamepadButton::DPadRight),
-            south: gamepad.pressed(GamepadButton::South),
-            east: gamepad.pressed(GamepadButton::East),
-            west: gamepad.pressed(GamepadButton::West),
-            north: gamepad.pressed(GamepadButton::North),
-            left_bumper: gamepad.pressed(GamepadButton::LeftTrigger),
-            right_bumper: gamepad.pressed(GamepadButton::RightTrigger),
-            left_trigger: gamepad.pressed(GamepadButton::LeftTrigger2),
-            right_trigger: gamepad.pressed(GamepadButton::RightTrigger2),
-            start: gamepad.pressed(GamepadButton::Start),
-            select: gamepad.pressed(GamepadButton::Select),
-            left_thumb: gamepad.pressed(GamepadButton::LeftThumb),
-            right_thumb: gamepad.pressed(GamepadButton::RightThumb),
-            left_stick_x: gamepad.get(GamepadAxis::LeftStickX).unwrap_or(0.0),
-            left_stick_y: gamepad.get(GamepadAxis::LeftStickY).unwrap_or(0.0),
-            right_stick_x: gamepad.get(GamepadAxis::RightStickX).unwrap_or(0.0),
-            right_stick_y: gamepad.get(GamepadAxis::RightStickY).unwrap_or(0.0),
-        };
-    } else {
-        *state = GamepadState::default();
+        for session in game_sessions.iter() {
+            if session.game_id == HUNTER_GAME_ID && session.state == GameState::InGame {
+                click_events.write(HunterClickEvent {
+                    session_id: session.session_id,
+                    click_position: cursor.position,
+                });
+            }
+        }
     }
 }
 
@@ -343,7 +163,7 @@ fn log_gamepad_buttons(
     }
 }
 
-// --- Game control systems ---
+// --- Game & Calibration Control Handlers ---
 
 fn gamepad_calibration_controls(
     state: Res<GamepadState>,
@@ -353,7 +173,6 @@ fn gamepad_calibration_controls(
 ) {
     if !state.connected { return; }
 
-    // Compute max projectable dimension from projector FOV and distance
     let distance = projector_config.origin.translation.distance(scene_config.origin.translation);
     let half_angle_rad = projector_config.angle.to_radians() / 2.0;
     let max_dim = 2.0 * distance * half_angle_rad.tan();
@@ -457,5 +276,16 @@ fn gamepad_exit_game(
                 game_session_uuid: session.session_id,
             });
         }
+    }
+}
+
+/// Triggers a LogStatusReportEvent when the A button (Btn::South) is pressed.
+fn gamepad_trigger_status_report(
+    state: Res<GamepadState>,
+    prev: Res<PrevGamepadState>,
+    mut status_events: MessageWriter<LogStatusReportEvent>,
+) {
+    if state.just_pressed(&prev, Btn::South) {
+        status_events.write(LogStatusReportEvent);
     }
 }

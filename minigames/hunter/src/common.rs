@@ -23,7 +23,7 @@ impl Plugin for HunterGamePlugin {
     fn build(&self, app: &mut App) {
         app.init_state::<HunterGameState>();
         app.add_systems(Startup, fun_name);
-        app.add_systems(Update, (set_hunter_game_state_on, set_hunter_game_state_on_update, init_hunter_stats));
+        app.add_systems(Update, init_hunter_stats);
         app.add_systems(OnEnter(ServerState::Menu), set_hunter_game_state_off);
 
     }
@@ -37,29 +37,6 @@ fn fun_name(mut registry: ResMut<GameRegistry>) {
     };
     registry.register_game(game);
 
-}
-
-
-fn set_hunter_game_state_on(
-    mut state: ResMut<NextState<HunterGameState>>,
-    mut events: MessageReader<GameSessionCreated>,
-) {
-    for event in events.read() {
-        if event.game_session.game_id == GAME_ID {
-            state.set(HunterGameState::On);
-        }
-    }
-}
-
-fn set_hunter_game_state_on_update(
-    mut state: ResMut<NextState<HunterGameState>>,
-    mut events: MessageReader<GameSessionUpdate>,
-) {
-    for event in events.read() {
-        if event.game_session.game_id == GAME_ID {
-            state.set(HunterGameState::On);
-        }
-    }
 }
 
 fn set_hunter_game_state_off(mut state: ResMut<NextState<HunterGameState>>) {

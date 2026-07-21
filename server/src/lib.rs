@@ -4,6 +4,7 @@ use crate::plugins::projector::ProjectorPlugin;
 use crate::plugins::camera::CameraPlugin;
 use crate::plugins::game::GamePlugin;
 use crate::plugins::gamepad::GamepadInputPlugin;
+use crate::plugins::status::StatusPlugin;
 use crate::plugins::scene::ScenePlugin;
 use crate::plugins::calibration::CalibrationPlugin;
 use crate::plugins::path::PathNetworkPlugin;
@@ -62,6 +63,7 @@ pub fn add_common_server_plugins(app: &mut App) {
     .add_plugins(SnakeGameServerPlugin)
     .add_plugins(GamePlugin)
     .add_plugins(GamepadInputPlugin)
+    .add_plugins(StatusPlugin)
     // Log state transitions for states without existing handlers
     .add_systems(OnExit(ServerState::Menu), || info!("Exiting ServerState::Menu"))
     .add_systems(OnEnter(ServerState::InGame), || info!("Entering ServerState::InGame"))

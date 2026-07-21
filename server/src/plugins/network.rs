@@ -542,47 +542,48 @@ fn broadcast_scene_setup_on_change(
     projector_config: Res<ProjectorConfiguration>,
     scene_configuration: Res<SceneConfiguration>,
 ) {
-    let Some(endpoint) = server.get_endpoint_mut() else {
-        return;
-    };
+    let mut changed = false;
 
     // Check and broadcast CameraConfiguration changes
     if camera_config.is_changed() {
-        info!("CameraConfiguration changed, broadcasting update: {:?}", camera_config);
-        let message = NetworkMessage::CameraConfigUpdate(camera_config.clone());
-        let payload = message.to_bytes().expect("Serialize CameraConfig");
-        if let Err(e) = endpoint.broadcast_payload(payload) {
-            error!("Failed to broadcast CameraConfiguration update: {}", e);
+        if let Some(endpoint) = server.get_endpoint_mut() {
+            let message = NetworkMessage::CameraConfigUpdate(camera_config.clone());
+            if let Ok(payload) = message.to_bytes() {
+                let _ = endpoint.broadcast_payload(payload);
+            }
         }
+        changed = true;
     }
 
     // Check and broadcast ProjectorConfiguration changes
     if projector_config.is_changed() {
-        info!("ProjectorConfiguration changed, broadcasting update: {:?}", projector_config);
-        let message = NetworkMessage::ProjectorConfigUpdate(projector_config.clone());
-        let payload = message.to_bytes().expect("Serialize ProjectorConfig");
-        if let Err(e) = endpoint.broadcast_payload(payload) {
-            error!("Failed to broadcast ProjectorConfiguration update: {}", e);
+        if let Some(endpoint) = server.get_endpoint_mut() {
+            let message = NetworkMessage::ProjectorConfigUpdate(projector_config.clone());
+            if let Ok(payload) = message.to_bytes() {
+                let _ = endpoint.broadcast_payload(payload);
+            }
         }
+        changed = true;
     }
 
     // Check and broadcast SceneConfiguration changes
     if scene_configuration.is_changed() {
-        info!("SceneConfiguration changed, broadcasting update: {:?}", scene_configuration);
-        let message = NetworkMessage::SceneConfigUpdate(scene_configuration.clone());
-        let payload = message.to_bytes().expect("Serialize SceneConfig");
-        if let Err(e) = endpoint.broadcast_payload(payload) {
-            error!("Failed to broadcast SceneConfiguration update: {}", e);
+        if let Some(endpoint) = server.get_endpoint_mut() {
+            let message = NetworkMessage::SceneConfigUpdate(scene_configuration.clone());
+            if let Ok(payload) = message.to_bytes() {
+                let _ = endpoint.broadcast_payload(payload);
+            }
         }
+        changed = true;
     }
 
-    // Check and broadcast SceneSetup changes (if still desired, as it aggregates the above)
-    if scene_setup.is_changed() {
-        info!("SceneSetup changed, broadcasting update: {:?}", scene_setup);
-        let message = NetworkMessage::SceneSetupUpdate(scene_setup.clone());
-        let payload = message.to_bytes().expect("Serialize SceneSetupResponse");
-        if let Err(e) = endpoint.broadcast_payload(payload) {
-            error!("Failed to broadcast SceneSetup: {}", e);
+    // Check and broadcast SceneSetup changes
+    if scene_setup.is_changed() || changed {
+        if let Some(endpoint) = server.get_endpoint_mut() {
+            let message = NetworkMessage::SceneSetupUpdate(scene_setup.clone());
+            if let Ok(payload) = message.to_bytes() {
+                let _ = endpoint.broadcast_payload(payload);
+            }
         }
     }
 }

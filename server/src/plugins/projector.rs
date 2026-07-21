@@ -21,7 +21,7 @@ static SWITCHED_ON_ARC: OnceLock<Arc<Mutex<bool>>> = OnceLock::new();
 
 #[derive(Resource, Clone)]
 pub struct LaserPointBuffer {
-    points: Arc<Mutex<Vec<HeliosPoint>>>,
+    pub points: Arc<Mutex<Vec<HeliosPoint>>>,
 }
 
 impl Default for LaserPointBuffer {
@@ -36,10 +36,10 @@ impl Default for LaserPointBuffer {
 #[derive(Resource)]
 pub struct ProjectorDacController {
     pub controller: Option<HeliosDacController>,
-    initialized: bool,
-    switched_on: bool,
-    thread_running: bool,
-    shutdown_sender: Option<Sender<()>>,
+    pub initialized: bool,
+    pub switched_on: bool,
+    pub thread_running: bool,
+    pub shutdown_sender: Option<Sender<()>>,
 }
 
 impl Default for ProjectorDacController {
@@ -85,20 +85,20 @@ impl Plugin for ProjectorPlugin {
         mut config: ResMut<LaserOptimizeConfig>,
     ) {
         config.0 = OptimizeConfig {
-            start_dwell_points: 4,
-            end_dwell_points: 4,
-            blank_end_dwell: 0,
-            blank_start_dwell: 0,
-            blank_jump_steps: 0,
-            interp_distance_threshold: 20.0,
-            interp_spacing: 10.0,
-            corner_dwell_points: 4,
+            start_dwell_points: 3,
+            end_dwell_points: 3,
+            blank_end_dwell: 3,
+            blank_start_dwell: 4,
+            blank_jump_steps: 12,
+            interp_distance_threshold: 40.0,
+            interp_spacing: 80.0,
+            corner_dwell_points: 6,
             corner_angle_threshold: 135.0,
             simplify_min_distance: 0.0,
             simplify_collinear_angle: 0.0,
-            dynamic_dwell: true,
+            dynamic_dwell: false,
             min_dwell: 1,
-            max_dwell: 32,
+            max_dwell: 8,
             dwell_distance_threshold: 18.0,
         };
     }
@@ -230,7 +230,7 @@ fn start_dac_output_thread(
     thread::spawn(move || {
         let mut controller = controller;
         info!("DAC output thread started");
-        let pps = 15000;
+        let pps = 20000;
         let flags = 0;
         let mut frame_count = 0;
         let mut consecutive_errors = 0;

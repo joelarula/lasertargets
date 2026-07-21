@@ -3,7 +3,7 @@ use common::{
     game::GameSession,
     path::{LaserTextOptions, UniversalPath},
     scene::{SceneEntity, SceneSetup},
-    state::ServerState,
+    state::{GameState, ServerState},
     target::HunterTarget,
 };
 use crate::common::{GAME_ID, generate_game_report};
@@ -35,12 +35,34 @@ impl Plugin for HunterGameServerPlugin {
         app.add_message::<SpawnHunterTargetEvent>();
         app.add_message::<HunterClickEvent>();
         app.add_message::<BroadcastStatsUpdateEvent>();
-        app.add_systems(Update, (spawn_hunter_targets, handle_hunter_clicks, check_balloon_out_of_bounds));
-        app.add_systems(FixedUpdate, update_balloon_positions);
-        app.add_systems(OnExit(ServerState::InGame), (save_hunter_report, reset_hunter_session).chain());
+        app.add_systems(
+            Update,
+            (
+                spawn_hunter_targets,
+                handle_hunter_clicks,
+                check_balloon_out_of_bounds,
+            )
+                .run_if(in_state(ServerState::InGame))
+                .run_if(hunter_session_is_running),
+        );
+        app.add_systems(
+            FixedUpdate,
+            update_balloon_positions
+                .run_if(in_state(ServerState::InGame))
+                .run_if(hunter_session_is_running),
+        );
+        app.add_systems(OnExit(ServerState::InGame), (
+            save_hunter_report, 
+            reset_hunter_session).chain());
         app.add_systems(Update, reset_hunter_on_new_session);
         app.add_systems(Update, spawn_hunter_title_on_new_session);
     }
+}
+
+fn hunter_session_is_running(game_sessions: Query<&GameSession>) -> bool {
+    game_sessions
+        .iter()
+        .any(|session| session.game_id == GAME_ID && session.state == GameState::InGame)
 }
 
 fn spawn_hunter_title_on_new_session(

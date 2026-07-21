@@ -7,3 +7,4 @@ pub mod gamepad;
 pub mod scene;
 pub mod path;
 pub mod calibration;
+pub mod status;

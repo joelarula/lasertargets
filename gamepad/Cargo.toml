@@ -1,0 +1,11 @@
+[package]
+name = "gamepad"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+bevy = { workspace = true }
+log = { workspace = true }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+rusty-xinput = "1.3"

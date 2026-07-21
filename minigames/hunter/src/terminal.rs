@@ -1,6 +1,6 @@
 use bevy::{app::{App, Plugin, Update}, ecs::{component::Component, entity::Entity, query::{Changed, With}, system::{Commands, Query, Res, ResMut}}, prelude::default, state::{condition::in_state, state::{NextState, OnEnter, OnExit, State}}, ui::Interaction, input::ButtonInput, window::PrimaryWindow};
 use bevy_quinnet::client::QuinnetClient;
-use common::{network::NetworkMessage, path::UniversalPath, scene::{SceneData, SceneSetup}, state::{GameState, ServerState, TerminalState}, toolbar::{Docking, ItemState, ToolbarButton, ToolbarItem}};
+use common::{game::{GameSessionCreated, GameSessionUpdate}, network::NetworkMessage, path::UniversalPath, scene::{SceneData, SceneSetup}, state::{GameState, ServerState, TerminalState}, toolbar::{Docking, ItemState, ToolbarButton, ToolbarItem}};
 use crate::common::{GAME_ID, HunterGameState, generate_game_report};
 use crate::model::{HunterGameStats};
 use bevy::prelude::*;
@@ -67,11 +67,20 @@ impl Plugin for HunterTerminalPlugin {
         app.init_resource::<DragState>();
         app.add_systems(OnEnter(ServerState::Menu), spawn_menu_toolbar);
         app.add_systems(OnExit(ServerState::Menu), despawn_menu_toolbar);
-        app.add_systems(OnEnter(HunterGameState::On), (spawn_basictarget_toolbar_item, spawn_balloon_toolbar_item, spawn_hunter_stats_ui));
+        app.add_systems(OnEnter(HunterGameState::On), (
+            spawn_basictarget_toolbar_item, 
+            spawn_balloon_toolbar_item, 
+            spawn_hunter_stats_ui));
         app.add_systems(OnExit(HunterGameState::On), on_hunter_game_finish);
-        app.add_systems(OnExit(HunterGameState::On), (cleanup_hunter_stats_ui, despawn_balloon_toolbar_item));
-        app.add_systems(OnEnter(ServerState::Menu), (despawn_basictarget_toolbar_item, despawn_balloon_toolbar_item)); 
+        app.add_systems(OnExit(HunterGameState::On), (
+            cleanup_hunter_stats_ui, 
+            despawn_balloon_toolbar_item));
+        app.add_systems(OnEnter(ServerState::Menu), (
+            despawn_basictarget_toolbar_item, 
+            despawn_balloon_toolbar_item)); 
         app.add_systems(Update, handle_button_click);
+        app.add_systems(Update, set_hunter_game_state_on);
+        app.add_systems(Update, set_hunter_game_state_on_update);
         app.add_systems(Update, handle_target_drag.run_if(in_state(HunterGameState::On)));
         app.add_systems(Update, handle_balloon_button_click.run_if(in_state(HunterGameState::On)));
         app.add_systems(Update, draw_drag_gizmo.run_if(in_state(HunterGameState::On)));
@@ -79,6 +88,30 @@ impl Plugin for HunterTerminalPlugin {
         app.add_systems(OnEnter(TerminalState::Connecting), clear_hunter_on_disconnect);
 
    
+    }
+}
+
+fn set_hunter_game_state_on(
+    mut state: ResMut<NextState<HunterGameState>>,
+    current_state: Res<State<HunterGameState>>,
+    mut events: MessageReader<GameSessionCreated>,
+) {
+    for event in events.read() {
+        if event.game_session.game_id == GAME_ID && current_state.get() != &HunterGameState::On {
+            state.set(HunterGameState::On);
+        }
+    }
+}
+
+fn set_hunter_game_state_on_update(
+    mut state: ResMut<NextState<HunterGameState>>,
+    current_state: Res<State<HunterGameState>>,
+    mut events: MessageReader<GameSessionUpdate>,
+) {
+    for event in events.read() {
+        if event.game_session.game_id == GAME_ID && current_state.get() != &HunterGameState::On {
+            state.set(HunterGameState::On);
+        }
     }
 }
 
