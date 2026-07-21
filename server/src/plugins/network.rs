@@ -8,7 +8,7 @@ use bevy_quinnet::server::{
 use bevy_quinnet::shared::ClientId;
 use common::actor::{Actor, ActorMetaData};
 use common::config::{CameraConfiguration, ProjectorConfiguration, SceneConfiguration};
-use common::game::{ExitGameEvent, FinishGameEvent, GameSession, GameSessionCreated, GameSessionUpdate, InitGameSessionEvent, PauseGameEvent, ResumeGameEvent, StartGameEvent};
+use common::game::{ExitGameEvent, FinishGameEvent, GameSession, GameSessionCreated, InitGameSessionEvent, PauseGameEvent, ResumeGameEvent, StartGameEvent};
 use common::network::{NetworkMessage, SERVER_HOST, SERVER_PORT};
 use common::scene::SceneSetup;
 use common::state::{CalibrationState, GameState, ServerInstanceId, ServerState};

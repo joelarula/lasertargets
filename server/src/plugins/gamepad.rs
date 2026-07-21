@@ -36,8 +36,7 @@ impl Plugin for GamepadInputPlugin {
         ))
         .add_systems(Update, gamepad_calibration_controls.run_if(in_state(CalibrationState::On)))
         .add_systems(Update, gamepad_laser_toggle)
-        .add_systems(Update, gamepad_start_game.run_if(in_state(ServerState::Menu)))
-        .add_systems(Update, gamepad_exit_game.run_if(in_state(ServerState::InGame)));
+        .add_systems(Update, gamepad_menu_game_switcher);
     }
 }
 
@@ -249,42 +248,60 @@ fn gamepad_toggle_calibration(
     }
 }
 
-fn gamepad_start_game(
-    state: Res<GamepadState>,
-    prev: Res<PrevGamepadState>,
-    mut init_events: MessageWriter<InitGameSessionEvent>,
-) {
-    if state.just_pressed(&prev, Btn::Start) {
-        let uuid = bevy::asset::uuid::Uuid::new_v4();
-        info!("Gamepad: Starting Hunter game (session {})", uuid);
-        init_events.write(InitGameSessionEvent {
-            game_id: HUNTER_GAME_ID,
-            game_session_uuid: uuid,
-            initial_state: GameState::InGame,
-        });
-    }
-    if state.just_pressed(&prev, Btn::Select) {
-        let uuid = bevy::asset::uuid::Uuid::new_v4();
-        info!("Gamepad: Starting Snake game (session {})", uuid);
-        init_events.write(InitGameSessionEvent {
-            game_id: SNAKE_GAME_ID,
-            game_session_uuid: uuid,
-            initial_state: GameState::InGame,
-        });
-    }
-}
-
-fn gamepad_exit_game(
+/// Handles cycling between Calibration/Menu -> Game A (Hunter) -> Game B (Snake) -> Calibration/Menu via Start button, or Back to Menu via Select button.
+fn gamepad_menu_game_switcher(
     state: Res<GamepadState>,
     prev: Res<PrevGamepadState>,
     game_sessions: Query<&GameSession>,
+    mut init_events: MessageWriter<InitGameSessionEvent>,
     mut exit_events: MessageWriter<ExitGameEvent>,
 ) {
-    if state.just_pressed(&prev, Btn::Select) {
-        if let Some(session) = game_sessions.iter().next() {
-            info!("Gamepad: Exiting game session {}", session.session_id);
+    if !state.connected { return; }
+
+    // Start button: Cycle Calibration/Menu -> Hunter (Game A) -> Snake (Game B) -> Calibration/Menu
+    if state.just_pressed(&prev, Btn::Start) {
+        let active_session = game_sessions.iter().find(|s| s.state == GameState::InGame);
+        if let Some(current_session) = active_session {
+            let current_game_id = current_session.game_id;
+            let current_uuid = current_session.session_id;
+
+            // Exit current active game
+            info!("★ Gamepad Menu Switcher: Exiting current game ID {} (session {})", current_game_id, current_uuid);
             exit_events.write(ExitGameEvent {
-                game_session_uuid: session.session_id,
+                game_session_uuid: current_uuid,
+            });
+
+            if current_game_id == HUNTER_GAME_ID {
+                // Hunter (Game A) -> Snake (Game B)
+                let new_uuid = bevy::asset::uuid::Uuid::new_v4();
+                info!("★ Gamepad Menu Switcher: Launching Game B (Snake) [session {}]", new_uuid);
+                init_events.write(InitGameSessionEvent {
+                    game_id: SNAKE_GAME_ID,
+                    game_session_uuid: new_uuid,
+                    initial_state: GameState::InGame,
+                });
+            } else {
+                // Snake (Game B) -> Calibration / Main Menu
+                info!("★ Gamepad Menu Switcher: Switched back to Calibration / Main Menu");
+            }
+        } else {
+            // No active InGame session -> Launch Game A (Hunter)
+            let new_uuid = bevy::asset::uuid::Uuid::new_v4();
+            info!("★ Gamepad Menu Switcher: Launching Game A (Hunter) [session {}]", new_uuid);
+            init_events.write(InitGameSessionEvent {
+                game_id: HUNTER_GAME_ID,
+                game_session_uuid: new_uuid,
+                initial_state: GameState::InGame,
+            });
+        }
+    }
+
+    // Select button: Direct exit current game back to Calibration / Main Menu
+    if state.just_pressed(&prev, Btn::Select) {
+        if let Some(current_session) = game_sessions.iter().find(|s| s.state == GameState::InGame) {
+            info!("★ Gamepad Select Button: Exiting game ID {} back to Menu", current_session.game_id);
+            exit_events.write(ExitGameEvent {
+                game_session_uuid: current_session.session_id,
             });
         }
     }

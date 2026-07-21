@@ -26,7 +26,9 @@ pub struct HunterTargetEntity {
 }
 
 #[derive(Component)]
-struct HunterTitlePath;
+struct HunterTitleAnnouncement {
+    timer: Timer,
+}
 
 pub struct HunterGameServerPlugin;
 
@@ -54,8 +56,11 @@ impl Plugin for HunterGameServerPlugin {
         app.add_systems(OnExit(ServerState::InGame), (
             save_hunter_report, 
             reset_hunter_session).chain());
-        app.add_systems(Update, reset_hunter_on_new_session);
-        app.add_systems(Update, spawn_hunter_title_on_new_session);
+        app.add_systems(Update, (
+            reset_hunter_on_new_session,
+            spawn_hunter_title_on_session_start,
+            animate_hunter_title_announcement,
+        ));
     }
 }
 
@@ -65,87 +70,20 @@ fn hunter_session_is_running(game_sessions: Query<&GameSession>) -> bool {
         .any(|session| session.game_id == GAME_ID && session.state == GameState::InGame)
 }
 
-fn spawn_hunter_title_on_new_session(
-    mut commands: Commands,
-    mut created_events: MessageReader<common::game::GameSessionCreated>,
-    scene_query: Query<Entity, With<SceneEntity>>,
-    scene_setup: Res<SceneSetup>,
-    existing_titles: Query<Entity, With<HunterTitlePath>>,
-) {
-    for event in created_events.read() {
-        if event.game_session.game_id != GAME_ID {
-            continue;
-        }
-
-        for title in existing_titles.iter() {
-            commands.entity(title).despawn();
-        }
-
-        let half_w = scene_setup.scene.scene_dimension.x as f32 / 2.0;
-        let half_h = scene_setup.scene.scene_dimension.y as f32 / 2.0;
-        let text_height = (scene_setup.scene.scene_dimension.y as f32 * 0.14).clamp(0.18, 0.45);
-        let text_origin = Vec2::new(-half_w + text_height * 0.6, half_h - text_height * 1.5);
-        let Some(title_path) = build_title_path("HUNTER", text_origin, text_height) else {
-            warn!("No usable TTF font found for HUNTER title; skipping projector title");
-            continue;
-        };
-
-        let title_entity = commands
-            .spawn((
-                HunterTitlePath,
-                Transform::default(),
-                GlobalTransform::default(),
-                Visibility::default(),
-                title_path,
-                common::path::PathRenderable::default(),
-            ))
-            .id();
-
-        if let Ok(scene_entity) = scene_query.single() {
-            commands.entity(scene_entity).add_child(title_entity);
-        }
-    }
-}
-
-fn build_title_path(text: &str, origin: Vec2, height: f32) -> Option<UniversalPath> {
-    let options = LaserTextOptions {
-        origin,
-        height,
-        color: Color::WHITE,
-        center_on_origin: false,
-        ..Default::default()
-    };
-
-    let mut font_paths = Vec::new();
-    if let Ok(env_path) = std::env::var("LASERTARGETS_FONT_TTF") {
-        font_paths.push(env_path);
-    }
-    font_paths.push("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf".to_string());
-    font_paths.push("/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf".to_string());
-    font_paths.push("C:/Windows/Fonts/arial.ttf".to_string());
-
-    for path in font_paths {
-        if let Ok(data) = std::fs::read(&path) {
-            if let Ok(text_path) = UniversalPath::from_ttf_text(&data, text, &options) {
-                info!("Using font-based projector title from {}", path);
-                return Some(text_path);
-            }
-        }
-    }
-
-    None
-}
-
 fn reset_hunter_session(
     mut commands: Commands,
     targets: Query<Entity, With<HunterTargetEntity>>,
     indicators: Query<Entity, With<CollisionIndicator>>,
+    titles: Query<Entity, With<HunterTitleAnnouncement>>,
     stats: Option<ResMut<HunterGameStats>>,
 ) {
     for entity in targets.iter() {
         commands.entity(entity).despawn();
     }
     for entity in indicators.iter() {
+        commands.entity(entity).despawn();
+    }
+    for entity in titles.iter() {
         commands.entity(entity).despawn();
     }
 
@@ -157,20 +95,114 @@ fn reset_hunter_session(
 fn reset_hunter_on_new_session(
     mut commands: Commands,
     mut created_events: MessageReader<common::game::GameSessionCreated>,
+    mut exit_events: MessageReader<common::game::ExitGameEvent>,
     targets: Query<Entity, With<HunterTargetEntity>>,
+    indicators: Query<Entity, With<CollisionIndicator>>,
+    titles: Query<Entity, With<HunterTitleAnnouncement>>,
     stats: Option<ResMut<HunterGameStats>>,
 ) {
-    for event in created_events.read() {
-        if event.game_session.game_id != GAME_ID {
-            continue;
-        }
+    let mut should_cleanup = false;
+    for _ in created_events.read() {
+        should_cleanup = true;
+    }
+    for _ in exit_events.read() {
+        should_cleanup = true;
+    }
 
+    if should_cleanup {
         for entity in targets.iter() {
+            commands.entity(entity).despawn();
+        }
+        for entity in indicators.iter() {
+            commands.entity(entity).despawn();
+        }
+        for entity in titles.iter() {
             commands.entity(entity).despawn();
         }
 
         if stats.is_some() {
             commands.remove_resource::<HunterGameStats>();
+        }
+    }
+}
+
+fn spawn_hunter_title_on_session_start(
+    mut commands: Commands,
+    mut created_events: MessageReader<common::game::GameSessionCreated>,
+    scene_query: Query<Entity, With<SceneEntity>>,
+    scene_setup: Res<SceneSetup>,
+    existing_titles: Query<Entity, With<HunterTitleAnnouncement>>,
+) {
+    for event in created_events.read() {
+        if event.game_session.game_id != GAME_ID || event.game_session.state != GameState::InGame {
+            continue;
+        }
+
+        for entity in existing_titles.iter() {
+            commands.entity(entity).despawn();
+        }
+
+        let scene_dim = scene_setup.scene.scene_dimension;
+        let text_height = (scene_dim.y as f32 * 0.70).clamp(1.5, 4.5);
+
+        let options = LaserTextOptions {
+            origin: Vec2::ZERO,
+            height: text_height,
+            color: Color::srgb(1.0, 0.95, 0.1), // Bright yellow/gold title path
+            center_on_origin: true,
+            ..Default::default()
+        };
+
+        let font_paths = [
+            "C:/Windows/Fonts/arial.ttf",
+            "C:/Windows/Fonts/seguiemj.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+        ];
+
+        let mut maybe_title_path = None;
+        for path in &font_paths {
+            if let Ok(data) = std::fs::read(path) {
+                if let Ok(text_path) = UniversalPath::from_ttf_text(&data, "HUNTER", &options) {
+                    info!("✓ [Hunter] Rendered full-scene center vector title using font {}", path);
+                    maybe_title_path = Some(text_path);
+                    break;
+                }
+            }
+        }
+
+        let Some(title_path) = maybe_title_path else {
+            warn!("No usable TTF font found for HUNTER title");
+            continue;
+        };
+
+        let child_entity = commands.spawn((
+            Transform::default(),
+            GlobalTransform::default(),
+            Visibility::default(),
+            HunterTitleAnnouncement {
+                timer: Timer::from_seconds(3.0, TimerMode::Once),
+            },
+            title_path,
+            common::path::PathRenderable::default(),
+        )).id();
+
+        if let Ok(scene_entity) = scene_query.single() {
+            commands.entity(scene_entity).add_child(child_entity);
+        }
+    }
+}
+
+fn animate_hunter_title_announcement(
+    mut commands: Commands,
+    time: Res<Time>,
+    mut announcement_query: Query<(Entity, &mut HunterTitleAnnouncement)>,
+) {
+    for (entity, mut announcement) in announcement_query.iter_mut() {
+        announcement.timer.tick(time.delta());
+        if announcement.timer.just_finished() {
+            info!("★ [Hunter] Vector title announcement finished -> despawned");
+            commands.entity(entity).despawn();
         }
     }
 }

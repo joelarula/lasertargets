@@ -1,14 +1,16 @@
 use bevy::prelude::*;
 use common::path::{LaserTextOptions, PathRenderable, UniversalPath};
 use common::scene::{SceneEntity, SceneSetup};
-use common::state::ServerState;
+use common::state::{GameState, ServerState};
 
 use crate::model::*;
 
-pub struct SnakeGameServerPlugin;
-
 #[derive(Component)]
-struct SnakeTitlePath;
+struct SnakeTitleAnnouncement {
+    timer: Timer,
+}
+
+pub struct SnakeGameServerPlugin;
 
 impl Plugin for SnakeGameServerPlugin {
     fn build(&self, app: &mut App) {
@@ -21,10 +23,12 @@ impl Plugin for SnakeGameServerPlugin {
                 init_snake_game,
                 handle_direction_input,
                 handle_snake_game_over,
+                animate_snake_title_announcement,
             ),
         );
         app.add_systems(FixedUpdate, snake_move_tick);
         app.add_systems(OnExit(ServerState::InGame), (save_snake_report, cleanup_snake_game).chain());
+        app.add_systems(OnExit(GameState::InGame), cleanup_snake_game);
     }
 }
 
@@ -94,19 +98,37 @@ fn init_snake_game(
     head_query: Query<Entity, With<SnakeHead>>,
     seg_query: Query<Entity, With<SnakeSegment>>,
     gem_query: Query<Entity, With<DiamondFood>>,
-    title_query: Query<Entity, With<SnakeTitlePath>>,
+    title_query: Query<Entity, With<SnakeTitleAnnouncement>>,
     mut stats_events: MessageWriter<BroadcastSnakeStatsEvent>,
 ) {
     let mut should_init: Option<bevy::asset::uuid::Uuid> = None;
+    let mut other_game_started = false;
 
     for event in created_events.read() {
-        if event.game_session.game_id == GAME_ID {
+        if event.game_session.game_id == GAME_ID && event.game_session.state == GameState::InGame {
             should_init = Some(event.game_session.session_id);
+        } else {
+            other_game_started = true;
         }
     }
     for event in update_events.read() {
-        if event.game_session.game_id == GAME_ID && existing_state.is_none() {
+        if event.game_session.game_id == GAME_ID && event.game_session.state == GameState::InGame && existing_state.is_none() {
             should_init = Some(event.game_session.session_id);
+        }
+    }
+
+    if other_game_started {
+        // Clean previous Snake entities when another game (e.g. Hunter) starts
+        for e in head_query
+            .iter()
+            .chain(seg_query.iter())
+            .chain(gem_query.iter())
+            .chain(title_query.iter())
+        {
+            commands.entity(e).despawn();
+        }
+        if existing_state.is_some() {
+            commands.remove_resource::<SnakeState>();
         }
     }
 
@@ -150,6 +172,7 @@ fn init_snake_game(
         grid_w,
         grid_h,
         session_id,
+        is_started: false,
         game_over: false,
     };
 
@@ -172,8 +195,8 @@ fn init_snake_game(
     // Spawn gem
     spawn_gem_entity(&mut commands, &state, scene_entity);
 
-    // Spawn title
-    spawn_title_entity(&mut commands, &scene_setup, scene_entity);
+    // Spawn full-scene center vector title announcement
+    spawn_snake_title_entity(&mut commands, &scene_setup, scene_entity);
 
     // Insert resources
     commands.insert_resource(state.clone());
@@ -189,23 +212,50 @@ fn init_snake_game(
     info!("Snake game initialized: {}x{} grid, session {}", grid_w, grid_h, session_id);
 }
 
-fn spawn_title_entity(commands: &mut Commands, scene_setup: &SceneSetup, scene_entity: Option<Entity>) {
-    let half_w = scene_setup.scene.scene_dimension.x as f32 / 2.0;
-    let half_h = scene_setup.scene.scene_dimension.y as f32 / 2.0;
-    let text_height = (scene_setup.scene.scene_dimension.y as f32 * 0.14).clamp(0.18, 0.45);
-    let text_origin = Vec2::new(-half_w + text_height * 0.6, half_h - text_height * 1.5);
-    let Some(path) = build_title_path("SNAKE", text_origin, text_height) else {
-        warn!("No usable TTF font found for SNAKE title; skipping projector title");
+fn spawn_snake_title_entity(commands: &mut Commands, scene_setup: &SceneSetup, scene_entity: Option<Entity>) {
+    let scene_dim = scene_setup.scene.scene_dimension;
+    let text_height = (scene_dim.y as f32 * 0.70).clamp(1.5, 4.5);
+
+    let options = LaserTextOptions {
+        origin: Vec2::ZERO,
+        height: text_height,
+        color: Color::srgb(0.2, 1.0, 0.4), // Bright green laser title path
+        center_on_origin: true,
+        ..Default::default()
+    };
+
+    let font_paths = [
+        "C:/Windows/Fonts/arial.ttf",
+        "C:/Windows/Fonts/seguiemj.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+    ];
+
+    let mut maybe_title_path = None;
+    for path in &font_paths {
+        if let Ok(data) = std::fs::read(path) {
+            if let Ok(text_path) = UniversalPath::from_ttf_text(&data, "SNAKE", &options) {
+                info!("✓ [Snake] Rendered full-scene center vector title using font {}", path);
+                maybe_title_path = Some(text_path);
+                break;
+            }
+        }
+    }
+
+    let Some(title_path) = maybe_title_path else {
+        warn!("No usable TTF font found for SNAKE title");
         return;
     };
 
     let id = commands
         .spawn((
-            SnakeTitlePath,
+            SnakeTitleAnnouncement {
+                timer: Timer::from_seconds(3.0, TimerMode::Once),
+            },
             Transform::default(),
             GlobalTransform::default(),
             Visibility::default(),
-            path,
+            title_path,
             PathRenderable::default(),
         ))
         .id();
@@ -215,33 +265,18 @@ fn spawn_title_entity(commands: &mut Commands, scene_setup: &SceneSetup, scene_e
     }
 }
 
-fn build_title_path(text: &str, origin: Vec2, height: f32) -> Option<UniversalPath> {
-    let options = LaserTextOptions {
-        origin,
-        height,
-        color: Color::WHITE,
-        center_on_origin: false,
-        ..Default::default()
-    };
-
-    let mut font_paths = Vec::new();
-    if let Ok(env_path) = std::env::var("LASERTARGETS_FONT_TTF") {
-        font_paths.push(env_path);
-    }
-    font_paths.push("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf".to_string());
-    font_paths.push("/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf".to_string());
-    font_paths.push("C:/Windows/Fonts/arial.ttf".to_string());
-
-    for path in font_paths {
-        if let Ok(data) = std::fs::read(&path) {
-            if let Ok(text_path) = UniversalPath::from_ttf_text(&data, text, &options) {
-                info!("Using font-based projector title from {}", path);
-                return Some(text_path);
-            }
+fn animate_snake_title_announcement(
+    mut commands: Commands,
+    time: Res<Time>,
+    mut announcement_query: Query<(Entity, &mut SnakeTitleAnnouncement)>,
+) {
+    for (entity, mut announcement) in announcement_query.iter_mut() {
+        announcement.timer.tick(time.delta());
+        if announcement.timer.just_finished() {
+            info!("★ [Snake] Vector title announcement finished -> despawned");
+            commands.entity(entity).despawn();
         }
     }
-
-    None
 }
 
 fn spawn_head_entity(commands: &mut Commands, state: &SnakeState, scene_entity: Option<Entity>) {
@@ -324,6 +359,7 @@ fn handle_direction_input(
         // Don't allow reversing into yourself
         if !new_dir.is_opposite(state.direction) {
             state.queued_direction = Some(new_dir);
+            state.is_started = true;
         }
     }
 }
@@ -348,7 +384,7 @@ fn snake_move_tick(
     let Some(ref mut state) = snake_state else {
         return;
     };
-    if state.game_over {
+    if !state.is_started || state.game_over {
         return;
     }
 
@@ -488,10 +524,11 @@ fn cleanup_snake_game(
     head_query: Query<Entity, With<SnakeHead>>,
     seg_query: Query<Entity, With<SnakeSegment>>,
     gem_query: Query<Entity, With<DiamondFood>>,
+    title_query: Query<Entity, With<SnakeTitleAnnouncement>>,
     state: Option<Res<SnakeState>>,
     timer: Option<Res<SnakeMoveTimer>>,
 ) {
-    for e in head_query.iter().chain(seg_query.iter()).chain(gem_query.iter()) {
+    for e in head_query.iter().chain(seg_query.iter()).chain(gem_query.iter()).chain(title_query.iter()) {
         commands.entity(e).despawn();
     }
     if state.is_some() {

@@ -6,7 +6,6 @@
 use libloading;
 use std::os::raw::{c_int, c_uchar, c_uint};
 use std::sync::Arc;
-use common::path::UniversalPath;
 use bevy::prelude::*;
 
 // Point structures matching the working darkelf implementation

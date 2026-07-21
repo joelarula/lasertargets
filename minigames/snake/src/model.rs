@@ -107,6 +107,8 @@ pub struct SnakeState {
     pub grid_h: i32,
     /// Session id
     pub session_id: Uuid,
+    /// Whether the player has started moving
+    pub is_started: bool,
     /// Whether the game is over
     pub game_over: bool,
 }

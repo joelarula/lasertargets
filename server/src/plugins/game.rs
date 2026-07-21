@@ -1,5 +1,8 @@
-use bevy::{ prelude::*};
-use common::{game::{ExitGameEvent, FinishGameEvent, GameRegistry, GameSession, GameSessionCreated, GameSessionUpdate, InitGameSessionEvent, PauseGameEvent, ResumeGameEvent, StartGameEvent}, state::{GameState, ServerState}};
+use bevy::prelude::*;
+use common::{
+    game::{ExitGameEvent, FinishGameEvent, GameRegistry, GameSession, GameSessionCreated, GameSessionUpdate, InitGameSessionEvent, PauseGameEvent, ResumeGameEvent, StartGameEvent},
+    state::{GameState, ServerState},
+};
 
 pub struct GamePlugin;
 
@@ -21,6 +24,7 @@ fn handle_exit_game(
     game_sessions: Query<(Entity, &GameSession)>,
     mut exit_game_events: MessageReader<ExitGameEvent>,
     mut broadcast_events: MessageWriter<GameSessionUpdate>,
+    init_game_events: MessageReader<InitGameSessionEvent>,
 ) {
     for event in exit_game_events.read() {
         info!("[handle_exit_game] Received ExitGameEvent for session: {}", event.game_session_uuid);
@@ -33,9 +37,14 @@ fn handle_exit_game(
         } else {
             warn!("[handle_exit_game] No GameSession entity found for session: {}", event.game_session_uuid);
         }
-        info!("[handle_exit_game] Setting GameState to Finished and ServerState to Menu");
-        next_game_state.set(GameState::Finished);
-        next_server_state.set(ServerState::Menu);
+
+        if init_game_events.is_empty() {
+            info!("[handle_exit_game] Setting GameState to Finished and ServerState to Menu");
+            next_game_state.set(GameState::Finished);
+            next_server_state.set(ServerState::Menu);
+        } else {
+            info!("[handle_exit_game] New game being initialized in same frame; preserving InGame state");
+        }
     }
 }
 
@@ -73,7 +82,7 @@ fn handle_init_game(
 
         next_server_state.set(ServerState::InGame);
         next_state.set(GameState::InGame);
-  
+
         game_session_created.write(GameSessionCreated {
             game_session: session,
         });

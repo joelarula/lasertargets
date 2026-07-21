@@ -1,0 +1,50 @@
+{
+  "segments": [
+    [
+      50,
+      30
+    ],
+    [
+      49,
+      30
+    ],
+    [
+      48,
+      30
+    ]
+  ],
+  "segment_colors": [
+    [
+      1.0,
+      1.0,
+      1.0
+    ],
+    [
+      0.6,
+      0.6,
+      0.6
+    ],
+    [
+      0.6,
+      0.6,
+      0.6
+    ]
+  ],
+  "direction": "Right",
+  "queued_direction": null,
+  "gem_position": [
+    53,
+    5
+  ],
+  "gem_color": [
+    0.69029826,
+    0.14500004,
+    0.955
+  ],
+  "gems_eaten": 0,
+  "grid_w": 100,
+  "grid_h": 60,
+  "session_id": "ad2f5544-32d2-4644-9eaa-d25077cdd0d1",
+  "is_started": false,
+  "game_over": false
+}
