@@ -137,7 +137,14 @@ fn try_initialize_projector_dac(
 
                 match controller.open_devices() {
                     Ok(num_devices) if num_devices > 0 => {
-                        info!("✓ Helios DAC initialized: {} devices found and opened", num_devices);
+                        info!("✓ Helios DAC: {} device(s) opened", num_devices);
+                        // Log device names for diagnostics
+                        for dev_idx in 0..num_devices {
+                            match controller.get_name(dev_idx as u32) {
+                                Ok(name) => info!("  Device {}: '{}'", dev_idx, name),
+                                Err(e)   => warn!("  Device {}: name unavailable ({})", dev_idx, e),
+                            }
+                        }
                         devices_opened = true;
                         break;
                     }
@@ -167,14 +174,21 @@ fn try_initialize_projector_dac(
                 return false;
             }
 
+            // Wait for DAC firmware to finish booting before polling GetStatus.
+            // The Helios DAC firmware runs an internal self-test after OpenDevices()
+            // and calling GetStatus() too early causes a segfault in libusb (si_addr=0x1).
+            info!("Waiting for DAC firmware to initialize...");
+            std::thread::sleep(std::time::Duration::from_millis(500));
+
             // Verify device is actually responding with a status check
             match controller.get_status(0) {
-                Ok(_) => {
-                    info!("✓ DAC status check passed - device is responding");
+                Ok(ready) => {
+                    info!("✓ DAC status check passed (ready={})", ready);
                 }
                 Err(e) => {
-                    error!("✗ DAC opened but status check failed: {}. Device may not be fully initialized.", e);
-                    error!("   Closing devices and retrying on next reconnect tick.");
+                    error!("✗ DAC opened but GetStatus failed: {}", e);
+                    error!("   This usually means the DAC firmware is still booting or");
+                    error!("   the USB transfer failed. Closing and will retry in 3s.");
                     let _ = controller.stop(0);
                     let _ = controller.close_devices();
                     std::thread::sleep(std::time::Duration::from_millis(250));
@@ -310,7 +324,7 @@ fn start_dac_output_thread(
                 }
                 Ok(false) => {
                     consecutive_errors = 0;
-                    thread::sleep(std::time::Duration::from_micros(100));
+                    thread::sleep(std::time::Duration::from_millis(2));
                 }
                 Err(e) => {
                     consecutive_errors += 1;

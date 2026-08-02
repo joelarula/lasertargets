@@ -1,6 +1,9 @@
 param(
     [string]$RemoteHost = "",
 
+    [ValidateSet("rpi-dev", "release")]
+    [string]$Profile = "rpi-dev",
+
     [string]$BaseImageTag = "lasertargets-cross-aarch64",
 
     [string]$ArtifactImageTag = "lasertargets-server-rpi4-artifact:remote",
@@ -43,7 +46,8 @@ try {
 
     $buildArgs = @(
         "--build-arg", "BASE_IMAGE=$BaseImageTag",
-        "--build-arg", "TARGET_TRIPLE=aarch64-unknown-linux-gnu"
+        "--build-arg", "TARGET_TRIPLE=aarch64-unknown-linux-gnu",
+        "--build-arg", "CARGO_PROFILE=$Profile"
     )
 
     Invoke-RemoteDockerBuild `

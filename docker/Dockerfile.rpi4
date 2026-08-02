@@ -4,17 +4,18 @@ ARG BASE_IMAGE=lasertargets-cross-aarch64
 FROM ${BASE_IMAGE} AS build
 
 ARG TARGET_TRIPLE=aarch64-unknown-linux-gnu
+ARG CARGO_PROFILE=rpi-dev
 
 WORKDIR /project
 COPY . .
 
 RUN --mount=type=cache,target=/root/.cargo/registry \
     --mount=type=cache,target=/project/target \
-    cargo build -p server --target ${TARGET_TRIPLE} --release && \
+    cargo build -p server --target ${TARGET_TRIPLE} --profile ${CARGO_PROFILE} && \
     mkdir -p /dist && \
-    cp /project/target/${TARGET_TRIPLE}/release/server /dist/server && \
-    if [ -f /project/target/${TARGET_TRIPLE}/release/libHeliosLaserDAC.so ]; then \
-        cp /project/target/${TARGET_TRIPLE}/release/libHeliosLaserDAC.so /dist/libHeliosLaserDAC.so; \
+    cp /project/target/${TARGET_TRIPLE}/${CARGO_PROFILE}/server /dist/server && \
+    if [ -f /project/target/${TARGET_TRIPLE}/${CARGO_PROFILE}/libHeliosLaserDAC.so ]; then \
+        cp /project/target/${TARGET_TRIPLE}/${CARGO_PROFILE}/libHeliosLaserDAC.so /dist/libHeliosLaserDAC.so; \
     elif [ -f /opt/libHeliosLaserDAC.so ]; then \
         cp /opt/libHeliosLaserDAC.so /dist/libHeliosLaserDAC.so; \
     fi

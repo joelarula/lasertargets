@@ -48,4 +48,12 @@ incremental = true
 
 [profile.release]
 opt-level = 3
-lto = true
+lto = "thin"
+
+# Optimized dev profile for fast iteration on the Pi (no LTO)
+[profile.rpi-dev]
+inherits = "release"
+lto = false
+codegen-units = 16
+
+

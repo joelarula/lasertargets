@@ -43,8 +43,14 @@ Outputs `dist/pi/server` and `dist/pi/libHeliosLaserDAC.so`.
 
 **3. Follow live output** in your terminal:
 
+*If logging to systemd:*
 ```bash
 ssh lasertargets@<IP> 'sudo journalctl -u lasertargets-server -f'
+```
+
+*If logging to USB stick:*
+```bash
+ssh lasertargets@<IP> 'tail -f /mnt/usb-logs/server.log'
 ```
 
 ## Game Console Controls
