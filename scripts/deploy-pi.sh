@@ -64,6 +64,14 @@ echo "--- Installing systemd service ---"
 scp "$PROJECT_ROOT/deploy/lasertargets-server.service" "$TARGET_HOST:/tmp/lasertargets-server.service"
 ssh "$TARGET_HOST" "sudo mv /tmp/lasertargets-server.service /etc/systemd/system/ && sudo systemctl daemon-reload"
 
+# Deploy logrotate configuration
+if [ -f "$PROJECT_ROOT/deploy/lasertargets-logrotate" ]; then
+    echo "--- Installing logrotate configuration ---"
+    scp "$PROJECT_ROOT/deploy/lasertargets-logrotate" "$TARGET_HOST:/tmp/lasertargets-logrotate"
+    ssh "$TARGET_HOST" "sudo mv /tmp/lasertargets-logrotate /etc/logrotate.d/lasertargets && sudo chown root:root /etc/logrotate.d/lasertargets && sudo chmod 644 /etc/logrotate.d/lasertargets"
+fi
+
+
 # Enable and start the service
 echo "--- Starting service ---"
 ssh "$TARGET_HOST" "sudo systemctl enable lasertargets-server && sudo systemctl start lasertargets-server"

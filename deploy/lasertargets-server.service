@@ -22,7 +22,12 @@ StartLimitIntervalSec=60
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/opt/lasertargets
+ReadWritePaths=/opt/lasertargets /mnt/usb-logs
+
+# Logging to USB Stick
+StandardOutput=append:/mnt/usb-logs/server.log
+StandardError=append:/mnt/usb-logs/server.log
 
 [Install]
 WantedBy=multi-user.target
+

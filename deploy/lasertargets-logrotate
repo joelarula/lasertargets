@@ -1,0 +1,9 @@
+﻿/mnt/usb-logs/server.log {
+    weekly
+    rotate 4
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+}

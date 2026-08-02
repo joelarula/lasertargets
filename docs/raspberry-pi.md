@@ -764,8 +764,64 @@ ssh $PI 'chmod +x /opt/lasertargets/server'
 | `scripts/docker-build-rpi4-remote.ps1` | PowerShell build script for a remote Docker host. |
 | `scripts/docker-build-common.ps1` | Shared PowerShell helpers (image build, artifact export). |
 | `deploy/install-pi-deps.sh` | One-time Pi setup. Installs `libusb`, creates `/opt/lasertargets`, sets up Helios DAC udev rules. |
-| `deploy/lasertargets-server.service` | systemd unit. Sets `LD_LIBRARY_PATH`, `RUST_LOG=info`, restarts on failure. |
-| `dist/pi/server` | Compiled ARM64 binary (generated â€” not in git). |
-| `dist/pi/libHeliosLaserDAC.so` | Helios DAC shared library for ARM64 (generated â€” not in git). |
+| `deploy/lasertargets-server.service` | systemd unit. Sets `LD_LIBRARY_PATH`, `RUST_LOG=info`, redirects logs to USB, restarts on failure. |
+| `deploy/lasertargets-logrotate` | logrotate configuration. Rotates the USB log file weekly with compression. |
+| `dist/pi/server` | Compiled ARM64 binary (generated — not in git). |
+| `dist/pi/libHeliosLaserDAC.so` | Helios DAC shared library for ARM64 (generated — not in git). |
 | `/opt/lasertargets/server` | Deployed binary on the Pi. |
 | `/opt/lasertargets/lib/libHeliosLaserDAC.so` | Deployed library on the Pi. |
+
+---
+
+## 9. Storing Logs on a USB Memory Stick (Recommended)
+
+To protect the Pi's operating system SD card from wear-out and corruption caused by constant logging, write logs to a USB memory stick instead.
+
+### 9.1 Prepare the USB stick on the Pi
+
+1. Plug the USB stick into one of the Pi 4's USB ports (use a blue USB 3.0 port).
+2. SSH into the Pi and run `lsblk` to identify the device partition (e.g. `sda1`).
+3. Get the unique UUID of the partition:
+   ```bash
+   sudo blkid /dev/sda1
+   ```
+   *Look for `UUID="..."` in the output (e.g. `E3F4-9A2B`).*
+
+### 9.2 Configure Auto-Mount on Boot
+
+1. Create the mount directory:
+   ```bash
+   sudo mkdir -p /mnt/usb-logs
+   sudo chown -R lasertargets:lasertargets /mnt/usb-logs
+   ```
+2. Open `/etc/fstab` with `nano`:
+   ```bash
+   sudo nano /etc/fstab
+   ```
+3. Add this line at the bottom (replace `E3F4-9A2B` with your actual UUID, and use `vfat` if formatted as FAT32, or `ext4` if ext4):
+   ```text
+   UUID=E3F4-9A2B  /mnt/usb-logs  vfat  defaults,nofail,noatime,uid=lasertargets,gid=lasertargets,umask=007  0  0
+   ```
+   *The `nofail` parameter ensures that the Pi boots up normally even if you unplug the USB stick.*
+4. Test mount:
+   ```bash
+   sudo mount -a
+   ls -la /mnt/usb-logs
+   ```
+
+### 9.3 Deploy & Verify
+
+Once the mount path is ready on the Pi, deploy the updated systemd service and logrotate configurations from your workstation:
+
+```powershell
+# Deploy the files to the Pi
+.\scripts\deploy-pi.sh lasertargets@lasertargets.local
+```
+
+The systemd service will output stdout/stderr logs directly to `/mnt/usb-logs/server.log`.
+
+Verify the logs are writing to the USB stick:
+```bash
+ssh lasertargets@lasertargets.local "tail -f /mnt/usb-logs/server.log"
+```
+
