@@ -33,14 +33,24 @@ Complete guide for cross-compiling the LaserTargets server for Raspberry Pi 4, d
 
 ## 1. Prerequisites
 
-### Developer machine (where you build)
+### Developer machine (your local workstation — where you run scripts from)
 
 | Requirement | Notes |
 |---|---|
-| **Docker** | Docker Desktop (Windows/macOS) or Docker Engine (Linux). Must be running. |
-| **Git Bash / WSL / POSIX shell** | Required on Windows to run `.sh` scripts. Git Bash ships with Git for Windows. |
-| **SSH client** (`ssh`, `scp`) | Included with Windows 10+, macOS, Linux. Verify: `ssh -V` |
-| **Rust toolchain** | **Not required on the host.** Rust lives entirely inside the Docker cross-compilation image. |
+| **SSH client** (`ssh`, `scp`) | Included with Windows 10+. Verify: `ssh -V` |
+| **Git Bash / POSIX shell** | Required on Windows to run `.sh` scripts. Git Bash ships with Git for Windows. |
+| **Docker client** | Only the Docker **client** binary is needed locally. Docker does **not** run locally. |
+
+> ⚠️ **The server is never built locally.** All cross-compilation runs on the remote build machine (`192.168.1.110`) via a remote Docker Engine over SSH. Do not run `docker build` or `cargo build` locally.
+
+### Remote build machine (`192.168.1.110`)
+
+| Requirement | Notes |
+|---|---|
+| **Docker Desktop** | Must be running with the **WSL2 Linux container backend**. Standalone Windows containers/dockerd service will not work because the cross-compilation compiler image is Linux-based. |
+| **SSH server** | OpenSSH service must be running. |
+
+> ⚠️ **Docker context must be set to `desktop-linux`, NOT `default`.** Verify with `docker context ls` on the remote machine. See [Troubleshooting: Docker Engine](#docker-engine-context-or-crash) if it is wrong.
 
 ### Raspberry Pi 4
 
@@ -450,42 +460,55 @@ ls -lh dist/pi/
 
 ---
 
-### 3.4 Windows: Remote Docker Host
+### 3.4 Remote Build Machine (`192.168.1.110`)
 
-If you want to offload the build to a remote Windows machine (e.g., `192.168.1.110`), the build runs via the SSH daemon.
+All cross-compilation runs remotely on `192.168.1.110` over SSH. The local Docker client tunnels into the remote Docker Engine — no build tools are needed on your workstation.
 
-#### Step 1 — Ensure Remote Docker is Running (Headless)
-Since logging out of an SSH session normally terminates user processes on Windows, Docker Desktop must be launched via a WMI/CIM detached process to keep it running persistently.
+#### Prerequisites — Remote Docker context must be `default`
 
-A startup script has been placed on the remote machine at `C:/Users/joel/start-docker.ps1`. Trigger it remotely over SSH:
+The remote machine runs a **standalone Docker Engine** (not Docker Desktop). The Docker context on `192.168.1.110` must be set to `default` (which points to `npipe:////./pipe/docker_engine`), not `desktop-linux`.
+
+Verify and fix over SSH if needed:
 
 ```powershell
-ssh joel@192.168.1.110 "powershell -ExecutionPolicy Bypass -File C:/Users/joel/start-docker.ps1"
+# Check current context (run from your workstation)
+ssh joel@192.168.1.110 "docker context ls"
+
+# If the active context is desktop-linux, switch it:
+ssh joel@192.168.1.110 "docker context use default"
+
+# Confirm Docker Engine is responding:
+ssh joel@192.168.1.110 "docker ps"
 ```
-*(Wait ~15 seconds after starting for the VM engine to fully boot).*
 
-#### Step 2 — Run the Build from the Project Root
-> ⚠️ **CRITICAL:** You must run this command from the **project root directory** (`C:\Users\joela\dev\lasertargets`), NOT from inside the `scripts/` folder, otherwise Docker will not be able to find the context files.
+#### Running the Build
+
+> ⚠️ **CRITICAL:** Run from the **project root** (`C:\Users\joela\dev\lasertargets`), not from inside `scripts/`.
 
 ```powershell
-# Go to project root
-cd C:\Users\joela\dev\lasertargets
-
-# Ensure local DOCKER_HOST env var is clean
-Remove-Item Env:\DOCKER_HOST -ErrorAction SilentlyContinue
-
-# Start remote build
+# Quick development build (no LTO — fast link, full optimizations)
 .\scripts\docker-build-rpi4-remote.ps1 -RemoteHost joel@192.168.1.110
+
+# Production release build (thin LTO — slower link, maximum performance)
+.\scripts\docker-build-rpi4-remote.ps1 -RemoteHost joel@192.168.1.110 -Profile release
 ```
 
 | Parameter | Default | Description |
 |---|---|---|
-| `-RemoteHost` | *(empty = local Docker)* | IP or hostname of the remote Docker host |
+| `-RemoteHost` | *(required)* | SSH host of the remote Docker machine, e.g. `joel@192.168.1.110` |
+| `-Profile` | `rpi-dev` | Cargo profile: `rpi-dev` (fast) or `release` (optimized) |
 | `-BuildProgress` | `auto` | Use `plain` for verbose line-by-line output |
 | `-NoCache` | `$false` | Set `$true` to force a full rebuild |
 | `-ExportArtifact` | `$true` | Copy artifacts locally after the build |
 | `-LocalArtifactDir` | `.\dist\pi` | Local destination for extracted artifacts |
 | `-DryRun` | *(switch)* | Print commands without running them |
+
+#### Build Profiles
+
+| Profile | LTO | Link time | Use for |
+|---|---|---|---|
+| `rpi-dev` *(default)* | None | ~15s | Dev / QA / debugging |
+| `release` | Thin LTO | ~2–3 min | Production deployment |
 
 ---
 
@@ -825,3 +848,97 @@ Verify the logs are writing to the USB stick:
 ssh lasertargets@lasertargets.local "tail -f /mnt/usb-logs/server.log"
 ```
 
+---
+
+## 10. Troubleshooting — Remote Docker Build Machine
+
+### Docker Engine context or crash {#docker-engine-context-or-crash}
+
+The remote build machine (`192.168.1.110`) runs **Docker Desktop with Linux containers**. Standalone Windows containers/dockerd service will not work because the cross-compilation compiler image is Linux-based. 
+
+If Docker commands fail, the active context on the remote machine is usually wrong (pointing to default/Windows containers) or the Docker Desktop VM crashed.
+
+#### Symptom: `no match for platform in manifest: not found`
+
+The remote Docker host is running in Windows Container mode (either via standalone `dockerd` or Docker Desktop switched to Windows containers). It cannot pull Linux base images.
+
+Fix — Ensure Docker Desktop is configured for Linux containers and the active context is `desktop-linux`:
+
+```powershell
+# 1. Switch context over SSH from your workstation:
+ssh joel@192.168.1.110 "docker context use desktop-linux"
+
+# 2. Check if Docker Desktop service is running:
+ssh joel@192.168.1.110 "net start com.docker.service"
+```
+
+#### Symptom: `Docker Desktop is unable to start` or `Internal Server Error`
+
+Docker Desktop's backend VM or service crashed. This can happen after heavy Rust compilations that exhaust the system RAM.
+
+Fix — Perform a clean restart of Docker Desktop on the remote machine:
+
+```powershell
+# 1. SSH into the remote machine (optional, or run commands via ssh prefix)
+ssh joel@192.168.1.110
+
+# 2. Kill any hung Docker processes
+Get-Process dockerd, "Docker Desktop", "wsl*" -ErrorAction SilentlyContinue | Stop-Process -Force
+
+# 3. Restart the Docker Desktop Service
+net stop com.docker.service
+Start-Sleep -Seconds 5
+net start com.docker.service
+
+# 4. Trigger the VM startup script (spawns the user-mode background engine)
+powershell -ExecutionPolicy Bypass -File C:/Users/joel/start-docker.ps1
+
+# 5. Verify it is responding (wait ~15-20 seconds for VM boot first)
+Start-Sleep -Seconds 15
+docker ps
+```
+
+#### Preventive — SSH keepalives
+
+Long silent link phases (e.g. 2–5 minute Rust linker runs) can cause routers or NAT devices to silently drop the SSH connection, producing spurious EOF errors. The local SSH client is configured with keepalives in `~/.ssh/config`:
+
+```
+Host 192.168.1.110
+  ServerAliveInterval 15
+  ServerAliveCountMax 3
+```
+
+If you see repeated EOF errors, verify these are present with `cat ~/.ssh/config`.
+
+---
+
+## 11. Helios DAC Diagnostics
+
+### DAC blinks but server reports status check failures
+
+The Helios DAC firmware runs an internal self-test for ~300–500 ms after `OpenDevices()` returns. Calling `GetStatus()` during this window can segfault inside `libusb`. The server automatically waits 500 ms after opening the device before polling status.
+
+If `GetStatus` continues to fail:
+
+1. Verify the DAC is visible over USB:
+   ```bash
+   ssh lasertargets@lasertargets.local "lsusb"
+   # Expected: ID 1209:e500 Generic GitleMikkelsen Helios Laser DAC
+   ```
+
+2. Verify the `lasertargets` user is in the `plugdev` group:
+   ```bash
+   ssh lasertargets@lasertargets.local "groups lasertargets"
+   # Expected: ... plugdev ...
+   ```
+
+3. Verify the USB device node is writable by `plugdev`:
+   ```bash
+   ssh lasertargets@lasertargets.local "ls -la /dev/bus/usb/001/"
+   # The Helios device node should show: crw-rw-rw- root plugdev
+   ```
+
+4. If the permission is wrong, reload udev rules:
+   ```bash
+   ssh lasertargets@lasertargets.local "sudo udevadm control --reload-rules && sudo udevadm trigger"
+   ```

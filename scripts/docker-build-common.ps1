@@ -30,8 +30,11 @@ function Invoke-RemoteDockerBuild {
         return 0
     }
 
+    $env:DOCKER_BUILDKIT = "1"
     & docker build @commonBuildArgs @BuildArgs -f $Dockerfile -t $ImageTag $BuildContext
-    return $LASTEXITCODE
+    $exitCode = $LASTEXITCODE
+    Remove-Item Env:\DOCKER_BUILDKIT -ErrorAction SilentlyContinue
+    return $exitCode
 }
 
 function Export-ImageArtifact {
