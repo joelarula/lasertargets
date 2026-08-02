@@ -99,6 +99,7 @@ fn init_snake_game(
     seg_query: Query<Entity, With<SnakeSegment>>,
     gem_query: Query<Entity, With<DiamondFood>>,
     title_query: Query<Entity, With<SnakeTitleAnnouncement>>,
+    border_query: Query<Entity, With<SnakeBorder>>,
     mut stats_events: MessageWriter<BroadcastSnakeStatsEvent>,
 ) {
     let mut should_init: Option<bevy::asset::uuid::Uuid> = None;
@@ -124,6 +125,7 @@ fn init_snake_game(
             .chain(seg_query.iter())
             .chain(gem_query.iter())
             .chain(title_query.iter())
+            .chain(border_query.iter())
         {
             commands.entity(e).despawn();
         }
@@ -136,7 +138,7 @@ fn init_snake_game(
         return;
     };
 
-    // Clean previous entities
+    // Clean previous entities (but NOT the border — it's static for the whole session)
     for e in head_query
         .iter()
         .chain(seg_query.iter())
@@ -146,10 +148,13 @@ fn init_snake_game(
         commands.entity(e).despawn();
     }
 
-    // Compute grid from scene dimensions
+    // Compute grid from scene dimensions — clamp so grid exactly fits inside scene
     let dim = scene_setup.scene.scene_dimension; // UVec2 in metres
-    let grid_w = (dim.x as f32 / CELL_SIZE).floor() as i32;
-    let grid_h = (dim.y as f32 / CELL_SIZE).floor() as i32;
+    let grid_w = ((dim.x as f32 / CELL_SIZE).floor() as i32).max(4);
+    let grid_h = ((dim.y as f32 / CELL_SIZE).floor() as i32).max(4);
+    // Ensure the occupied area is strictly <= scene area
+    let actual_w = grid_w as f32 * CELL_SIZE;
+    let actual_h = grid_h as f32 * CELL_SIZE;
 
     let start = IVec2::new(grid_w / 2, grid_h / 2);
 
@@ -195,6 +200,9 @@ fn init_snake_game(
     // Spawn gem
     spawn_gem_entity(&mut commands, &state, scene_entity);
 
+    // Spawn scene border rectangle so the game area boundary is visible
+    spawn_border_entity(&mut commands, scene_entity, actual_w, actual_h);
+
     // Spawn full-scene center vector title announcement
     spawn_snake_title_entity(&mut commands, &scene_setup, scene_entity);
 
@@ -214,7 +222,16 @@ fn init_snake_game(
 
 fn spawn_snake_title_entity(commands: &mut Commands, scene_setup: &SceneSetup, scene_entity: Option<Entity>) {
     let scene_dim = scene_setup.scene.scene_dimension;
-    let text_height = (scene_dim.y as f32 * 0.70).clamp(1.5, 4.5);
+    // Height-based cap: 55% of scene height
+    let height_cap = scene_dim.y as f32 * 0.55;
+    // Width-based cap: fit "SNAKE" (5 chars) within 85% of scene width.
+    // Century Gothic char width ≈ 0.65× height, plus letter_spacing (0.08) per char.
+    let num_chars = 5usize;
+    let char_width_ratio = 0.65_f32;
+    let letter_spacing = 0.08_f32;
+    let total_width_per_unit = num_chars as f32 * (char_width_ratio + letter_spacing);
+    let width_cap = (scene_dim.x as f32 * 0.85) / total_width_per_unit;
+    let text_height = height_cap.min(width_cap).clamp(0.8, 3.5);
 
     let options = LaserTextOptions {
         origin: Vec2::ZERO,
@@ -226,6 +243,8 @@ fn spawn_snake_title_entity(commands: &mut Commands, scene_setup: &SceneSetup, s
 
     let font_paths = [
         // Project-bundled fonts (checked first)
+        "assets/fonts/centurygothic.ttf",
+        "assets/fonts/centurygothic_bold.ttf",
         "assets/fonts/FiraCodeNerdFont-Regular.ttf",
         // Windows system fonts
         "C:/Windows/Fonts/arial.ttf",
@@ -333,12 +352,36 @@ fn spawn_gem_entity(commands: &mut Commands, state: &SnakeState, scene_entity: O
     let (r, g, b) = state.gem_color;
     let color = Color::srgb(r, g, b);
     let pos = grid_to_local(state.gem_position, state.grid_w, state.grid_h);
+    // Diamond = rectangle rotated 45°
     let path = UniversalPath::diamond(Vec2::ZERO, GEM_HALF_SIZE, color);
     let id = commands
         .spawn((
             DiamondFood { color },
             Transform::from_translation(pos),
             GlobalTransform::from(Transform::from_translation(pos)),
+            Visibility::default(),
+            path,
+            PathRenderable::default(),
+        ))
+        .id();
+    if let Some(scene) = scene_entity {
+        commands.entity(scene).add_child(id);
+    }
+}
+
+fn spawn_border_entity(commands: &mut Commands, scene_entity: Option<Entity>, w: f32, h: f32) {
+    // Draw the snake play-field boundary as a dim white rectangle
+    let half_w = w * 0.5;
+    let half_h = h * 0.5;
+    let border_color = Color::srgb(0.25, 0.25, 0.25);
+    let top_left = Vec2::new(-half_w, -half_h);
+    let size = Vec2::new(w, h);
+    let path = UniversalPath::rectangle(top_left, size, border_color);
+    let id = commands
+        .spawn((
+            SnakeBorder, // dedicated marker — excluded from per-tick segment despawn
+            Transform::from_translation(Vec3::ZERO),
+            GlobalTransform::default(),
             Visibility::default(),
             path,
             PathRenderable::default(),

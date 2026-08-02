@@ -96,6 +96,7 @@ pub fn optimize(segments: &[LaserSegment], config: &OptimizeConfig) -> Vec<Laser
 }
 
 /// Shift laser diode color channels relative to XY galvo position to compensate for galvo mechanical inertia lag.
+/// Blanked travel points are never color-shifted — this prevents lit color bleeding across a laser-off jump (the "tail" artifact).
 fn apply_laser_color_delay(points: &mut [LaserPoint], delay_points: usize) {
     let len = points.len();
     if len <= delay_points || delay_points == 0 {
@@ -104,8 +105,16 @@ fn apply_laser_color_delay(points: &mut [LaserPoint], delay_points: usize) {
     let colors: Vec<(u8, u8, u8, u8)> = points.iter().map(|p| (p.r, p.g, p.b, p.i)).collect();
 
     for i in 0..len {
+        // Never shift color into a blanked travel point — that would make it appear lit
+        if points[i].is_blanked() {
+            continue;
+        }
         let src_idx = (i + len - delay_points) % len;
         let (r, g, b, intensity) = colors[src_idx];
+        // Only apply delay if the source point was also lit (don't pull blank-black into lit zone)
+        if r == 0 && g == 0 && b == 0 && intensity == 0 {
+            continue;
+        }
         points[i].r = r;
         points[i].g = g;
         points[i].b = b;

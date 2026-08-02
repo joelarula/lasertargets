@@ -143,7 +143,16 @@ fn spawn_hunter_title_on_session_start(
         }
 
         let scene_dim = scene_setup.scene.scene_dimension;
-        let text_height = (scene_dim.y as f32 * 0.70).clamp(1.5, 4.5);
+        // Height-based cap: 55% of scene height
+        let height_cap = scene_dim.y as f32 * 0.55;
+        // Width-based cap: fit "HUNTER" (6 chars) within 85% of scene width.
+        // Century Gothic char width ≈ 0.65× height, plus letter_spacing (0.08) per char.
+        let num_chars = 6usize;
+        let char_width_ratio = 0.65_f32;
+        let letter_spacing = 0.08_f32;
+        let total_width_per_unit = num_chars as f32 * (char_width_ratio + letter_spacing);
+        let width_cap = (scene_dim.x as f32 * 0.85) / total_width_per_unit;
+        let text_height = height_cap.min(width_cap).clamp(0.8, 3.5);
 
         let options = LaserTextOptions {
             origin: Vec2::ZERO,
@@ -155,6 +164,8 @@ fn spawn_hunter_title_on_session_start(
 
         let font_paths = [
             // Project-bundled fonts (checked first)
+            "assets/fonts/centurygothic.ttf",
+            "assets/fonts/centurygothic_bold.ttf",
             "assets/fonts/FiraCodeNerdFont-Regular.ttf",
             // Windows system fonts
             "C:/Windows/Fonts/arial.ttf",

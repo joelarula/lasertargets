@@ -14,54 +14,38 @@ Terminal:
 cargo build --package terminal --features bevy/dynamic_linking
 cargo run --package terminal --features bevy/dynamic_linking
 
-## Raspberry Pi 4 Build (Docker)
+## Raspberry Pi 4
 
-The Raspberry Pi flow is Docker-first and exports deployable artifacts.
+> **Full guide**: [docs/raspberry-pi.md](docs/raspberry-pi.md) — SSH setup, cross-compilation,
+> deploy, live output capture, and troubleshooting.
 
-### Local Docker host
+### Quick Start
 
-Run:
+**1. Build** (cross-compile for aarch64 inside Docker, no Rust toolchain needed on host):
 
+*Local build (Linux/macOS/Git Bash):*
+```bash
 ./scripts/build-pi.sh
+```
 
-Outputs:
+*Remote build (Windows PowerShell):*
+```powershell
+.\scripts\docker-build-rpi4-remote.ps1 -RemoteHost joel@192.168.1.110
+```
 
-dist/pi/server
-dist/pi/libHeliosLaserDAC.so
+Outputs `dist/pi/server` and `dist/pi/libHeliosLaserDAC.so`.
 
-### Remote Docker host (PowerShell)
+**2. Deploy** (copy binary to Pi over SSH and install systemd service):
 
-Run:
+```bash
+./scripts/deploy-pi.sh lasertargets@<IP>
+```
 
-./scripts/docker-build-rpi4-remote.ps1 -RemoteHost 192.168.1.110
+**3. Follow live output** in your terminal:
 
-Useful options:
-
--BuildProgress plain
--NoCache $true
--LocalArtifactDir .\\dist\\pi
--ExportArtifact $true
-
-This produces the same deployable files under dist/pi.
-
-## Raspberry Pi 4 Deploy
-
-After building artifacts, deploy to Pi:
-
-./scripts/deploy-pi.sh raspberrypi.local
-
-Or:
-
-./scripts/deploy-pi.sh pi@192.168.1.50
-
-The deploy script installs:
-
-/opt/lasertargets/server
-/opt/lasertargets/lib/libHeliosLaserDAC.so
-
-And updates/starts:
-
-deploy/lasertargets-server.service
+```bash
+ssh lasertargets@<IP> 'sudo journalctl -u lasertargets-server -f'
+```
 
 ## Game Console Controls
 

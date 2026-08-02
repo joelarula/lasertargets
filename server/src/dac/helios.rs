@@ -4,7 +4,7 @@
 
 
 use libloading;
-use std::os::raw::{c_int, c_uchar, c_uint};
+use std::os::raw::{c_char, c_int, c_uchar, c_uint};
 use std::sync::Arc;
 use bevy::prelude::*;
 
@@ -45,7 +45,9 @@ impl From<laserlogic::LaserPoint> for HeliosPoint {
 }
 
 // Helios DAC coordinate limits
+#[allow(dead_code)]
 pub const HELIOS_MAX_COORD: u16 = 0xFFF; // 4095 for 12-bit
+#[allow(dead_code)]
 pub const HELIOS_CENTER_COORD: u16 = 2048; // Center point
 
 // Frame limits
@@ -84,7 +86,7 @@ type WriteFrameFn =
     unsafe extern "C" fn(c_uint, c_uint, c_uchar, *const HeliosPoint, c_uint) -> c_int;
 type StopFn = unsafe extern "C" fn(c_uint) -> c_int;
 type SetShutterFn = unsafe extern "C" fn(c_uint, c_uchar) -> c_int;
-type GetNameFn = unsafe extern "C" fn(c_uint) -> *const i8;
+type GetNameFn = unsafe extern "C" fn(c_uint) -> *const c_char;
 
 // Internal library handle
 struct HeliosLib {

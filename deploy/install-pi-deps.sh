@@ -21,7 +21,7 @@ apt-get install -y libusb-1.0-0
 # Create directory structure
 echo "--- Creating /opt/lasertargets ---"
 mkdir -p /opt/lasertargets/lib
-chown -R pi:pi /opt/lasertargets
+chown -R lasertargets:lasertargets /opt/lasertargets
 
 # Install udev rules for Helios DAC USB device
 # Helios DAC uses a custom USB device — this rule grants access without root
@@ -37,5 +37,5 @@ udevadm trigger
 
 echo ""
 echo "=== Setup complete ==="
-echo "Make sure user 'pi' is in the 'plugdev' group:"
-echo "  sudo usermod -aG plugdev pi"
+echo "Make sure user 'lasertargets' is in the 'plugdev' group:"
+echo "  sudo usermod -aG plugdev lasertargets"

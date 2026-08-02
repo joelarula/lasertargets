@@ -21,8 +21,8 @@ pub const SPEED_UP_PER_GEM: f32 = 0.008;
 /// Size of a snake segment (as fraction of cell)
 pub const SEGMENT_RADIUS: f32 = CELL_SIZE * 0.4;
 
-/// Size of the diamond gem (half-diagonal)
-pub const GEM_HALF_SIZE: f32 = CELL_SIZE * 0.45;
+/// Size of the diamond gem (half-diagonal) — 80% of cell so it fills the cell visibly
+pub const GEM_HALF_SIZE: f32 = CELL_SIZE * 0.8;
 
 // ---------------------------------------------------------------------------
 // Direction
@@ -73,6 +73,10 @@ pub struct SnakeSegment {
     /// The color this segment was given when the gem was eaten
     pub color: Color,
 }
+
+/// Marker: the static play-field border rectangle (never moved or respawned per tick)
+#[derive(Component, Debug, Clone)]
+pub struct SnakeBorder;
 
 /// Marker: the diamond / gem food entity
 #[derive(Component, Debug, Clone)]

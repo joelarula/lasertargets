@@ -6,8 +6,8 @@ Wants=network.target
 
 [Service]
 Type=simple
-User=pi
-Group=pi
+User=lasertargets
+Group=lasertargets
 WorkingDirectory=/opt/lasertargets
 ExecStart=/opt/lasertargets/server
 Environment=LD_LIBRARY_PATH=/opt/lasertargets/lib

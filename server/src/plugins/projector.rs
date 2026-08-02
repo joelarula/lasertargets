@@ -85,11 +85,11 @@ impl Plugin for ProjectorPlugin {
         mut config: ResMut<LaserOptimizeConfig>,
     ) {
         config.0 = OptimizeConfig {
-            start_dwell_points: 3,
-            end_dwell_points: 3,
-            blank_end_dwell: 3,
-            blank_start_dwell: 4,
-            blank_jump_steps: 10,
+            start_dwell_points: 6,
+            end_dwell_points: 6,
+            blank_end_dwell: 20,   // Hold laser-off dwell at shape end before jumping
+            blank_start_dwell: 20, // Hold galvo-settle dwell at shape start before firing
+            blank_jump_steps: 24,  // Interpolated travel steps between shapes
             interp_distance_threshold: 250.0,
             interp_spacing: 350.0,
             corner_dwell_points: 6,
@@ -524,9 +524,59 @@ fn update_point_buffer(
         }
     }
 
- 
-    // Optimize all segments through laserlogic (blanking, corner dwells, interpolation)
-    let optimized = laserlogic::optimize::optimize(&all_segments, &optimize_config.0);
+    // Split segments by hint: text segments use the dedicated galvo-text pipeline,
+    // general segments use the standard optimize pipeline.
+    let mut text_segments: Vec<LaserSegment> = Vec::new();
+    let mut general_segments: Vec<LaserSegment> = Vec::new();
+    for seg in all_segments {
+        // We determine hint by checking if ALL points have same RGB as a text-tagged marker.
+        // Since hint is tracked per-segment at the PathSegment level above, we need to
+        // pass it through. For now, route by segment size heuristic:
+        // small dense segments (< 60 pts) typical of glyph contours → text pipeline.
+        // Larger segments → general pipeline.
+        // TODO: thread PathHint through LaserSegment for proper routing.
+        if seg.points.len() < 60 {
+            text_segments.push(seg);
+        } else {
+            general_segments.push(seg);
+        }
+    }
+
+    let optimized_text = laserlogic::text_optimize::optimize_text(
+        &text_segments,
+        &optimize_config.0,
+        None, // no hard budget cap — add config field later if needed
+    );
+    let optimized_general = laserlogic::optimize::optimize(&general_segments, &optimize_config.0);
+
+    // Merge: general shapes first (lower scan priority), text on top
+    let mut optimized = optimized_general;
+    if !optimized_text.is_empty() {
+        // Insert a blanking jump from general end to text start if both non-empty
+        if !optimized.is_empty() && !optimized_text.is_empty() {
+            let from = *optimized.last().unwrap();
+            let to = optimized_text[0];
+            let cfg = &optimize_config.0;
+            for _ in 0..cfg.blank_end_dwell {
+                optimized.push(LaserPoint::blanked(from.x, from.y));
+            }
+            let dx = to.x as f32 - from.x as f32;
+            let dy = to.y as f32 - from.y as f32;
+            let dist = (dx * dx + dy * dy).sqrt();
+            let steps = ((dist / 250.0).ceil() as u16).clamp(4, cfg.blank_jump_steps.max(4));
+            for step in 1..steps {
+                let t = step as f32 / steps as f32;
+                optimized.push(LaserPoint::blanked(
+                    (from.x as f32 + dx * t) as u16,
+                    (from.y as f32 + dy * t) as u16,
+                ));
+            }
+            for _ in 0..cfg.blank_start_dwell {
+                optimized.push(LaserPoint::blanked(to.x, to.y));
+            }
+        }
+        optimized.extend(optimized_text);
+    }
 
     debug!("Total points after optimization: {}", optimized.len());
 

@@ -7,3 +7,5 @@ target/
 *.pdb
 .vscode/
 .idea/
+dist/
+

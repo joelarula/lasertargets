@@ -118,12 +118,23 @@ pub enum LineStyle {
     Dotted,
 }
 
+/// Optimization hint for UniversalPath segments
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum PathHint {
+    #[default]
+    General,
+    /// Use the galvo text-optimized pipeline (TSP sort, D-P simplify, dwell injection)
+    Text,
+}
+
 /// A segment of a path with simple point representation
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PathSegment {
     pub points: Vec<PathPoint>,
     #[serde(default)]
     pub line_style: LineStyle,
+    #[serde(default)]
+    pub hint: PathHint,
 }
 
 impl PathSegment {
@@ -131,6 +142,7 @@ impl PathSegment {
         Self {
             points,
             line_style: LineStyle::Continuous,
+            hint: PathHint::General,
         }
     }
     
@@ -138,6 +150,15 @@ impl PathSegment {
         Self {
             points: Vec::new(),
             line_style: LineStyle::Continuous,
+            hint: PathHint::General,
+        }
+    }
+
+    pub fn empty_text() -> Self {
+        Self {
+            points: Vec::new(),
+            line_style: LineStyle::Continuous,
+            hint: PathHint::Text,
         }
     }
 
@@ -254,6 +275,7 @@ impl PathSegment {
                 PathPoint::new(end.x, end.y, r, g, b, dwell),
             ],
             line_style: LineStyle::Continuous,
+            hint: PathHint::General,
         }
     }
     
@@ -267,6 +289,7 @@ impl PathSegment {
         Self {
             points: path_points,
             line_style: LineStyle::Continuous,
+            hint: PathHint::General,
         }
     }
     
@@ -284,6 +307,7 @@ impl PathSegment {
         Self {
             points: path_points,
             line_style: LineStyle::Continuous,
+            hint: PathHint::General,
         }
     }
     
@@ -314,6 +338,7 @@ impl PathSegment {
         Self {
             points,
             line_style: LineStyle::Continuous,
+            hint: PathHint::General,
         }
     }
 }
@@ -349,6 +374,7 @@ impl PathSegmentBuilder {
         PathSegment {
             points: self.points,
             line_style: LineStyle::Continuous,
+            hint: PathHint::General,
         }
     }
 }
@@ -508,7 +534,7 @@ impl UniversalPath {
                 continue;
             }
 
-            let mut segment = PathSegment::empty();
+            let mut segment = PathSegment::empty_text();
             for i in 0..line.len() {
                 let prev = if i > 0 { Some(line[i - 1]) } else { None };
                 let next = if i + 1 < line.len() { Some(line[i + 1]) } else { None };

@@ -2,8 +2,8 @@
 # Deploy the LaserTargets server to a Raspberry Pi
 #
 # Usage:
-#   ./scripts/deploy-pi.sh <hostname>          # e.g., raspberrypi.local
-#   ./scripts/deploy-pi.sh <user@hostname>     # e.g., pi@192.168.1.50
+#   ./scripts/deploy-pi.sh <hostname>          # e.g., lasertargets.local
+#   ./scripts/deploy-pi.sh <user@hostname>     # e.g., lasertargets@192.168.1.50
 #
 # Prerequisites:
 #   - Run ./scripts/build-pi.sh first
@@ -14,15 +14,15 @@ set -euo pipefail
 
 if [ $# -lt 1 ]; then
     echo "Usage: $0 <hostname|user@hostname>"
-    echo "  Example: $0 raspberrypi.local"
-    echo "  Example: $0 pi@192.168.1.50"
+    echo "  Example: $0 lasertargets.local"
+    echo "  Example: $0 lasertargets@192.168.1.50"
     exit 1
 fi
 
 TARGET_HOST="$1"
-# Default to pi@ if no user specified
+# Default to lasertargets@ if no user specified
 if [[ "$TARGET_HOST" != *@* ]]; then
-    TARGET_HOST="pi@$TARGET_HOST"
+    TARGET_HOST="lasertargets@$TARGET_HOST"
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -44,7 +44,7 @@ ssh "$TARGET_HOST" "sudo systemctl stop lasertargets-server 2>/dev/null || true"
 
 # Create directories on the Pi
 echo "--- Ensuring directory structure ---"
-ssh "$TARGET_HOST" "sudo mkdir -p /opt/lasertargets/lib && sudo chown -R pi:pi /opt/lasertargets"
+ssh "$TARGET_HOST" "sudo mkdir -p /opt/lasertargets/lib && sudo chown -R lasertargets:lasertargets /opt/lasertargets"
 
 # Deploy binary
 echo "--- Deploying server binary ---"
