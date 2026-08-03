@@ -15,9 +15,9 @@ use std::thread;
 use std::sync::OnceLock;
 
 
-static CONNECTED_ARC: OnceLock<Arc<Mutex<bool>>> = OnceLock::new();
+static CONNECTED_ARC: Mutex<Option<Arc<Mutex<bool>>>> = Mutex::new(None);
 
-static SWITCHED_ON_ARC: OnceLock<Arc<Mutex<bool>>> = OnceLock::new();
+static SWITCHED_ON_ARC: Mutex<Option<Arc<Mutex<bool>>>> = Mutex::new(None);
 
 #[derive(Resource, Clone)]
 pub struct LaserPointBuffer {
@@ -125,87 +125,14 @@ fn try_initialize_projector_dac(
     projector_config: &mut ProjectorConfiguration,
 ) -> bool {
     match HeliosDacController::new() {
-        Ok(mut controller) => {
+        Ok(controller) => {
             info!("Helios DAC library loaded successfully");
-
-            // Try to open devices with retries
-            let max_retries = 3;
-            let mut devices_opened = false;
-
-            for attempt in 1..=max_retries {
-                info!("Attempting to open Helios DAC devices (attempt {}/{})", attempt, max_retries);
-
-                match controller.open_devices() {
-                    Ok(num_devices) if num_devices > 0 => {
-                        info!("✓ Helios DAC: {} device(s) opened", num_devices);
-                        // Log device names for diagnostics
-                        for dev_idx in 0..num_devices {
-                            match controller.get_name(dev_idx as u32) {
-                                Ok(name) => info!("  Device {}: '{}'", dev_idx, name),
-                                Err(e)   => warn!("  Device {}: name unavailable ({})", dev_idx, e),
-                            }
-                        }
-                        devices_opened = true;
-                        break;
-                    }
-                    Ok(num_devices) if num_devices == 0 => {
-                        warn!("No Helios DAC devices found on attempt {}", attempt);
-                        if attempt < max_retries {
-                            std::thread::sleep(std::time::Duration::from_millis(500));
-                        }
-                    }
-                    Ok(num_devices) => {
-                        error!("Unexpected device count {} on attempt {}", num_devices, attempt);
-                        if attempt < max_retries {
-                            std::thread::sleep(std::time::Duration::from_millis(500));
-                        }
-                    }
-                    Err(e) => {
-                        error!("Failed to open Helios DAC devices on attempt {}: {}", attempt, e);
-                        if attempt < max_retries {
-                            std::thread::sleep(std::time::Duration::from_millis(500));
-                        }
-                    }
-                }
-            }
-
-            if !devices_opened {
-                error!("✗ Failed to open Helios DAC after {} attempts. Is the device connected?", max_retries);
-                return false;
-            }
-
-            // Wait for DAC firmware to finish booting before polling GetStatus.
-            // The Helios DAC firmware runs an internal self-test after OpenDevices()
-            // and calling GetStatus() too early causes a segfault in libusb (si_addr=0x1).
-            info!("Waiting for DAC firmware to initialize...");
-            std::thread::sleep(std::time::Duration::from_millis(500));
-
-            // Verify device is actually responding with a status check
-            match controller.get_status(0) {
-                Ok(ready) => {
-                    info!("✓ DAC status check passed (ready={})", ready);
-                }
-                Err(e) => {
-                    error!("✗ DAC opened but GetStatus failed: {}", e);
-                    error!("   This usually means the DAC firmware is still booting or");
-                    error!("   the USB transfer failed. Closing and will retry in 3s.");
-                    let _ = controller.stop(0);
-                    let _ = controller.close_devices();
-                    std::thread::sleep(std::time::Duration::from_millis(250));
-                    return false;
-                }
-            }
-
-            // Open the shutter to enable laser output
-            if let Err(e) = controller.set_shutter(0, true) {
-                warn!("Failed to open laser shutter: {}", e);
-            } else {
-                info!("✓ Laser shutter opened");
-            }
 
             // Create shared switched_on and connected flags for thread
             let switched_on_flag = Arc::new(Mutex::new(projector_config.switched_on));
-            let connected_flag = Arc::new(Mutex::new(true));
+            // Start as false; background thread will set to true once opened successfully
+            let connected_flag = Arc::new(Mutex::new(false)); 
+            
             // Start background thread for continuous DAC output
             info!("✓ Starting DAC output thread...");
             let shutdown_sender = start_dac_output_thread(
@@ -221,7 +148,11 @@ fn try_initialize_projector_dac(
             dac_controller.switched_on = projector_config.switched_on;
             set_switched_on_arc(switched_on_flag);
             set_connected_arc(connected_flag);
-            projector_config.connected = dac_controller.initialized;
+            
+            // Assume connected is true initially to let the thread try opening devices.
+            // If opening fails, the thread will set connected_flag to false, which
+            // Bevy will sync back to projector_config.connected on the next tick.
+            projector_config.connected = true;
             true
         }
         Err(e) => {
@@ -244,6 +175,80 @@ fn start_dac_output_thread(
     thread::spawn(move || {
         let mut controller = controller;
         info!("DAC output thread started");
+
+        // Open devices inside the thread
+        let max_retries = 3;
+        let mut devices_opened = false;
+        for attempt in 1..=max_retries {
+            info!("Thread: Attempting to open Helios DAC devices (attempt {}/{})", attempt, max_retries);
+            match controller.open_devices() {
+                Ok(num_devices) if num_devices > 0 => {
+                    info!("✓ Thread: Helios DAC: {} device(s) opened", num_devices);
+                    devices_opened = true;
+                    break;
+                }
+                Ok(num_devices) if num_devices == 0 => {
+                    warn!("Thread: No Helios DAC devices found on attempt {}", attempt);
+                    if attempt < max_retries {
+                        std::thread::sleep(std::time::Duration::from_millis(500));
+                    }
+                }
+                Ok(num_devices) => {
+                    error!("Thread: Unexpected device count {} on attempt {}", num_devices, attempt);
+                    if attempt < max_retries {
+                        std::thread::sleep(std::time::Duration::from_millis(500));
+                    }
+                }
+                Err(e) => {
+                    error!("Thread: Failed to open Helios DAC devices on attempt {}: {}", attempt, e);
+                    if attempt < max_retries {
+                        std::thread::sleep(std::time::Duration::from_millis(500));
+                    }
+                }
+            }
+        }
+
+        if !devices_opened {
+            error!("✗ Thread: Failed to open Helios DAC after {} attempts. Thread exiting.", max_retries);
+            let mut conn = connected.lock().unwrap();
+            *conn = false;
+            return;
+        }
+
+        // Wait for DAC firmware to finish booting before polling GetStatus.
+        info!("Thread: Waiting for DAC firmware to initialize...");
+        std::thread::sleep(std::time::Duration::from_millis(500));
+
+        // Verify status
+        match controller.get_status(0) {
+            Ok(ready) => {
+                info!("✓ Thread: DAC status check passed (ready={})", ready);
+            }
+            Err(e) => {
+                error!("✗ Thread: DAC opened but GetStatus failed: {}", e);
+                let _ = controller.stop(0);
+                let _ = controller.close_devices();
+                let mut conn = connected.lock().unwrap();
+                *conn = false;
+                return;
+            }
+        }
+
+        // Open the shutter
+        if let Err(e) = controller.set_shutter(0, true) {
+            warn!("Thread: Failed to open laser shutter: {}", e);
+        } else {
+            info!("✓ Thread: Laser shutter opened");
+            // Allow the shutter command to complete and the DAC to settle
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+
+        // Successfully opened and verified connection! Set flag to true!
+        {
+            let mut conn = connected.lock().unwrap();
+            *conn = true;
+        }
+
         let pps = 20000;
         let flags = 0;
         let mut frame_count = 0;
@@ -265,10 +270,19 @@ fn start_dac_output_thread(
             }
 
             // Get current points from buffer first
-            let points = {
+            let mut points = {
                 let buffer = point_buffer.points.lock().unwrap();
                 buffer.clone()
             };
+
+            // Pad small frames to at least 350 points to prevent DAC firmware buffer underflow/swap crashes
+            // and cap the maximum refresh rate to ~57 Hz to avoid USB bus flooding on the Raspberry Pi 4.
+            if !points.is_empty() && points.len() < 350 {
+                let last_point = points.last().cloned().unwrap();
+                while points.len() < 350 {
+                    points.push(HeliosPoint::blanked(last_point.x, last_point.y));
+                }
+            }
 
             // Explicitly check switched_on flag
             let laser_enabled = {
@@ -288,6 +302,10 @@ fn start_dac_output_thread(
                                 if frame_count % 600 == 0 {
                                     info!("✓ DAC active: {} frames sent, current frame has {} points", frame_count, points.len());
                                 }
+                                // Sleep for 80% of the frame duration to let the DAC render peacefully
+                                // before we poll status again. Enforce a safe range of 4ms to 50ms.
+                                let sleep_ms = ((points.len() as f32 / pps as f32) * 800.0) as u64;
+                                thread::sleep(std::time::Duration::from_millis(sleep_ms.clamp(4, 50)));
                             }
                             Err(e) => {
                                 consecutive_write_failures += 1;
@@ -307,8 +325,8 @@ fn start_dac_output_thread(
                             }
                         }
                     } else {
-                        // Projector is switched off: always send a blanked frame
-                        let blank = vec![HeliosPoint::blanked(2048, 2048)];
+                        // Projector is switched off: always send a blanked frame of at least 350 points
+                        let blank = vec![HeliosPoint::blanked(2048, 2048); 350];
                         if let Err(_e) = controller.write_frame_native(0, pps, flags, &blank) {
                             consecutive_write_failures += 1;
                             if consecutive_write_failures >= max_write_failures {
@@ -317,14 +335,17 @@ fn start_dac_output_thread(
                                 *connected = false;
                                 break;
                             }
+                            thread::sleep(std::time::Duration::from_millis(50));
                         } else {
                             consecutive_write_failures = 0;
+                            // Sleep 50ms when idle to avoid tight-loop USB hammering
+                            thread::sleep(std::time::Duration::from_millis(50));
                         }
                     }
                 }
                 Ok(false) => {
                     consecutive_errors = 0;
-                    thread::sleep(std::time::Duration::from_millis(2));
+                    thread::sleep(std::time::Duration::from_millis(8));
                 }
                 Err(e) => {
                     consecutive_errors += 1;
@@ -649,14 +670,18 @@ fn world_to_projector_coordinates(
 }
 
 fn set_switched_on_arc(flag: Arc<Mutex<bool>>) {
-    let _ = SWITCHED_ON_ARC.set(flag);
+    let mut lock = SWITCHED_ON_ARC.lock().unwrap();
+    *lock = Some(flag);
 }
 fn get_switched_on_arc() -> Option<Arc<Mutex<bool>>> {
-    SWITCHED_ON_ARC.get().cloned()
+    let lock = SWITCHED_ON_ARC.lock().unwrap();
+    lock.clone()
 }
 fn set_connected_arc(flag: Arc<Mutex<bool>>) {
-    let _ = CONNECTED_ARC.set(flag);
+    let mut lock = CONNECTED_ARC.lock().unwrap();
+    *lock = Some(flag);
 }
 fn get_connected_arc() -> Option<Arc<Mutex<bool>>> {
-    CONNECTED_ARC.get().cloned()
+    let lock = CONNECTED_ARC.lock().unwrap();
+    lock.clone()
 }
