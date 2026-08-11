@@ -65,6 +65,7 @@ try {
     if (-not $DryRun -and $ExportArtifact) {
         New-Item -ItemType Directory -Force -Path $LocalArtifactDir | Out-Null
         Export-ImageArtifact -ImageTag $ArtifactImageTag -ContainerArtifactPath "/dist/server" -LocalArtifactPath (Join-Path $LocalArtifactDir "server")
+        Export-ImageArtifact -ImageTag $ArtifactImageTag -ContainerArtifactPath "/dist/dac-test" -LocalArtifactPath (Join-Path $LocalArtifactDir "dac-test")
         Export-ImageArtifact -ImageTag $ArtifactImageTag -ContainerArtifactPath "/dist/libHeliosLaserDAC.so" -LocalArtifactPath (Join-Path $LocalArtifactDir "libHeliosLaserDAC.so")
     }
 }

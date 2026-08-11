@@ -12,8 +12,10 @@ COPY . .
 RUN --mount=type=cache,target=/root/.cargo/registry \
     --mount=type=cache,target=/project/target \
     cargo build -p server --target ${TARGET_TRIPLE} --profile ${CARGO_PROFILE} && \
+    cargo build -p dac-test --target ${TARGET_TRIPLE} --profile ${CARGO_PROFILE} && \
     mkdir -p /dist && \
     cp /project/target/${TARGET_TRIPLE}/${CARGO_PROFILE}/server /dist/server && \
+    cp /project/target/${TARGET_TRIPLE}/${CARGO_PROFILE}/dac-test /dist/dac-test && \
     if [ -f /project/target/${TARGET_TRIPLE}/${CARGO_PROFILE}/libHeliosLaserDAC.so ]; then \
         cp /project/target/${TARGET_TRIPLE}/${CARGO_PROFILE}/libHeliosLaserDAC.so /dist/libHeliosLaserDAC.so; \
     elif [ -f /opt/libHeliosLaserDAC.so ]; then \

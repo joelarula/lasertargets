@@ -54,6 +54,17 @@ $null = ssh $TargetHost "rm -f /opt/lasertargets/server"
 scp $ServerBinary "${TargetHost}:/opt/lasertargets/server"
 $null = ssh $TargetHost "chmod +x /opt/lasertargets/server"
 
+# Deploy dac-test (hardware test tool — run manually)
+$DacTestBinary = Join-Path $DistDir "dac-test"
+if (Test-Path $DacTestBinary) {
+    Write-Host "--- Deploying dac-test binary ---" -ForegroundColor Yellow
+    $null = ssh $TargetHost "rm -f /opt/lasertargets/dac-test"
+    scp $DacTestBinary "${TargetHost}:/opt/lasertargets/dac-test"
+    $null = ssh $TargetHost "chmod +x /opt/lasertargets/dac-test"
+} else {
+    Write-Host "--- Skipping dac-test (not built yet) ---" -ForegroundColor DarkGray
+}
+
 # Deploy shared library (if available)
 if (Test-Path $HeliosLibrary) {
     Write-Host "--- Deploying Helios DAC library ---" -ForegroundColor Yellow
