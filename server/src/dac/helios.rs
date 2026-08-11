@@ -90,8 +90,6 @@ type GetNameFn = unsafe extern "C" fn(c_uint) -> *const c_char;
 
 // Internal library handle
 struct HeliosLib {
-    #[allow(dead_code)]
-    lib: libloading::Library,
     open_devices: OpenDevicesFn,
     close_devices: CloseDevicesFn,
     get_status: GetStatusFn,
@@ -131,8 +129,10 @@ impl HeliosLib {
                 .get::<GetNameFn>(b"GetName")
                 .map_err(|e| format!("Failed to load GetName: {}", e))?;
 
+            // Keep library mapped in process memory forever to prevent libusb background thread segfaults on dlclose()
+            std::mem::forget(lib);
+
             Ok(Self {
-                lib,
                 open_devices,
                 close_devices,
                 get_status,

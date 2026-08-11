@@ -448,13 +448,22 @@ impl UniversalPath {
         Self::circle(center, radius, color)
     }
 
-    /// Create a diamond (rotated square) path — a square rotated 45°
+    /// Create a diamond (rotated square) path — a square rotated 45° with sharp corner dwells
     pub fn diamond(center: Vec2, half_size: f32, color: Color) -> Self {
         let top    = Vec2::new(center.x,             center.y + half_size);
         let right  = Vec2::new(center.x + half_size, center.y);
         let bottom = Vec2::new(center.x,             center.y - half_size);
         let left   = Vec2::new(center.x - half_size, center.y);
-        Self::from_segment(PathSegment::polygon(&[top, right, bottom, left], color, 0))
+        
+        let mut segment = PathSegment::empty();
+        // Dwell 4 on corners so galvos settle for razor-sharp, bright corners
+        segment.push(top.x, top.y, color, 4);
+        segment.push(right.x, right.y, color, 4);
+        segment.push(bottom.x, bottom.y, color, 4);
+        segment.push(left.x, left.y, color, 4);
+        segment.push(top.x, top.y, color, 4); // Closed loop seam
+
+        Self::from_segment(segment)
     }
 
     /// Create a rectangle path

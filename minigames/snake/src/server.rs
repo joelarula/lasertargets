@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use common::path::{LaserTextOptions, PathRenderable, UniversalPath};
+use common::path::{LaserTextOptions, PathRenderable, PathSegment, UniversalPath};
 use common::scene::{SceneEntity, SceneSetup};
 use common::state::{GameState, ServerState};
 
@@ -49,10 +49,11 @@ fn grid_to_local(cell: IVec2, grid_w: i32, grid_h: i32) -> Vec3 {
 
 fn random_color() -> (f32, f32, f32) {
     use rand::random_range;
-    // Generate vivid colours by picking from a set of saturated hues
-    let hue = random_range(0.0f32..360.0);
-    let (r, g, b) = hsl_to_rgb(hue, 0.9, 0.55);
-    (r, g, b)
+    match random_range(0..3) {
+        0 => (1.0, 0.0, 0.0), // Red
+        1 => (0.0, 1.0, 0.0), // Green
+        _ => (0.0, 0.3, 1.0), // Blue
+    }
 }
 
 fn hsl_to_rgb(h: f32, s: f32, l: f32) -> (f32, f32, f32) {
@@ -72,9 +73,11 @@ fn hsl_to_rgb(h: f32, s: f32, l: f32) -> (f32, f32, f32) {
 
 fn random_gem_position(snake: &SnakeState) -> IVec2 {
     use rand::random_range;
+    let margin_x = if snake.grid_w > 4 { 2 } else { 0 };
+    let margin_y = if snake.grid_h > 4 { 2 } else { 0 };
     loop {
-        let x = random_range(0..snake.grid_w);
-        let y = random_range(0..snake.grid_h);
+        let x = random_range(margin_x..(snake.grid_w - margin_x));
+        let y = random_range(margin_y..(snake.grid_h - margin_y));
         let pos = IVec2::new(x, y);
         if !snake.segments.contains(&pos) {
             return pos;
@@ -174,11 +177,13 @@ fn init_snake_game(
         gem_position: IVec2::ZERO, // placeholder
         gem_color: (0.0, 0.0, 0.0),
         gems_eaten: 0,
+        pending_growth: 0,
         grid_w,
         grid_h,
         session_id,
         is_started: false,
         game_over: false,
+        game_over_reset_timer: None,
     };
 
     // Place first gem
@@ -192,16 +197,14 @@ fn init_snake_game(
     // Spawn head
     spawn_head_entity(&mut commands, &state, scene_entity);
 
-    // Spawn initial body segments
-    for i in 1..state.segments.len() {
-        spawn_segment_entity(&mut commands, &state, i, scene_entity);
-    }
+    // Spawn initial body line
+    spawn_snake_body_entity(&mut commands, &state, scene_entity);
 
     // Spawn gem
     spawn_gem_entity(&mut commands, &state, scene_entity);
 
-    // Spawn scene border rectangle so the game area boundary is visible
-    spawn_border_entity(&mut commands, scene_entity, actual_w, actual_h);
+    // Border box removed so outer scene border isn't drawn around Snake game
+    // spawn_border_entity(&mut commands, scene_entity, actual_w, actual_h);
 
     // Spawn full-scene center vector title announcement
     spawn_snake_title_entity(&mut commands, &scene_setup, scene_entity);
@@ -220,36 +223,38 @@ fn init_snake_game(
     info!("Snake game initialized: {}x{} grid, session {}", grid_w, grid_h, session_id);
 }
 
-fn spawn_snake_title_entity(commands: &mut Commands, scene_setup: &SceneSetup, scene_entity: Option<Entity>) {
+fn spawn_snake_text_announcement(
+    commands: &mut Commands,
+    scene_setup: &SceneSetup,
+    scene_entity: Option<Entity>,
+    text: &str,
+    color: Color,
+    duration_secs: f32,
+) {
     let scene_dim = scene_setup.scene.scene_dimension;
-    // Height-based cap: 55% of scene height
     let height_cap = scene_dim.y as f32 * 0.55;
-    // Width-based cap: fit "SNAKE" (5 chars) within 85% of scene width.
-    // Century Gothic char width ≈ 0.65× height, plus letter_spacing (0.08) per char.
-    let num_chars = 5usize;
+    let num_chars = text.len().max(1);
     let char_width_ratio = 0.65_f32;
     let letter_spacing = 0.08_f32;
     let total_width_per_unit = num_chars as f32 * (char_width_ratio + letter_spacing);
     let width_cap = (scene_dim.x as f32 * 0.85) / total_width_per_unit;
-    let text_height = height_cap.min(width_cap).clamp(0.8, 3.5);
+    let text_height = height_cap.min(width_cap).clamp(0.6, 3.5);
 
     let options = LaserTextOptions {
         origin: Vec2::ZERO,
         height: text_height,
-        color: Color::srgb(0.2, 1.0, 0.4), // Bright green laser title path
+        color,
         center_on_origin: true,
         ..Default::default()
     };
 
     let font_paths = [
-        // Project-bundled fonts (checked first)
+        "/opt/lasertargets/assets/fonts/centurygothic.ttf",
         "assets/fonts/centurygothic.ttf",
         "assets/fonts/centurygothic_bold.ttf",
         "assets/fonts/FiraCodeNerdFont-Regular.ttf",
-        // Windows system fonts
         "C:/Windows/Fonts/arial.ttf",
         "C:/Windows/Fonts/seguiemj.ttf",
-        // Linux system fonts
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
         "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
     ];
@@ -257,35 +262,44 @@ fn spawn_snake_title_entity(commands: &mut Commands, scene_setup: &SceneSetup, s
     let mut maybe_title_path = None;
     for path in &font_paths {
         if let Ok(data) = std::fs::read(path) {
-            if let Ok(text_path) = UniversalPath::from_ttf_text(&data, "SNAKE", &options) {
-                info!("✓ [Snake] Rendered full-scene center vector title using font {}", path);
+            if let Ok(text_path) = UniversalPath::from_ttf_text(&data, text, &options) {
+                info!("✓ [Snake] Rendered text announcement '{}' using font {}", text, path);
                 maybe_title_path = Some(text_path);
                 break;
             }
         }
     }
 
-    let Some(title_path) = maybe_title_path else {
-        warn!("No usable TTF font found for SNAKE title");
-        return;
-    };
+    if maybe_title_path.is_none() {
+        const FALLBACK_FONT_BYTES: &[u8] = include_bytes!("../../../assets/fonts/centurygothic.ttf");
+        if let Ok(text_path) = UniversalPath::from_ttf_text(FALLBACK_FONT_BYTES, text, &options) {
+            info!("✓ [Snake] Rendered text announcement '{}' using embedded fallback font", text);
+            maybe_title_path = Some(text_path);
+        }
+    }
 
-    let id = commands
-        .spawn((
-            SnakeTitleAnnouncement {
-                timer: Timer::from_seconds(3.0, TimerMode::Once),
-            },
+    if let Some(title_path) = maybe_title_path {
+        let child_entity = commands.spawn((
             Transform::default(),
             GlobalTransform::default(),
             Visibility::default(),
+            SnakeTitleAnnouncement {
+                timer: Timer::from_seconds(duration_secs, TimerMode::Once),
+            },
             title_path,
-            PathRenderable::default(),
-        ))
-        .id();
+            common::path::PathRenderable::default(),
+        )).id();
 
-    if let Some(scene) = scene_entity {
-        commands.entity(scene).add_child(id);
+        if let Some(scene) = scene_entity {
+            commands.entity(scene).add_child(child_entity);
+        }
+    } else {
+        warn!("No usable TTF font found for text announcement '{}'", text);
     }
+}
+
+fn spawn_snake_title_entity(commands: &mut Commands, scene_setup: &SceneSetup, scene_entity: Option<Entity>) {
+    spawn_snake_text_announcement(commands, scene_setup, scene_entity, "SNAKE", Color::srgb(0.2, 1.0, 0.4), 3.0);
 }
 
 fn animate_snake_title_announcement(
@@ -322,27 +336,55 @@ fn spawn_head_entity(commands: &mut Commands, state: &SnakeState, scene_entity: 
     }
 }
 
-fn spawn_segment_entity(
+fn spawn_snake_body_entity(
     commands: &mut Commands,
     state: &SnakeState,
-    index: usize,
     scene_entity: Option<Entity>,
 ) {
-    let cell = state.segments[index];
-    let (r, g, b) = state.segment_colors[index];
-    let color = Color::srgb(r, g, b);
-    let pos = grid_to_local(cell, state.grid_w, state.grid_h);
-    let path = UniversalPath::circle(Vec2::ZERO, SEGMENT_RADIUS * 0.85, color);
+    if state.segments.len() < 2 {
+        return;
+    }
+
+    let mut universal_path = UniversalPath::new();
+    let mut current_segment = PathSegment::empty();
+
+    for i in 0..state.segments.len() {
+        let current_cell = state.segments[i];
+        let pos = grid_to_local(current_cell, state.grid_w, state.grid_h);
+        let (r, g, b) = state.segment_colors.get(i).copied().unwrap_or((1.0, 1.0, 1.0));
+        let color = Color::srgb(r, g, b);
+
+        if i > 0 {
+            let prev_cell = state.segments[i - 1];
+            let dx = (current_cell.x - prev_cell.x).abs();
+            let dy = (current_cell.y - prev_cell.y).abs();
+            if dx > 1 || dy > 1 {
+                // Screen boundary wrap occurred! Finish current sub-segment and start a new one to prevent connecting laser lines
+                if !current_segment.points.is_empty() {
+                    universal_path.add_segment(current_segment);
+                    current_segment = PathSegment::empty();
+                }
+            }
+        }
+
+        current_segment.push(pos.x, pos.y, color, 1);
+    }
+
+    if !current_segment.points.is_empty() {
+        universal_path.add_segment(current_segment);
+    }
+
     let id = commands
         .spawn((
-            SnakeSegment { color },
-            Transform::from_translation(pos),
-            GlobalTransform::from(Transform::from_translation(pos)),
+            SnakeSegment { color: Color::WHITE },
+            Transform::default(),
+            GlobalTransform::default(),
             Visibility::default(),
-            path,
+            universal_path,
             PathRenderable::default(),
         ))
         .id();
+
     if let Some(scene) = scene_entity {
         commands.entity(scene).add_child(id);
     }
@@ -352,6 +394,7 @@ fn spawn_gem_entity(commands: &mut Commands, state: &SnakeState, scene_entity: O
     let (r, g, b) = state.gem_color;
     let color = Color::srgb(r, g, b);
     let pos = grid_to_local(state.gem_position, state.grid_w, state.grid_h);
+    info!("★ [Snake] Spawned diamond gem at grid {:?}, color RGB ({:.1}, {:.1}, {:.1})", state.gem_position, r, g, b);
     // Diamond = rectangle rotated 45°
     let path = UniversalPath::diamond(Vec2::ZERO, GEM_HALF_SIZE, color);
     let id = commands
@@ -417,6 +460,7 @@ fn handle_direction_input(
 fn snake_move_tick(
     mut commands: Commands,
     time: Res<Time>,
+    scene_setup: Res<SceneSetup>,
     mut timer_res: Option<ResMut<SnakeMoveTimer>>,
     mut snake_state: Option<ResMut<SnakeState>>,
     scene_query: Query<Entity, With<SceneEntity>>,
@@ -433,7 +477,39 @@ fn snake_move_tick(
     let Some(ref mut state) = snake_state else {
         return;
     };
-    if !state.is_started || state.game_over {
+
+    if state.game_over {
+        if let Some(ref mut reset_timer) = state.game_over_reset_timer {
+            reset_timer.tick(time.delta());
+            if reset_timer.just_finished() {
+                info!("★ [Snake] Auto-resetting game after GAME OVER screen...");
+                let start = IVec2::new(state.grid_w / 2, state.grid_h / 2);
+                state.segments = vec![start, start + IVec2::new(-1, 0), start + IVec2::new(-2, 0)];
+                state.segment_colors = vec![(1.0, 1.0, 1.0), (0.6, 0.6, 0.6), (0.6, 0.6, 0.6)];
+                state.direction = SnakeDirection::Right;
+                state.queued_direction = None;
+                state.gems_eaten = 0;
+                state.pending_growth = 0;
+                state.game_over = false;
+                state.game_over_reset_timer = None;
+                state.is_started = true;
+                timer.timer = Timer::from_seconds(INITIAL_TICK_INTERVAL, TimerMode::Repeating);
+
+                for e in head_query.iter().chain(seg_query.iter()).chain(gem_query.iter()) {
+                    commands.entity(e).despawn();
+                }
+                let scene_entity = scene_query.single().ok();
+                state.gem_position = random_gem_position(state);
+                state.gem_color = random_color();
+                spawn_head_entity(&mut commands, state, scene_entity);
+                spawn_snake_body_entity(&mut commands, state, scene_entity);
+                spawn_gem_entity(&mut commands, state, scene_entity);
+            }
+        }
+        return;
+    }
+
+    if !state.is_started {
         return;
     }
 
@@ -478,7 +554,11 @@ fn snake_move_tick(
     if body_to_check.contains(&new_head) {
         // Game over!
         state.game_over = true;
-        info!("Snake game over! Score: {}", state.gems_eaten);
+        state.game_over_reset_timer = Some(Timer::from_seconds(2.5, TimerMode::Once));
+        info!("★ [Snake] Game over triggered! Score: {}. Showing GAME OVER announcement...", state.gems_eaten);
+
+        let scene_entity = scene_query.single().ok();
+        spawn_snake_text_announcement(&mut commands, &scene_setup, scene_entity, "GAME OVER", Color::srgb(1.0, 0.2, 0.2), 2.5);
 
         game_over_events.write(SnakeGameOverEvent {
             session_id: state.session_id,
@@ -495,7 +575,8 @@ fn snake_move_tick(
 
     // Move: insert new head, optionally remove tail
     state.segments.insert(0, new_head);
-    state.segment_colors.insert(0, (1.0, 1.0, 1.0)); // head always white
+    let head_col = state.segment_colors.first().copied().unwrap_or((1.0, 1.0, 1.0));
+    state.segment_colors.insert(0, head_col);
 
     if ate_gem {
         // Snake turns the color of the eaten diamond rectangle
@@ -504,6 +585,7 @@ fn snake_move_tick(
             *col = eaten_color;
         }
         state.gems_eaten += 1;
+        state.pending_growth += 2; // Grow by +3 segments total per diamond target!
 
         // Speed up
         let new_interval =
@@ -511,16 +593,20 @@ fn snake_move_tick(
         timer.timer = Timer::from_seconds(new_interval, TimerMode::Repeating);
 
         info!(
-            "Snake ate gem! Score: {}, new interval: {:.3}s",
-            state.gems_eaten, new_interval
+            "Snake ate gem! Score: {}, new length: {}, interval: {:.3}s",
+            state.gems_eaten, state.segments.len() + state.pending_growth, new_interval
         );
 
         // New gem
         state.gem_position = random_gem_position(state);
         let gc = random_color();
         state.gem_color = gc;
+    }
+
+    // Process tail popping / growth: if pending_growth > 0, retain tail to extend snake length
+    if state.pending_growth > 0 {
+        state.pending_growth -= 1;
     } else {
-        // Remove tail
         state.segments.pop();
         state.segment_colors.pop();
     }
@@ -541,10 +627,8 @@ fn snake_move_tick(
     // Spawn head
     spawn_head_entity(&mut commands, state, scene_entity);
 
-    // Spawn body
-    for i in 1..state.segments.len() {
-        spawn_segment_entity(&mut commands, state, i, scene_entity);
-    }
+    // Spawn body line
+    spawn_snake_body_entity(&mut commands, state, scene_entity);
 
     // Spawn new gem if eaten
     if ate_gem {

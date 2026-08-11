@@ -9,20 +9,20 @@ pub const GAME_NAME: &str = "snake";
 /// Grid cell size in world units (10cm)
 pub const CELL_SIZE: f32 = 0.1;
 
-/// Initial move interval in seconds
-pub const INITIAL_TICK_INTERVAL: f32 = 0.20;
+/// Initial move interval in seconds (10 steps per second — smooth & controllable)
+pub const INITIAL_TICK_INTERVAL: f32 = 0.10;
 
-/// Minimum tick interval (fastest speed)
-pub const MIN_TICK_INTERVAL: f32 = 0.06;
+/// Minimum tick interval (top speed — 20 steps/sec)
+pub const MIN_TICK_INTERVAL: f32 = 0.05;
 
-/// Speed-up factor per gem eaten (subtract this from interval)
-pub const SPEED_UP_PER_GEM: f32 = 0.008;
+/// Speed-up factor per gem eaten (gentle, smooth progression)
+pub const SPEED_UP_PER_GEM: f32 = 0.002;
 
 /// Size of a snake segment (as fraction of cell)
 pub const SEGMENT_RADIUS: f32 = CELL_SIZE * 0.4;
 
-/// Size of the diamond gem (half-diagonal) — 80% of cell so it fills the cell visibly
-pub const GEM_HALF_SIZE: f32 = CELL_SIZE * 0.8;
+/// Size of the diamond gem (half-diagonal) — huge & bold (2.5x cell size)
+pub const GEM_HALF_SIZE: f32 = CELL_SIZE * 2.5;
 
 // ---------------------------------------------------------------------------
 // Direction
@@ -105,6 +105,8 @@ pub struct SnakeState {
     pub gem_color: (f32, f32, f32),
     /// Number of gems eaten (= score)
     pub gems_eaten: u32,
+    /// Number of pending growth segments to add on upcoming ticks
+    pub pending_growth: usize,
     /// Grid width in cells
     pub grid_w: i32,
     /// Grid height in cells
@@ -115,6 +117,9 @@ pub struct SnakeState {
     pub is_started: bool,
     /// Whether the game is over
     pub game_over: bool,
+    /// Auto-reset timer after Game Over screen
+    #[serde(skip)]
+    pub game_over_reset_timer: Option<Timer>,
 }
 
 /// Timer that drives snake movement ticks (server-side)

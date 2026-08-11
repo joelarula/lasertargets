@@ -3,6 +3,7 @@ use common::config::ProjectorConfiguration;
 use common::scene::SceneEntity;
 use common::scene::SceneSetup;
 use common::path::UniversalPath;
+use common::state::CalibrationState;
 use crate::plugins::calibration::CalibrationPath;
 use crate::dac::helios::{HeliosDacController, HeliosPoint, HELIOS_MAX_COORD};
 use laserlogic::{LaserPoint, LaserSegment, OptimizeConfig};
@@ -12,7 +13,6 @@ pub struct LaserOptimizeConfig(pub OptimizeConfig);
 use std::sync::{Arc, Mutex};
 use std::sync::mpsc::{self, Sender};
 use std::thread;
-use std::sync::OnceLock;
 
 
 static CONNECTED_ARC: Mutex<Option<Arc<Mutex<bool>>>> = Mutex::new(None);
@@ -134,12 +134,14 @@ fn try_initialize_projector_dac(
             let connected_flag = Arc::new(Mutex::new(false)); 
             
             // Start background thread for continuous DAC output
-            info!("✓ Starting DAC output thread...");
+            info!("✓ Starting DAC output thread (PPS={}, min_pts={})...", projector_config.dac_pps, projector_config.dac_min_points);
             let shutdown_sender = start_dac_output_thread(
                 controller,
                 point_buffer.clone(),
                 switched_on_flag.clone(),
                 connected_flag.clone(),
+                projector_config.dac_pps,
+                projector_config.dac_min_points,
             );
 
             dac_controller.thread_running = true;
@@ -168,19 +170,23 @@ fn start_dac_output_thread(
     point_buffer: LaserPointBuffer,
     switched_on: Arc<Mutex<bool>>,
     connected: Arc<Mutex<bool>>,
+    dac_pps: u32,
+    dac_min_points: usize,
 ) -> Sender<()> {
     let (shutdown_tx, shutdown_rx) = mpsc::channel();
     let shutdown_tx_clone = shutdown_tx.clone();
 
     thread::spawn(move || {
         let mut controller = controller;
-        info!("DAC output thread started");
+        info!("DAC output thread started (PPS={}, min_points={})", dac_pps, dac_min_points);
 
         // Open devices inside the thread
-        let max_retries = 3;
+        let max_retries = 10;
         let mut devices_opened = false;
         for attempt in 1..=max_retries {
             info!("Thread: Attempting to open Helios DAC devices (attempt {}/{})", attempt, max_retries);
+            let _ = controller.close_devices();
+            std::thread::sleep(std::time::Duration::from_millis(100));
             match controller.open_devices() {
                 Ok(num_devices) if num_devices > 0 => {
                     info!("✓ Thread: Helios DAC: {} device(s) opened", num_devices);
@@ -219,19 +225,23 @@ fn start_dac_output_thread(
         info!("Thread: Waiting for DAC firmware to initialize...");
         std::thread::sleep(std::time::Duration::from_millis(500));
 
-        // Verify status
-        match controller.get_status(0) {
-            Ok(ready) => {
-                info!("✓ Thread: DAC status check passed (ready={})", ready);
+        // Verify status with retries for USB firmware boot settling
+        let mut status_ok = false;
+        for retry in 1..=5 {
+            match controller.get_status(0) {
+                Ok(ready) => {
+                    info!("✓ Thread: DAC status check passed (ready={})", ready);
+                    status_ok = true;
+                    break;
+                }
+                Err(e) => {
+                    warn!("Thread: DAC GetStatus attempt {}/5 returned: {} -- retrying in 300ms", retry, e);
+                    std::thread::sleep(std::time::Duration::from_millis(300));
+                }
             }
-            Err(e) => {
-                error!("✗ Thread: DAC opened but GetStatus failed: {}", e);
-                let _ = controller.stop(0);
-                let _ = controller.close_devices();
-                let mut conn = connected.lock().unwrap();
-                *conn = false;
-                return;
-            }
+        }
+        if !status_ok {
+            warn!("Thread: DAC status check did not return Ok after 5 retries, proceeding with shutter open.");
         }
 
         // Open the shutter
@@ -249,7 +259,7 @@ fn start_dac_output_thread(
             *conn = true;
         }
 
-        let pps = 20000;
+        let pps = dac_pps;
         let flags = 0;
         let mut frame_count = 0;
         let mut consecutive_errors = 0;
@@ -275,26 +285,64 @@ fn start_dac_output_thread(
                 buffer.clone()
             };
 
-            // Pad small frames to at least 350 points to prevent DAC firmware buffer underflow/swap crashes
-            // and cap the maximum refresh rate to ~57 Hz to avoid USB bus flooding on the Raspberry Pi 4.
-            if !points.is_empty() && points.len() < 350 {
+            // Pad small frames to at least dac_min_points to prevent DAC firmware buffer underflow
+            if !points.is_empty() && points.len() < dac_min_points {
                 let last_point = points.last().cloned().unwrap();
-                while points.len() < 350 {
+                while points.len() < dac_min_points {
                     points.push(HeliosPoint::blanked(last_point.x, last_point.y));
                 }
             }
 
             // Explicitly check switched_on flag
-            let laser_enabled = {
+            let is_switched_on = {
                 let on = switched_on.lock().unwrap();
                 *on
-            } && !points.is_empty() && points.iter().any(|p| p.r > 0 || p.g > 0 || p.b > 0);
+            };
+
+            // If points is empty, populate a smooth 4-corner unlit frame of at least dac_min_points to keep galvos active without USB underruns
+            if points.is_empty() {
+                let pts_per_side = (dac_min_points / 4).max(1);
+                let mut blank = Vec::with_capacity(dac_min_points);
+                let p0 = (1500i32, 1500i32);
+                let p1 = (2500i32, 1500i32);
+                let p2 = (2500i32, 2500i32);
+                let p3 = (1500i32, 2500i32);
+
+                for i in 0..pts_per_side {
+                    let t = i as f32 / pts_per_side as f32;
+                    let x = (p0.0 as f32 + t * (p1.0 - p0.0) as f32) as u16;
+                    let y = (p0.1 as f32 + t * (p1.1 - p0.1) as f32) as u16;
+                    blank.push(HeliosPoint::blanked(x, y));
+                }
+                for i in 0..pts_per_side {
+                    let t = i as f32 / pts_per_side as f32;
+                    let x = (p1.0 as f32 + t * (p2.0 - p1.0) as f32) as u16;
+                    let y = (p1.1 as f32 + t * (p2.1 - p1.1) as f32) as u16;
+                    blank.push(HeliosPoint::blanked(x, y));
+                }
+                for i in 0..pts_per_side {
+                    let t = i as f32 / pts_per_side as f32;
+                    let x = (p2.0 as f32 + t * (p3.0 - p2.0) as f32) as u16;
+                    let y = (p2.1 as f32 + t * (p3.1 - p2.1) as f32) as u16;
+                    blank.push(HeliosPoint::blanked(x, y));
+                }
+                for i in 0..pts_per_side {
+                    let t = i as f32 / pts_per_side as f32;
+                    let x = (p3.0 as f32 + t * (p0.0 - p3.0) as f32) as u16;
+                    let y = (p3.1 as f32 + t * (p0.1 - p3.1) as f32) as u16;
+                    blank.push(HeliosPoint::blanked(x, y));
+                }
+                while blank.len() < dac_min_points {
+                    blank.push(HeliosPoint::blanked(1500, 1500));
+                }
+                points = blank;
+            }
 
             match controller.get_status(0) {
                 Ok(true) => {
                     consecutive_errors = 0;
 
-                    if laser_enabled {
+                    if is_switched_on {
                         match controller.write_frame_native(0, pps, flags, &points) {
                             Ok(_) => {
                                 consecutive_write_failures = 0;
@@ -302,19 +350,35 @@ fn start_dac_output_thread(
                                 if frame_count % 600 == 0 {
                                     info!("✓ DAC active: {} frames sent, current frame has {} points", frame_count, points.len());
                                 }
-                                // Sleep for 80% of the frame duration to let the DAC render peacefully
-                                // before we poll status again. Enforce a safe range of 4ms to 50ms.
-                                let sleep_ms = ((points.len() as f32 / pps as f32) * 800.0) as u64;
-                                thread::sleep(std::time::Duration::from_millis(sleep_ms.clamp(4, 50)));
+                                // Adaptive microsecond sleep: 75% of frame play time
+                                let total_pts = points.len().max(dac_min_points) as f32;
+                                let sleep_micros = ((total_pts / pps as f32) * 750_000.0) as u64;
+                                if sleep_micros < 10_000 {
+                                    thread::sleep(std::time::Duration::from_micros(sleep_micros));
+                                } else {
+                                    thread::sleep(std::time::Duration::from_millis(sleep_micros / 1000));
+                                }
                             }
                             Err(e) => {
                                 consecutive_write_failures += 1;
                                 if consecutive_write_failures == 1 || consecutive_write_failures % 10 == 0 {
                                     error!("✗ DAC write failed (failure #{}): {}. DAC may not be responding.", consecutive_write_failures, e);
                                 }
+                                // In-thread USB recovery attempt for C-library auto-closure errors (-1000, -1002)
+                                if e.contains("-1000") || e.contains("-1002") {
+                                    info!("Thread: Attempting immediate USB connection reset...");
+                                    let _ = controller.close_devices();
+                                    thread::sleep(std::time::Duration::from_millis(100));
+                                    if let Ok(devs) = controller.open_devices() {
+                                        if devs > 0 {
+                                            let _ = controller.set_shutter(0, true);
+                                            info!("✓ Thread: Immediate USB connection reset successful!");
+                                            consecutive_write_failures = 0;
+                                        }
+                                    }
+                                }
                                 if consecutive_write_failures >= max_write_failures {
-                                    error!("✗ CRITICAL: {} consecutive write failures. DAC connection appears dead. Thread exiting.", consecutive_write_failures);
-                                    error!("   Please restart the server to reinitialize the DAC.");
+                                    error!("✗ CRITICAL: {} consecutive write failures. DAC connection dead. Exiting for auto-reconnect.", consecutive_write_failures);
                                     let mut connected = connected.lock().unwrap();
                                     *connected = false;
                                     let _ = controller.stop(0);
@@ -325,51 +389,51 @@ fn start_dac_output_thread(
                             }
                         }
                     } else {
-                        // Projector is switched off: always send a blanked frame of at least 350 points
-                        let blank = vec![HeliosPoint::blanked(2048, 2048); 350];
-                        if let Err(_e) = controller.write_frame_native(0, pps, flags, &blank) {
-                            consecutive_write_failures += 1;
-                            if consecutive_write_failures >= max_write_failures {
-                                error!("✗ CRITICAL: DAC write failures on blank frames. Thread exiting.");
-                                let mut connected = connected.lock().unwrap();
-                                *connected = false;
-                                break;
-                            }
-                            thread::sleep(std::time::Duration::from_millis(50));
-                        } else {
-                            consecutive_write_failures = 0;
-                            // Sleep 50ms when idle to avoid tight-loop USB hammering
-                            thread::sleep(std::time::Duration::from_millis(50));
-                        }
+                        // Projector is switched off in configuration: sleep 50ms when idle
+                        thread::sleep(std::time::Duration::from_millis(50));
                     }
                 }
                 Ok(false) => {
                     consecutive_errors = 0;
-                    thread::sleep(std::time::Duration::from_millis(8));
+                    thread::sleep(std::time::Duration::from_millis(5));
                 }
                 Err(e) => {
+                    // Transient buffer status errors (-5007 / -1002) do not count as fatal disconnects
+                    if e.contains("-5007") {
+                        thread::sleep(std::time::Duration::from_millis(5));
+                        continue;
+                    }
+
+                    // In-thread USB recovery attempt when C-library closes device (-1000, -1002)
+                    if e.contains("-1000") || e.contains("-1002") {
+                        info!("Thread: C-library closed device ({}), attempting immediate in-thread USB reset...", e);
+                        let _ = controller.close_devices();
+                        thread::sleep(std::time::Duration::from_millis(100));
+                        if let Ok(devs) = controller.open_devices() {
+                            if devs > 0 {
+                                let _ = controller.set_shutter(0, true);
+                                info!("✓ Thread: Immediate in-thread USB reset successful!");
+                                consecutive_errors = 0;
+                                continue;
+                            }
+                        }
+                    }
+
                     consecutive_errors += 1;
                     if consecutive_errors == 1 {
                         error!("✗ DAC status check failed: {}. Is the Helios DAC connected and powered on?", e);
                     } else if consecutive_errors == 10 {
                         error!("✗ DAC status check failed 10 times. Verify USB connection and device power.");
-                    } else if consecutive_errors % 100 == 0 {
-                        error!("✗ DAC status check failed {} times. Connection appears dead.", consecutive_errors);
                     }
-                    if consecutive_errors >= max_consecutive_errors * 5 {
+                    if consecutive_errors >= 20 {
                         error!("✗ CRITICAL: {} consecutive status check failures. DAC appears disconnected. Thread exiting.", consecutive_errors);
-                        error!("   Please check USB connection and restart the server.");
                         let mut connected = connected.lock().unwrap();
                         *connected = false;
                         let _ = controller.stop(0);
                         let _ = controller.close_devices();
                         break;
                     }
-                    if consecutive_errors > max_consecutive_errors {
-                        thread::sleep(std::time::Duration::from_millis(100));
-                    } else {
-                        thread::sleep(std::time::Duration::from_millis(10));
-                    }
+                    thread::sleep(std::time::Duration::from_millis(50));
                 }
             }
         }
@@ -467,9 +531,15 @@ fn update_point_buffer(
     scene_setup: Res<SceneSetup>,
     point_buffer: Res<LaserPointBuffer>,
     optimize_config: Res<LaserOptimizeConfig>,
+    calibration_state: Option<Res<State<CalibrationState>>>,
     path_query: Query<(&UniversalPath, &Transform, Option<&ChildOf>, Option<&CalibrationPath>)>,
     scene_query: Query<&Transform, With<SceneEntity>>,
 ) {
+    let is_calibration_on = calibration_state
+        .as_ref()
+        .map(|s| *s.get() == common::state::CalibrationState::On)
+        .unwrap_or(true);
+
     // Only update buffer if projector is enabled
     if !projector_config.switched_on {
         return;
@@ -491,11 +561,16 @@ fn update_point_buffer(
     let min_y = scene_origin.y - half_h;
     let max_y = scene_origin.y + half_h;
 
-    // Collect all segments in DAC coordinate space
-    let mut all_segments: Vec<LaserSegment> = Vec::new();
+    // Collect all segments in DAC coordinate space split by hint (Text vs General)
+    let mut text_segments: Vec<LaserSegment> = Vec::new();
+    let mut general_segments: Vec<LaserSegment> = Vec::new();
     let scene_transform = scene_query.single().ok();
 
     for (universal_path, transform, _parent, calibration_path) in path_query.iter() {
+        if calibration_path.is_some() && !is_calibration_on {
+            // Calibration mode is OFF: skip all calibration paths (green rectangle, crosshairs)
+            continue;
+        }
         let global_transform = if calibration_path.is_some() {
             GlobalTransform::from(*transform)
         } else if let Some(scene_transform) = scene_transform {
@@ -547,48 +622,41 @@ fn update_point_buffer(
                                 active_sub_segment.push(LaserPoint::new(x, y, last.r, last.g, last.b, 255));
                             }
                         }
-                        all_segments.push(LaserSegment::new(active_sub_segment));
+                        let laser_seg = LaserSegment::new(active_sub_segment);
+                        if segment.hint == common::path::PathHint::Text {
+                            text_segments.push(laser_seg);
+                        } else {
+                            general_segments.push(laser_seg);
+                        }
                         active_sub_segment = Vec::new();
                     }
                 }
             }
 
-            if !active_sub_segment.is_empty() {
-                all_segments.push(LaserSegment::new(active_sub_segment));
-            }
-        }
-    }
+            let is_text = segment.hint == common::path::PathHint::Text;
 
-    // Split segments by hint: text segments use the dedicated galvo-text pipeline,
-    // general segments use the standard optimize pipeline.
-    let mut text_segments: Vec<LaserSegment> = Vec::new();
-    let mut general_segments: Vec<LaserSegment> = Vec::new();
-    for seg in all_segments {
-        // We determine hint by checking if ALL points have same RGB as a text-tagged marker.
-        // Since hint is tracked per-segment at the PathSegment level above, we need to
-        // pass it through. For now, route by segment size heuristic:
-        // small dense segments (< 60 pts) typical of glyph contours → text pipeline.
-        // Larger segments → general pipeline.
-        // TODO: thread PathHint through LaserSegment for proper routing.
-        if seg.points.len() < 60 {
-            text_segments.push(seg);
-        } else {
-            general_segments.push(seg);
+            if !active_sub_segment.is_empty() {
+                let laser_seg = LaserSegment::new(active_sub_segment);
+                if is_text {
+                    text_segments.push(laser_seg);
+                } else {
+                    general_segments.push(laser_seg);
+                }
+            }
         }
     }
 
     let optimized_text = laserlogic::text_optimize::optimize_text(
         &text_segments,
         &optimize_config.0,
-        None, // no hard budget cap — add config field later if needed
+        None,
     );
     let optimized_general = laserlogic::optimize::optimize(&general_segments, &optimize_config.0);
 
-    // Merge: general shapes first (lower scan priority), text on top
+    // Merge: general game shapes first (with laser-off blanking jumps), text on top
     let mut optimized = optimized_general;
     if !optimized_text.is_empty() {
-        // Insert a blanking jump from general end to text start if both non-empty
-        if !optimized.is_empty() && !optimized_text.is_empty() {
+        if !optimized.is_empty() {
             let from = *optimized.last().unwrap();
             let to = optimized_text[0];
             let cfg = &optimize_config.0;

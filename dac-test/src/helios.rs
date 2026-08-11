@@ -79,8 +79,6 @@ type GetFirmwareVersionFn = unsafe extern "C" fn(c_uint) -> c_int;
 // ─── Internal library wrapper ────────────────────────────────────────────────
 
 struct HeliosLib {
-    #[allow(dead_code)]
-    lib: libloading::Library,
     open_devices:         OpenDevicesFn,
     close_devices:        CloseDevicesFn,
     get_status:           GetStatusFn,
@@ -114,8 +112,10 @@ impl HeliosLib {
             let get_name             = sym!(b"GetName",            GetNameFn);
             let get_firmware_version = sym!(b"GetFirmwareVersion", GetFirmwareVersionFn);
 
+            // Keep library mapped in process memory forever to prevent libusb background thread segfaults on dlclose()
+            std::mem::forget(lib);
+
             Ok(Self {
-                lib,
                 open_devices,
                 close_devices,
                 get_status,

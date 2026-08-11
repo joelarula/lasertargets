@@ -46,7 +46,7 @@ $null = ssh $TargetHost "sudo systemctl stop lasertargets-server 2>/dev/null || 
 
 # Create directories on the Pi
 Write-Host "--- Ensuring directory structure ---" -ForegroundColor Yellow
-$null = ssh $TargetHost "sudo mkdir -p /opt/lasertargets/lib && sudo chown -R lasertargets:lasertargets /opt/lasertargets"
+$null = ssh $TargetHost "sudo mkdir -p /opt/lasertargets/lib /opt/lasertargets/stats && sudo chown -R lasertargets:lasertargets /opt/lasertargets"
 
 # Deploy binary
 Write-Host "--- Deploying server binary ---" -ForegroundColor Yellow
@@ -69,8 +69,15 @@ if (Test-Path $DacTestBinary) {
 if (Test-Path $HeliosLibrary) {
     Write-Host "--- Deploying Helios DAC library ---" -ForegroundColor Yellow
     scp $HeliosLibrary "${TargetHost}:/opt/lasertargets/lib/"
-} else {
-    Write-Host "--- Skipping Helios DAC library (not built) ---" -ForegroundColor DarkGray
+    scp $HeliosLibrary "${TargetHost}:/opt/lasertargets/"
+    $null = ssh $TargetHost "sudo cp /opt/lasertargets/libHeliosLaserDAC.so /usr/lib/libHeliosLaserDAC.so 2>/dev/null || true"
+}
+
+# Deploy assets folder (fonts, audio, etc.)
+$AssetsDir = Join-Path $ProjectRoot "assets"
+if (Test-Path $AssetsDir) {
+    Write-Host "--- Deploying assets folder ---" -ForegroundColor Yellow
+    scp -r $AssetsDir "${TargetHost}:/opt/lasertargets/"
 }
 
 # Deploy systemd service file
@@ -86,18 +93,13 @@ if (Test-Path $LogrotateConfig) {
     $null = ssh $TargetHost "sudo mv /tmp/lasertargets-logrotate /etc/logrotate.d/lasertargets && sudo chown root:root /etc/logrotate.d/lasertargets && sudo chmod 644 /etc/logrotate.d/lasertargets"
 }
 
-# Enable and start the service
-Write-Host "--- Starting service ---" -ForegroundColor Yellow
-$null = ssh $TargetHost "sudo systemctl enable lasertargets-server && sudo systemctl start lasertargets-server"
-
-# Check status
-Write-Host ""
-Write-Host "--- Service status ---" -ForegroundColor Yellow
-ssh $TargetHost "sudo systemctl status lasertargets-server --no-pager"
+# Ensure background service is disabled & stopped so USB DAC is completely free for manual/interactive testing
+Write-Host "--- Disabling background service (releasing USB DAC) ---" -ForegroundColor Yellow
+$null = ssh $TargetHost "sudo systemctl disable --now lasertargets-server 2>/dev/null; sudo killall -9 server 2>/dev/null || true"
 
 Write-Host ""
 Write-Host "=== Deployment complete ===" -ForegroundColor Green
-Write-Host "Useful commands:"
-Write-Host "  ssh $TargetHost 'sudo systemctl status lasertargets-server'"
-Write-Host "  ssh $TargetHost 'sudo journalctl -u lasertargets-server -f'"
+Write-Host "Binaries & library updated at /opt/lasertargets/" -ForegroundColor Gray
+Write-Host "Run interactively with logs: .\scripts\run-server-pi.ps1" -ForegroundColor Cyan
+Write-Host "Or start background service:  ssh $TargetHost 'sudo systemctl start lasertargets-server'" -ForegroundColor DarkGray
 Write-Host "  ssh $TargetHost 'sudo systemctl restart lasertargets-server'"

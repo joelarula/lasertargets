@@ -163,7 +163,8 @@ fn spawn_hunter_title_on_session_start(
         };
 
         let font_paths = [
-            // Project-bundled fonts (checked first)
+            // Project-bundled fonts (Century Gothic is primary default)
+            "/opt/lasertargets/assets/fonts/centurygothic.ttf",
             "assets/fonts/centurygothic.ttf",
             "assets/fonts/centurygothic_bold.ttf",
             "assets/fonts/FiraCodeNerdFont-Regular.ttf",
@@ -183,6 +184,14 @@ fn spawn_hunter_title_on_session_start(
                     maybe_title_path = Some(text_path);
                     break;
                 }
+            }
+        }
+
+        if maybe_title_path.is_none() {
+            const FALLBACK_FONT_BYTES: &[u8] = include_bytes!("../../../assets/fonts/centurygothic.ttf");
+            if let Ok(text_path) = UniversalPath::from_ttf_text(FALLBACK_FONT_BYTES, "HUNTER", &options) {
+                info!("✓ [Hunter] Rendered full-scene center vector title using embedded fallback font");
+                maybe_title_path = Some(text_path);
             }
         }
 

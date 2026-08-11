@@ -64,10 +64,18 @@ pub fn optimize(segments: &[LaserSegment], config: &OptimizeConfig) -> Vec<Laser
             let p = pts[i];
             output.push(p);
 
-            // Angle-proportional corner dwell
-            let extra_dwell = corner_dwells[i];
+            // Angle-proportional corner dwell + point dwell hint
+            let extra_dwell = corner_dwells[i].max(p.dwell as usize);
             for _ in 0..extra_dwell {
                 output.push(p);
+            }
+        }
+
+        if is_closed_segment {
+            // Seam overlap: emit 2 extra closing points at pts[0] so color delay shift covers the closing seam 100%
+            let first = pts[0];
+            for _ in 0..2 {
+                output.push(first);
             }
         }
 

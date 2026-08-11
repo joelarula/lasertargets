@@ -56,6 +56,10 @@ pub struct ProjectorConfiguration {
     pub switched_on: bool,
     pub connected: bool,
     pub locked_to_scene: bool,
+    /// DAC output point rate in points-per-second (e.g. 20000, 30000)
+    pub dac_pps: u32,
+    /// Minimum frame point count (padding to prevent DAC hardware buffer underruns)
+    pub dac_min_points: usize,
 }
 
 impl Default for ProjectorConfiguration {
@@ -77,7 +81,9 @@ impl Default for ProjectorConfiguration {
             },
             switched_on: false,
             locked_to_scene: true,
-            connected: false
+            connected: false,
+            dac_pps: 30000,
+            dac_min_points: 500,
         }
     }
 }
