@@ -218,8 +218,8 @@ fn start_dac_output_thread(
                         let mut conn = connected.lock().unwrap();
                         *conn = true;
                     }
-                    // Write initial blank frame immediately so the SDK background thread has data and does not time out/error
-                    let _ = controller.write_frame_ready(0, dac_pps, HELIOS_FLAGS_DEFAULT, &blank_frame);
+                    // Write initial blank frame immediately with loop mode (0 flags) so the SDK background thread has data and does not time out/error
+                    let _ = controller.write_frame_ready(0, dac_pps, 0, &blank_frame);
                     break;
                 }
                 Ok(num_devices) if num_devices == 0 => {
@@ -341,9 +341,9 @@ fn start_dac_output_thread(
                     if frame_count % 600 == 0 {
                         info!("✓ DAC active: {} frames sent, current frame has {} points", frame_count, frame_buf.len());
                     }
-                    // Adaptive sleep: 95% of frame playback time (exact dac-test pattern) to prevent hardware buffer overfills
+                    // Adaptive sleep: 75% of frame playback time (matches proven dac-test run_loop ratio)
                     let total_pts = frame_buf.len().max(dac_min_points) as f32;
-                    let sleep_micros = ((total_pts / pps as f32) * 950_000.0) as u64;
+                    let sleep_micros = ((total_pts / pps as f32) * 750_000.0) as u64;
                     if sleep_micros < 10_000 {
                         thread::sleep(std::time::Duration::from_micros(sleep_micros));
                     } else {
@@ -355,34 +355,55 @@ fn start_dac_output_thread(
                     if consecutive_write_failures == 3 {
                         warn!("✗ DAC write_frame_ready failed (failure #3): {}", e);
                     }
-                    if consecutive_write_failures == 5 {
-                        info!("Thread: Performing clean library reload and USB recovery...");
-                        drop(controller); // Unloads libHeliosLaserDAC.so cleanly
-                        std::thread::sleep(std::time::Duration::from_millis(600));
-                        match HeliosDacController::new() {
-                            Ok(mut new_controller) => {
-                                match new_controller.open_devices() {
-                                    Ok(devs) if devs > 0 => {
-                                        // Write blank frame immediately to avoid timing out the reloaded C thread
-                                        let _ = new_controller.write_frame_ready(0, pps, flags, &blank_frame);
-                                        std::thread::sleep(std::time::Duration::from_millis(600));
-                                        let _ = new_controller.set_shutter(0, true);
-                                        std::thread::sleep(std::time::Duration::from_millis(100));
-                                        info!("✓ Thread: Library reload and USB recovery successful!");
-                                        controller = new_controller;
-                                        consecutive_write_failures = 0;
-                                        continue;
+                    if consecutive_write_failures == 5 || (consecutive_write_failures == 3 && e.contains("-1000")) {
+                        // -5007 = LIBUSB_ERROR_PIPE (USB bulk endpoint stalled).
+                        // We do NOT need to unload/reload the library — that causes ~1s of visual loss.
+                        // A lightweight stop() + close_devices() + open_devices() clears the USB halt
+                        // and recovers the endpoint in ~350ms while keeping the C thread alive.
+                        info!("Thread: USB pipe stall detected — performing fast endpoint reset (no library reload)...");
+                        let _ = controller.stop(0);
+                        std::thread::sleep(std::time::Duration::from_millis(50));
+                        let _ = controller.close_devices();
+                        std::thread::sleep(std::time::Duration::from_millis(200));
+                        match controller.open_devices() {
+                            Ok(devs) if devs > 0 => {
+                                // Feed a blank frame immediately so the C background thread doesn't time out
+                                let _ = controller.write_frame_ready(0, pps, 0, &blank_frame);
+                                std::thread::sleep(std::time::Duration::from_millis(50));
+                                let _ = controller.set_shutter(0, true);
+                                info!("✓ Thread: Fast USB endpoint reset successful!");
+                                consecutive_write_failures = 0;
+                                continue;
+                            }
+                            _ => {
+                                warn!("Thread: Fast reset did not find device — falling back to library reload...");
+                                drop(controller);
+                                std::thread::sleep(std::time::Duration::from_millis(600));
+                                match HeliosDacController::new() {
+                                    Ok(mut new_controller) => {
+                                        match new_controller.open_devices() {
+                                            Ok(devs) if devs > 0 => {
+                                                let _ = new_controller.write_frame_ready(0, pps, 0, &blank_frame);
+                                                std::thread::sleep(std::time::Duration::from_millis(200));
+                                                let _ = new_controller.set_shutter(0, true);
+                                                std::thread::sleep(std::time::Duration::from_millis(150));
+                                                info!("✓ Thread: Library reload fallback recovery successful!");
+                                                controller = new_controller;
+                                                consecutive_write_failures = 0;
+                                                continue;
+                                            }
+                                            _ => {
+                                                controller = new_controller;
+                                            }
+                                        }
                                     }
-                                    _ => {
-                                        controller = new_controller;
+                                    Err(e) => {
+                                        error!("Thread: Failed to reload Helios library: {}", e);
+                                        let mut connected = connected.lock().unwrap();
+                                        *connected = false;
+                                        break;
                                     }
                                 }
-                            }
-                            Err(e) => {
-                                error!("Thread: Failed to reload Helios library: {}", e);
-                                let mut connected = connected.lock().unwrap();
-                                *connected = false;
-                                break;
                             }
                         }
                     }

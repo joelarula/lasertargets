@@ -7,7 +7,7 @@ use std::time::Duration;
 /// Helper to create the server application with production settings (60 FPS loop).
 pub fn create_production_server_app() -> App {
     let mut app = create_server_app(ScheduleRunnerPlugin::run_loop(
-        Duration::from_secs_f64(1.0 / 60.0), // 60 FPS
+        Duration::from_secs_f64(1024.0 / 30000.0), // Synchronized with Projector FPS (30000 PPS / 1024 points = ~29.3 FPS)
     ));
 
     // Add production-only plugins and systems
