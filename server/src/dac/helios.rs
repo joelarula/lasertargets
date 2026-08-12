@@ -10,7 +10,7 @@ use bevy::prelude::*;
 
 // Point structures matching the working darkelf implementation
 #[repr(C)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct HeliosPoint {
     pub x: u16, // 0 to 0xFFF (4095) for 12-bit DAC
     pub y: u16, // 0 to 0xFFF (4095) for 12-bit DAC
@@ -283,6 +283,18 @@ impl HeliosDacController {
         }
     }
 
+    /// Convenience: wait for ready (best effort 200 polls) and write frame to DAC (matches dac-test pattern)
+    pub fn write_frame_ready(
+        &self,
+        dac_num: u32,
+        pps: u32,
+        flags: u8,
+        points: &[HeliosPoint],
+    ) -> Result<(), String> {
+        let _ = self.wait_for_ready(dac_num, 200);
+        self.write_frame_native(dac_num, pps, flags, points)
+    }
+
     /// Write a PathSegment frame to the specified DAC
     /// Automatically handles coordinate conversion from path coordinates to DAC coordinates
     /// Uses native Helios 4095x4095 range for better precision
@@ -375,7 +387,18 @@ impl HeliosDacController {
                     }
                     std::thread::yield_now();
                 }
-                Err(e) => return Err(e),
+                Err(e) => {
+                    // Check if it is a severe disconnect error
+                    if e.contains("-1000") || e.contains("-1002") {
+                        return Err(e);
+                    }
+                    // For transient USB errors (like -5007 / PIPE_BUSY), treat as busy and keep polling
+                    attempts += 1;
+                    if max_attempts > 0 && attempts >= max_attempts {
+                        return Ok(false);
+                    }
+                    std::thread::yield_now();
+                }
             }
         }
     }

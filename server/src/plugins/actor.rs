@@ -121,7 +121,7 @@ fn handle_unregister_actor_event(
 ) {
     for event in unregister_actor_events.read() {
 
-        if let Some((game_entity, _, maybe_children)) = game_sessions.iter().find(|(_, gs, _)| gs.session_id == event.game_uuid) {
+        if let Some((_game_entity, _, maybe_children)) = game_sessions.iter().find(|(_, gs, _)| gs.session_id == event.game_uuid) {
 
             let mut remaining: Vec<ActorLink> = Vec::new();
             let mut removed_actor: Option<Actor> = None;

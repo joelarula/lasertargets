@@ -336,16 +336,12 @@ fn spawn_head_entity(commands: &mut Commands, state: &SnakeState, scene_entity: 
     }
 }
 
-fn spawn_snake_body_entity(
-    commands: &mut Commands,
-    state: &SnakeState,
-    scene_entity: Option<Entity>,
-) {
-    if state.segments.len() < 2 {
-        return;
-    }
-
+/// Build the snake body as a UniversalPath (polyline, split on boundary wraps)
+fn build_snake_body_path(state: &SnakeState) -> UniversalPath {
     let mut universal_path = UniversalPath::new();
+    if state.segments.len() < 2 {
+        return universal_path;
+    }
     let mut current_segment = PathSegment::empty();
 
     for i in 0..state.segments.len() {
@@ -359,7 +355,7 @@ fn spawn_snake_body_entity(
             let dx = (current_cell.x - prev_cell.x).abs();
             let dy = (current_cell.y - prev_cell.y).abs();
             if dx > 1 || dy > 1 {
-                // Screen boundary wrap occurred! Finish current sub-segment and start a new one to prevent connecting laser lines
+                // Screen boundary wrap: split sub-segment to prevent connecting laser lines
                 if !current_segment.points.is_empty() {
                     universal_path.add_segment(current_segment);
                     current_segment = PathSegment::empty();
@@ -372,6 +368,18 @@ fn spawn_snake_body_entity(
 
     if !current_segment.points.is_empty() {
         universal_path.add_segment(current_segment);
+    }
+    universal_path
+}
+
+fn spawn_snake_body_entity(
+    commands: &mut Commands,
+    state: &SnakeState,
+    scene_entity: Option<Entity>,
+) {
+    let universal_path = build_snake_body_path(state);
+    if universal_path.segments.is_empty() {
+        return;
     }
 
     let id = commands
@@ -464,10 +472,10 @@ fn snake_move_tick(
     mut timer_res: Option<ResMut<SnakeMoveTimer>>,
     mut snake_state: Option<ResMut<SnakeState>>,
     scene_query: Query<Entity, With<SceneEntity>>,
-    // queries to despawn/respawn entities
-    head_query: Query<Entity, With<SnakeHead>>,
-    seg_query: Query<Entity, With<SnakeSegment>>,
-    gem_query: Query<Entity, With<DiamondFood>>,
+    // queries to update entities in-place (avoiding despawn gaps that black out the laser)
+    mut head_query: Query<(Entity, &mut UniversalPath, &mut Transform), (With<SnakeHead>, Without<SnakeSegment>, Without<DiamondFood>)>,
+    mut seg_query: Query<(Entity, &mut UniversalPath), (With<SnakeSegment>, Without<SnakeHead>, Without<DiamondFood>)>,
+    mut gem_query: Query<(Entity, &mut UniversalPath, &mut Transform), (With<DiamondFood>, Without<SnakeHead>, Without<SnakeSegment>)>,
     mut stats_events: MessageWriter<BroadcastSnakeStatsEvent>,
     mut game_over_events: MessageWriter<SnakeGameOverEvent>,
 ) {
@@ -495,9 +503,9 @@ fn snake_move_tick(
                 state.is_started = true;
                 timer.timer = Timer::from_seconds(INITIAL_TICK_INTERVAL, TimerMode::Repeating);
 
-                for e in head_query.iter().chain(seg_query.iter()).chain(gem_query.iter()) {
-                    commands.entity(e).despawn();
-                }
+                for (e, _, _) in head_query.iter() { commands.entity(e).despawn(); }
+                for (e, _) in seg_query.iter() { commands.entity(e).despawn(); }
+                for (e, _, _) in gem_query.iter() { commands.entity(e).despawn(); }
                 let scene_entity = scene_query.single().ok();
                 state.gem_position = random_gem_position(state);
                 state.gem_color = random_color();
@@ -611,29 +619,62 @@ fn snake_move_tick(
         state.segment_colors.pop();
     }
 
-    // Re-render: despawn all visual entities and recreate
-    // (simple approach – works well since the PathNetworkPlugin auto-broadcasts)
-    for e in head_query.iter().chain(seg_query.iter()) {
-        commands.entity(e).despawn();
-    }
-    if ate_gem {
-        for e in gem_query.iter() {
-            commands.entity(e).despawn();
+    let scene_entity = scene_query.single().ok();
+
+    // --- In-place update: mutate UniversalPath components directly (no despawn gap = no laser blackout) ---
+    // Use iter_mut().next() instead of single_mut() to tolerate 0 or multiple entities gracefully.
+    // If extra duplicate entities exist (from a race), despawn them first to keep things clean.
+
+    // Update head position + path in-place
+    let head_pos = grid_to_local(state.segments[0], state.grid_w, state.grid_h);
+    let (hr, hg, hb) = state.segment_colors.get(0).copied().unwrap_or((1.0, 1.0, 1.0));
+    let head_color = Color::srgb(hr, hg, hb);
+    {
+        let mut heads: Vec<_> = head_query.iter_mut().collect();
+        // Despawn duplicates if any
+        for (e, _, _) in heads.iter_mut().skip(1) {
+            commands.entity(*e).despawn();
+        }
+        if let Some((_, mut head_path, mut head_transform)) = heads.into_iter().next() {
+            *head_path = UniversalPath::circle(Vec2::ZERO, SEGMENT_RADIUS, head_color);
+            *head_transform = Transform::from_translation(head_pos);
+        } else {
+            spawn_head_entity(&mut commands, state, scene_entity);
         }
     }
 
-    let scene_entity = scene_query.single().ok();
-
-    // Spawn head
-    spawn_head_entity(&mut commands, state, scene_entity);
-
-    // Spawn body line
-    spawn_snake_body_entity(&mut commands, state, scene_entity);
-
-    // Spawn new gem if eaten
-    if ate_gem {
-        spawn_gem_entity(&mut commands, state, scene_entity);
+    // Update body path in-place
+    let new_body = build_snake_body_path(state);
+    {
+        let mut segs: Vec<_> = seg_query.iter_mut().collect();
+        // Despawn duplicates if any
+        for (e, _) in segs.iter_mut().skip(1) {
+            commands.entity(*e).despawn();
+        }
+        if let Some((_, mut seg_path)) = segs.into_iter().next() {
+            *seg_path = new_body;
+        } else {
+            spawn_snake_body_entity(&mut commands, state, scene_entity);
+        }
     }
+
+    // Update gem position + path in-place (always — position may have changed if gem was eaten)
+    {
+        let gem_pos = grid_to_local(state.gem_position, state.grid_w, state.grid_h);
+        let (gr, gg, gb) = state.gem_color;
+        let gem_color = Color::srgb(gr, gg, gb);
+        let mut gems: Vec<_> = gem_query.iter_mut().collect();
+        // Despawn duplicates if any
+        for (e, _, _) in gems.iter_mut().skip(1) {
+            commands.entity(*e).despawn();
+        }
+        if let Some((_, mut gem_path, mut gem_transform)) = gems.into_iter().next() {
+            *gem_path = UniversalPath::diamond(Vec2::ZERO, GEM_HALF_SIZE, gem_color);
+            *gem_transform = Transform::from_translation(gem_pos);
+        } else {
+            spawn_gem_entity(&mut commands, state, scene_entity);
+        }
+    };
 
     // Broadcast stats
     stats_events.write(BroadcastSnakeStatsEvent {

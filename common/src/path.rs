@@ -454,14 +454,14 @@ impl UniversalPath {
         let right  = Vec2::new(center.x + half_size, center.y);
         let bottom = Vec2::new(center.x,             center.y - half_size);
         let left   = Vec2::new(center.x - half_size, center.y);
-        
+
         let mut segment = PathSegment::empty();
-        // Dwell 4 on corners so galvos settle for razor-sharp, bright corners
-        segment.push(top.x, top.y, color, 4);
-        segment.push(right.x, right.y, color, 4);
+        // Closed loop: top → right → bottom → left → top, all with sharp corner dwell
+        segment.push(top.x,    top.y,    color, 4);
+        segment.push(right.x,  right.y,  color, 4);
         segment.push(bottom.x, bottom.y, color, 4);
-        segment.push(left.x, left.y, color, 4);
-        segment.push(top.x, top.y, color, 4); // Closed loop seam
+        segment.push(left.x,   left.y,   color, 4);
+        segment.push(top.x,    top.y,    color, 4); // Exact closed loop seam (start == end)
 
         Self::from_segment(segment)
     }

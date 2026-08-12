@@ -64,8 +64,8 @@ pub fn optimize(segments: &[LaserSegment], config: &OptimizeConfig) -> Vec<Laser
             let p = pts[i];
             output.push(p);
 
-            // Angle-proportional corner dwell + point dwell hint
-            let extra_dwell = corner_dwells[i].max(p.dwell as usize);
+            // Angle-proportional corner dwell
+            let extra_dwell = corner_dwells[i];
             for _ in 0..extra_dwell {
                 output.push(p);
             }

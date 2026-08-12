@@ -272,14 +272,18 @@ fn handle_config_messages(
                 info!("Scene configuration updated by client {}", msg.client_id);
             }
             NetworkMessage::UpdateCalibrationState(new_state) => {
-                next_calibration_state.set(new_state.clone());
-                info!("Calibration state updated by client {}: {:?}", msg.client_id, new_state);
+                if !matches!(*next_calibration_state, NextState::Pending(_)) && current_calibration_state.get() != new_state {
+                    next_calibration_state.set(new_state.clone());
+                    info!("Calibration state updated by client {}: {:?}", msg.client_id, new_state);
 
-                let message = NetworkMessage::CalibrationStateUpdate(new_state.clone());
-                if let Ok(payload) = message.to_bytes() {
-                    if let Err(e) = endpoint.broadcast_payload(payload) {
-                        error!("Failed to broadcast CalibrationStateUpdate: {:?}", e);
+                    let message = NetworkMessage::CalibrationStateUpdate(new_state.clone());
+                    if let Ok(payload) = message.to_bytes() {
+                        if let Err(e) = endpoint.broadcast_payload(payload) {
+                            error!("Failed to broadcast CalibrationStateUpdate: {:?}", e);
+                        }
                     }
+                } else {
+                    debug!("Ignoring UpdateCalibrationState({:?}) from client {}: transition already pending or unchanged", new_state, msg.client_id);
                 }
             }
             _ => {}

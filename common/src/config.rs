@@ -83,7 +83,7 @@ impl Default for ProjectorConfiguration {
             locked_to_scene: true,
             connected: false,
             dac_pps: 30000,
-            dac_min_points: 500,
+            dac_min_points: 1024,
         }
     }
 }
