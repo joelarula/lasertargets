@@ -283,7 +283,8 @@ impl HeliosDacController {
         }
     }
 
-    /// Convenience: wait for ready (best effort 200 polls) and write frame to DAC (matches dac-test pattern)
+    /// Convenience: wait for ready and write frame to DAC
+    /// Propagates errors immediately — if wait_for_ready sees -5007, we do NOT write.
     pub fn write_frame_ready(
         &self,
         dac_num: u32,
@@ -291,7 +292,11 @@ impl HeliosDacController {
         flags: u8,
         points: &[HeliosPoint],
     ) -> Result<(), String> {
-        let _ = self.wait_for_ready(dac_num, 200);
+        match self.wait_for_ready(dac_num, 200) {
+            Err(e) => return Err(e), // Propagate USB errors immediately (e.g. -5007 pipe stall)
+            Ok(false) => {} // Timed out polling but not erroring — write anyway (device may accept it)
+            Ok(true) => {}  // Ready
+        }
         self.write_frame_native(dac_num, pps, flags, points)
     }
 
@@ -388,16 +393,12 @@ impl HeliosDacController {
                     std::thread::yield_now();
                 }
                 Err(e) => {
-                    // Check if it is a severe disconnect error
-                    if e.contains("-1000") || e.contains("-1002") {
-                        return Err(e);
-                    }
-                    // For transient USB errors (like -5007 / PIPE_BUSY), treat as busy and keep polling
-                    attempts += 1;
-                    if max_attempts > 0 && attempts >= max_attempts {
-                        return Ok(false);
-                    }
-                    std::thread::yield_now();
+                    // -5007 = LIBUSB_ERROR_PIPE: USB pipe stalled — NOT a transient
+                    // busy state. Polling 200 more times hammers the C library's internal
+                    // error counter and triggers its own self-close. Return immediately.
+                    // -1000 / -1002 = device closed / fatal disconnect.
+                    // Both of these require a stop+reopen cycle, not more polling.
+                    return Err(e);
                 }
             }
         }

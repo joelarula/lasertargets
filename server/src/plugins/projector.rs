@@ -305,9 +305,19 @@ fn start_dac_output_thread(
             let use_blank = if !is_switched_on {
                 true
             } else {
-                if let Ok(buffer) = point_buffer.points.lock() {
-                    frame_buf.extend_from_slice(&buffer);
+                // CRITICAL: use try_lock() not lock() — if the Bevy thread holds this mutex
+                // (e.g. during font rendering or path building), blocking here would starve
+                // the DAC write deadline and cause a USB pipe stall (-5007).
+                // If contested, reuse the previous frame (already in frame_buf from last iteration).
+                let locked = point_buffer.points.try_lock();
+                if let Ok(buffer) = locked {
+                    if !buffer.is_empty() {
+                        frame_buf.clear();
+                        frame_buf.extend_from_slice(&buffer);
+                    }
+                    // else: keep previous frame_buf contents
                 }
+                // else: mutex contested — silently reuse previous frame
                 frame_buf.is_empty()
             };
 
@@ -355,7 +365,17 @@ fn start_dac_output_thread(
                     if consecutive_write_failures == 3 {
                         warn!("✗ DAC write_frame_ready failed (failure #3): {}", e);
                     }
-                    if consecutive_write_failures == 5 || (consecutive_write_failures == 3 && e.contains("-1000")) {
+                    // Trigger fast USB endpoint reset:
+                    // - At failure #1 for -5007 (pipe stall): immediately recover before the C
+                    //   library's internal error counter accumulates (threshold ~300 errors).
+                    // - At failure #3 for -1000 (device closed by C library after self-close).
+                    // - At failure #5 for any other error.
+                    let is_pipe_stall = e.contains("-5007");
+                    let is_device_closed = e.contains("-1000");
+                    let should_reset = (is_pipe_stall && consecutive_write_failures == 1)
+                        || (is_device_closed && consecutive_write_failures == 3)
+                        || consecutive_write_failures == 5;
+                    if should_reset {
                         // -5007 = LIBUSB_ERROR_PIPE (USB bulk endpoint stalled).
                         // We do NOT need to unload/reload the library — that causes ~1s of visual loss.
                         // A lightweight stop() + close_devices() + open_devices() clears the USB halt
@@ -668,9 +688,7 @@ fn update_point_buffer(
     // Convert to HeliosPoints and update the shared buffer
     let helios_points: Vec<HeliosPoint> = optimized.into_iter().map(HeliosPoint::from).collect();
     if let Ok(mut buffer) = point_buffer.points.lock() {
-        if *buffer != helios_points {
-            *buffer = helios_points;
-        }
+        *buffer = helios_points;
     }
 }
 

@@ -83,7 +83,7 @@ impl Default for ProjectorConfiguration {
             locked_to_scene: true,
             connected: false,
             dac_pps: 30000,
-            dac_min_points: 1024,
+            dac_min_points: 1024, // USB-aligned frame size @ 30kPPS = ~29.3 Hz
         }
     }
 }
