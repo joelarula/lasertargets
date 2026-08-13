@@ -26,8 +26,8 @@
     .\scripts\run-dac-test-pi.ps1 -Scenario sweep
 #>
 param(
-    [ValidateSet("all", "info", "blink", "box", "stress", "sweep")]
-    [string]$Scenario = "all",
+    [ValidateSet("all", "info", "blink", "box", "stress", "sweep", "shapes")]
+    [string]$Scenario = "shapes",
 
     [int]$Duration = 0,
 

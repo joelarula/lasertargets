@@ -53,6 +53,11 @@ Write-Host "--- Deploying server binary ---" -ForegroundColor Yellow
 $null = ssh $TargetHost "rm -f /opt/lasertargets/server"
 scp $ServerBinary "${TargetHost}:/opt/lasertargets/server"
 $null = ssh $TargetHost "chmod +x /opt/lasertargets/server"
+# Grant the server binary the ability to set real-time thread priority (SCHED_FIFO)
+# without running as root. This is needed for the DAC output thread's RT scheduling,
+# and works for both systemd service runs and interactive runs via run-server-pi.ps1.
+$null = ssh $TargetHost "sudo setcap cap_sys_nice+eip /opt/lasertargets/server 2>/dev/null || true"
+
 
 # Deploy dac-test (hardware test tool — run manually)
 $DacTestBinary = Join-Path $DistDir "dac-test"

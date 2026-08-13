@@ -20,10 +20,13 @@ Restart=no
 # StartLimitIntervalSec=60
 
 # Hardening
-NoNewPrivileges=true
+NoNewPrivileges=false
 ProtectSystem=strict
 ProtectHome=true
 ReadWritePaths=/opt/lasertargets /mnt/usb-logs
+# Allow the DAC output thread to set SCHED_FIFO real-time scheduling
+AmbientCapabilities=CAP_SYS_NICE
+CapabilityBoundingSet=CAP_SYS_NICE
 
 # Logging to systemd journal (view with: sudo journalctl -u lasertargets-server -f)
 StandardOutput=journal

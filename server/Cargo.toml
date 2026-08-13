@@ -17,6 +17,10 @@ laserlogic = { path = "../laserlogic" }
 lyon_tessellation = { version = "1.0.16" }
 libloading = "0.8"
 
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = "0.2"
+
+
 [[test]]
 name = "integrationtest"
 path = "test/integrationtest.rs"

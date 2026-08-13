@@ -2204,9 +2204,13 @@ checksum = "f27ae1dd37df86211c42e150270f82743308803d90a6f6e6651cd730d5e1732f"
 name = "dac-test"
 version = "0.1.0"
 dependencies = [
+ "common",
  "env_logger 0.11.11",
+ "laserlogic",
  "libloading",
  "log",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -5167,6 +5171,7 @@ dependencies = [
  "gamepad",
  "hunter",
  "laserlogic",
+ "libc",
  "libloading",
  "log",
  "lyon_tessellation",

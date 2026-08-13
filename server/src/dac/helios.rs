@@ -2,11 +2,10 @@
 // Based on the C++ SDK and C# implementations
 // Uses dynamic loading to avoid linking issues
 
-
 use libloading;
 use std::os::raw::{c_char, c_int, c_uchar, c_uint};
 use std::sync::Arc;
-use bevy::prelude::*;
+use log::{info, warn, error};
 
 // Point structures matching the working darkelf implementation
 #[repr(C)]
@@ -86,7 +85,8 @@ type WriteFrameFn =
     unsafe extern "C" fn(c_uint, c_uint, c_uchar, *const HeliosPoint, c_uint) -> c_int;
 type StopFn = unsafe extern "C" fn(c_uint) -> c_int;
 type SetShutterFn = unsafe extern "C" fn(c_uint, c_uchar) -> c_int;
-type GetNameFn = unsafe extern "C" fn(c_uint) -> *const c_char;
+type GetNameFn = unsafe extern "C" fn(c_uint, *mut c_char) -> c_int;
+type GetFirmwareVersionFn = unsafe extern "C" fn(c_uint) -> c_int;
 
 // Internal library handle
 struct HeliosLib {
@@ -97,6 +97,7 @@ struct HeliosLib {
     stop: StopFn,
     set_shutter: SetShutterFn,
     get_name: GetNameFn,
+    get_firmware_version: GetFirmwareVersionFn,
 }
 
 impl HeliosLib {
@@ -128,6 +129,9 @@ impl HeliosLib {
             let get_name = *lib
                 .get::<GetNameFn>(b"GetName")
                 .map_err(|e| format!("Failed to load GetName: {}", e))?;
+            let get_firmware_version = *lib
+                .get::<GetFirmwareVersionFn>(b"GetFirmwareVersion")
+                .map_err(|e| format!("Failed to load GetFirmwareVersion: {}", e))?;
 
             // Keep library mapped in process memory forever to prevent libusb background thread segfaults on dlclose()
             std::mem::forget(lib);
@@ -140,6 +144,7 @@ impl HeliosLib {
                 stop,
                 set_shutter,
                 get_name,
+                get_firmware_version,
             })
         }
     }
@@ -147,7 +152,7 @@ impl HeliosLib {
 
 /// Helios DAC Controller for Rust
 pub struct HeliosDacController {
-    num_devices: i32,
+    pub num_devices: i32,
     lib: Arc<HeliosLib>,
 }
 
@@ -178,7 +183,7 @@ impl HeliosDacController {
     }
 
     /// Get device status (returns true if ready to receive new frame)
-    pub fn get_status(&self, device_num: i32) -> Result<bool, String> {
+    pub fn get_status(&self, device_num: u32) -> Result<bool, String> {
         unsafe {
             let result = (self.lib.get_status)(device_num as c_uint);
             if result >= 0 {
@@ -283,26 +288,50 @@ impl HeliosDacController {
         }
     }
 
-    /// Convenience: wait for ready and write frame to DAC
-    /// Propagates errors immediately — if wait_for_ready sees -5007, we do NOT write.
+    /// Build a frame padded to `min_pts` with blanked copies of the last point.
+    pub fn pad_frame(points: &[HeliosPoint], min_pts: usize) -> Vec<HeliosPoint> {
+        let mut v = points.to_vec();
+        if v.len() < min_pts {
+            let last = *v.last().unwrap_or(&HeliosPoint::blanked(2048, 2048));
+            while v.len() < min_pts {
+                v.push(HeliosPoint::blanked(last.x, last.y));
+            }
+        }
+        v
+    }
+
+    /// Convenience: wait for ready and write frame to DAC with padding to min_pts
     pub fn write_frame_ready(
         &self,
         dac_num: u32,
         pps: u32,
         flags: u8,
         points: &[HeliosPoint],
+        min_pts: usize,
     ) -> Result<(), String> {
+        let padded = Self::pad_frame(points, min_pts);
         match self.wait_for_ready(dac_num, 200) {
-            Err(e) => return Err(e), // Propagate USB errors immediately (e.g. -5007 pipe stall)
-            Ok(false) => {} // Timed out polling but not erroring — write anyway (device may accept it)
+            Err(e) => return Err(e), // Propagate USB errors immediately
+            Ok(false) => warn!("DAC not ready after 200 polls — writing anyway"),
             Ok(true) => {}  // Ready
         }
-        self.write_frame_native(dac_num, pps, flags, points)
+        let res = self.write_frame_native(dac_num, pps, flags, &padded);
+        if res.is_ok() {
+            // Adaptive pacing sleep: sleep for 75% of frame playback time to prevent USB endpoint congestion
+            let total_pts = padded.len().max(min_pts) as f32;
+            let sleep_micros = ((total_pts / pps.max(HELIOS_MIN_PPS) as f32) * 750_000.0) as u64;
+            if sleep_micros > 0 {
+                if sleep_micros < 10_000 {
+                    std::thread::sleep(std::time::Duration::from_micros(sleep_micros));
+                } else {
+                    std::thread::sleep(std::time::Duration::from_millis(sleep_micros / 1000));
+                }
+            }
+        }
+        res
     }
 
     /// Write a PathSegment frame to the specified DAC
-    /// Automatically handles coordinate conversion from path coordinates to DAC coordinates
-    /// Uses native Helios 4095x4095 range for better precision
     pub fn write_frame_path(
         &self,
         dac_num: u32,
@@ -310,15 +339,12 @@ impl HeliosDacController {
         flags: u8,
         segment: &common::path::PathSegment,
     ) -> Result<(), String> {
-        // Convert path segment points to Helios points
         let mut helios_points = Vec::new();
         
         for path_point in &segment.points {
-            // Convert world coordinates to Helios coordinates
             let x_helios = ((path_point.x + 1.0) * (HELIOS_MAX_COORD as f32 / 2.0)) as u16;
             let y_helios = ((path_point.y + 1.0) * (HELIOS_MAX_COORD as f32 / 2.0)) as u16;
             
-            // Use point's color and apply dwell
             let dwell_count = if path_point.dwell == 0 { 1 } else { path_point.dwell as usize };
             for _ in 0..dwell_count {
                 helios_points.push(HeliosPoint::new(
@@ -327,7 +353,7 @@ impl HeliosDacController {
                     path_point.r,
                     path_point.g,
                     path_point.b,
-                    255, // Full intensity
+                    255,
                 ));
             }
         }
@@ -352,7 +378,6 @@ impl HeliosDacController {
     }
 
     /// Set shutter level for the specified DAC
-    /// level: 0 = closed, 1 = open
     pub fn set_shutter(&self, dac_num: u32, level: bool) -> Result<(), String> {
         unsafe {
             let result = (self.lib.set_shutter)(dac_num, if level { 1 } else { 0 });
@@ -366,38 +391,49 @@ impl HeliosDacController {
 
     /// Get the name of the specified DAC
     pub fn get_name(&self, dac_num: u32) -> Result<String, String> {
+        let mut buf = [0u8; 64];
         unsafe {
-            let name_ptr = (self.lib.get_name)(dac_num);
-            if name_ptr.is_null() {
-                Err("Failed to get device name".to_string())
+            let r = (self.lib.get_name)(dac_num, buf.as_mut_ptr() as *mut c_char);
+            if r < 0 {
+                return Err(format!("GetName error: {}", r));
+            }
+        }
+        let end = buf.iter().position(|&b| b == 0).unwrap_or(buf.len());
+        Ok(String::from_utf8_lossy(&buf[..end]).into_owned())
+    }
+
+    /// Get firmware version of specified DAC
+    pub fn get_firmware_version(&self, dac_num: u32) -> Result<i32, String> {
+        unsafe {
+            let r = (self.lib.get_firmware_version)(dac_num);
+            if r < 0 {
+                Err(format!("GetFirmwareVersion error: {}", r))
             } else {
-                let c_str = std::ffi::CStr::from_ptr(name_ptr);
-                Ok(c_str.to_string_lossy().into_owned())
+                Ok(r)
             }
         }
     }
 
     /// Wait for the DAC to be ready to receive a new frame
-    /// max_attempts: maximum number of status checks before giving up (0 = infinite)
-    /// Returns true if ready, false if timed out
     pub fn wait_for_ready(&self, dac_num: u32, max_attempts: u32) -> Result<bool, String> {
         let mut attempts = 0;
+        let mut error_retries = 0;
         loop {
-            match self.get_status(dac_num as i32) {
+            match self.get_status(dac_num) {
                 Ok(true) => return Ok(true),
                 Ok(false) => {
                     attempts += 1;
                     if max_attempts > 0 && attempts >= max_attempts {
                         return Ok(false);
                     }
-                    std::thread::yield_now();
+                    std::thread::sleep(std::time::Duration::from_millis(1));
                 }
                 Err(e) => {
-                    // -5007 = LIBUSB_ERROR_PIPE: USB pipe stalled — NOT a transient
-                    // busy state. Polling 200 more times hammers the C library's internal
-                    // error counter and triggers its own self-close. Return immediately.
-                    // -1000 / -1002 = device closed / fatal disconnect.
-                    // Both of these require a stop+reopen cycle, not more polling.
+                    error_retries += 1;
+                    if error_retries <= 3 {
+                        std::thread::sleep(std::time::Duration::from_millis(2));
+                        continue;
+                    }
                     return Err(e);
                 }
             }
@@ -412,3 +448,4 @@ impl Drop for HeliosDacController {
         }
     }
 }
+
