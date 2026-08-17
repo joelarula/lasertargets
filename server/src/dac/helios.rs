@@ -188,8 +188,8 @@ impl HeliosDacController {
             let result = (self.lib.get_status)(device_num as c_uint);
             if result == 1 {
                 Ok(true) // 1 = ready
-            } else if result == 0 || result == -1002 {
-                // 0 = busy playing current frame, -1002 = USB endpoint busy servicing transfer (not ready yet)
+            } else if result == 0 || result == -1 || result == -1002 {
+                // 0, -1, -1002 = busy playing frame or USB endpoint servicing transfer
                 Ok(false)
             } else {
                 Err(format!("GetStatus failed with error: {}", result))
@@ -313,7 +313,7 @@ impl HeliosDacController {
         min_pts: usize,
     ) -> Result<(), String> {
         let padded = Self::pad_frame(points, min_pts);
-        // Wait for DAC ready status (max 5 polls, checking every 2ms = 10ms max window)
+        // Wait for DAC ready status (max 5 polls with 8ms spacing = 40ms max window)
         match self.wait_for_ready(dac_num, 5) {
             Err(e) => return Err(e), // Propagate USB errors immediately
             Ok(false) => return Err("DAC busy: status timeout".to_string()), // Do not force write on busy endpoint
@@ -321,9 +321,11 @@ impl HeliosDacController {
         }
         let res = self.write_frame_native(dac_num, pps, flags, &padded);
         if res.is_ok() {
-            // Sleep for 80% of frame playback time (~27ms for 1024 pts @ 30kpps) so galvos scan smoothly with ZERO USB bus traffic.
+            // Sleep for 40% of frame playback time (~13.6ms for 1024 pts @ 30kpps).
+            // Waking up 20ms early guarantees Linux thread scheduler jitter (+5ms to +10ms)
+            // will NEVER cause physical hardware DAC FIFO buffer starvation!
             let total_pts = padded.len().max(min_pts) as f32;
-            let sleep_micros = ((total_pts / pps.max(HELIOS_MIN_PPS) as f32) * 800_000.0) as u64;
+            let sleep_micros = ((total_pts / pps.max(HELIOS_MIN_PPS) as f32) * 400_000.0) as u64;
             if sleep_micros > 0 {
                 std::thread::sleep(std::time::Duration::from_micros(sleep_micros));
             }

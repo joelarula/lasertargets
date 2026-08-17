@@ -36,34 +36,40 @@ pub struct HunterTitleAnnouncement {
 /// Resource tracking the reticle cursor mode and target selection
 #[derive(Resource, Debug, Clone)]
 pub struct HunterTargetSelection {
-    pub selected_index: usize, // 0 = GunShot Mode (Default), 1 = Red Circle, 2 = Yellow Balloon, 3 = Cyan Circle, 4 = Magenta Balloon
+    pub selected_index: usize, // 0 = GunShot Mode (Default), 1 = Cyan Static Big, 2 = Yellow Balloon, 3 = Magenta Balloon, 4 = Green Balloon
+    pub sizes: [f32; 5],
 }
 
 impl Default for HunterTargetSelection {
     fn default() -> Self {
-        Self { selected_index: 0 }
+        Self {
+            selected_index: 0,
+            sizes: [0.0, 0.45, 0.30, 0.20, 0.25],
+        }
     }
 }
 
 impl HunterTargetSelection {
     pub fn get_target(&self) -> Option<HunterTarget> {
+        let size = self.sizes.get(self.selected_index).copied().unwrap_or(0.25);
         match self.selected_index {
-            1 => Some(HunterTarget::Basic(0.45, Color::srgb(0.0, 0.9, 1.0))),  // Static Big: Cyan Large Practice Circle
-            2 => Some(HunterTarget::Baloon(0.30, Color::srgb(1.0, 0.9, 0.1))),  // Balloon 1: Yellow Rising Balloon
-            3 => Some(HunterTarget::Baloon(0.20, Color::srgb(1.0, 0.1, 0.9))),  // Balloon 2: Magenta Small Fast Balloon
-            4 => Some(HunterTarget::Baloon(0.25, Color::srgb(0.1, 1.0, 0.3))),  // Balloon 3: Green Medium Balloon
+            1 => Some(HunterTarget::Basic(size, Color::srgb(0.0, 0.9, 1.0))),  // Static Big: Cyan Large Practice Circle
+            2 => Some(HunterTarget::Baloon(size, Color::srgb(1.0, 0.9, 0.1))),  // Balloon 1: Yellow Rising Balloon
+            3 => Some(HunterTarget::Baloon(size, Color::srgb(1.0, 0.1, 0.9))),  // Balloon 2: Magenta Small Fast Balloon
+            4 => Some(HunterTarget::Baloon(size, Color::srgb(0.1, 1.0, 0.3))),  // Balloon 3: Green Medium Balloon
             _ => None, // 0 = GunShot Mode
         }
     }
 
-    pub fn target_name(&self) -> &'static str {
+    pub fn target_name(&self) -> String {
+        let size = self.sizes.get(self.selected_index).copied().unwrap_or(0.25);
         match self.selected_index {
-            0 => "Gun Shot Mode",
-            1 => "Cyan Large Practice Circle (0.45m)",
-            2 => "Yellow Rising Balloon (0.30m)",
-            3 => "Magenta Small Fast Balloon (0.20m)",
-            4 => "Green Medium Balloon (0.25m)",
-            _ => "Gun Shot Mode",
+            0 => "Gun Shot Mode".to_string(),
+            1 => format!("Cyan Practice Circle ({:.2}m)", size),
+            2 => format!("Yellow Rising Balloon ({:.2}m)", size),
+            3 => format!("Magenta Fast Balloon ({:.2}m)", size),
+            4 => format!("Green Medium Balloon ({:.2}m)", size),
+            _ => "Gun Shot Mode".to_string(),
         }
     }
 
@@ -73,6 +79,18 @@ impl HunterTargetSelection {
 
     pub fn reset_to_gunshot(&mut self) {
         self.selected_index = 0;
+    }
+
+    pub fn increase_size(&mut self) {
+        if self.selected_index > 0 && self.selected_index < 5 {
+            self.sizes[self.selected_index] = (self.sizes[self.selected_index] + 0.05).min(1.00);
+        }
+    }
+
+    pub fn decrease_size(&mut self) {
+        if self.selected_index > 0 && self.selected_index < 5 {
+            self.sizes[self.selected_index] = (self.sizes[self.selected_index] - 0.05).max(0.10);
+        }
     }
 }
 
@@ -455,7 +473,7 @@ fn update_target_spawn_immunity(
 
         let dist = cursor_pos.distance(target_pos);
         if dist > immunity.radius {
-            if let Some(mut e) = commands.get_entity(entity) {
+            if let Ok(mut e) = commands.get_entity(entity) {
                 e.remove::<TargetSpawnImmunity>();
                 info!("✓ Cursor moved outside spawn radius — target is now shootable");
             }
@@ -484,6 +502,18 @@ fn handle_hunter_gamepad_inputs(
     if state.just_pressed(&prev, Btn::South) {
         selection.cycle();
         info!("🎮 [Hunter Mode Switch] Selected cursor mode #{}: {}", selection.selected_index, selection.target_name());
+    }
+
+    // LeftBumper (LB) -> Decrease active target radius (-0.05m)
+    if state.just_pressed(&prev, Btn::LeftBumper) {
+        selection.decrease_size();
+        info!("🎮 [Hunter Target Size] Decreased target size: {}", selection.target_name());
+    }
+
+    // RightBumper (RB) -> Increase active target radius (+0.05m)
+    if state.just_pressed(&prev, Btn::RightBumper) {
+        selection.increase_size();
+        info!("🎮 [Hunter Target Size] Increased target size: {}", selection.target_name());
     }
 
     // Button B (East) -> If in Target Spawning mode (1-4): Release target into game & auto-reset cursor to GunShot mode (0)!

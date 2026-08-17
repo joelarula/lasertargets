@@ -263,22 +263,40 @@ fn handle_mouse_position_updates(
                 preview_seg.push(0.0, -radius - 0.12, blank, 3);
             } else {
                 let num_pts = 24;
-                preview_seg.push(radius, 0.0, blank, 3);
-                for i in 0..=num_pts {
+                let px_start = radius;
+                let py_start = 0.0;
+
+                // 1. Blank move + 4 blanked dwell points at start position
+                preview_seg.push(px_start, py_start, blank, 4);
+
+                // 2. 4 lit dwell points at start position
+                preview_seg.push(px_start, py_start, color, 4);
+
+                // 3. Circle perimeter
+                for i in 1..=num_pts {
                     let angle = (i as f32 / num_pts as f32) * std::f32::consts::TAU;
                     let px = radius * angle.cos();
                     let py = radius * angle.sin();
-                    let dwell = if i == 0 || i == num_pts { 3 } else { 0 };
-                    preview_seg.push(px, py, color, dwell);
+                    preview_seg.push(px, py, color, 0);
                 }
-                // Extra 2 overlap points past 360° for 100% closed reticle circle!
+
+                // 4. Extra 2 overlap points past 360° for 100% closed reticle circle!
                 for i in 1..=2 {
                     let angle = (i as f32 / num_pts as f32) * std::f32::consts::TAU;
                     let px = radius * angle.cos();
                     let py = radius * angle.sin();
-                    preview_seg.push(px, py, color, 2);
+                    preview_seg.push(px, py, color, 0);
                 }
-                preview_seg.push(radius, 0.0, blank, 3);
+
+                let end_angle = (2.0 as f32 / num_pts as f32) * std::f32::consts::TAU;
+                let px_end = radius * end_angle.cos();
+                let py_end = radius * end_angle.sin();
+
+                // 5. 4 lit dwell points at end position
+                preview_seg.push(px_end, py_end, color, 4);
+
+                // 6. 4 blanked dwell points at end position (laser OFF at end position before moving)
+                preview_seg.push(px_end, py_end, blank, 4);
             }
             segments.push(preview_seg);
         }

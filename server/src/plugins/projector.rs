@@ -388,8 +388,8 @@ fn start_dac_output_thread(
                             consecutive_write_failures, elapsed_secs, since_last_err, e);
                     }
 
-                    // Only trigger a full USB device reset if 8 consecutive writes fail (~250ms of persistent failure).
-                    let should_reset = consecutive_write_failures >= 8;
+                    // Only trigger a full USB device reset if 25 consecutive writes fail (~1.2s of persistent failure).
+                    let should_reset = consecutive_write_failures >= 25;
                     
                     if should_reset {
                         info!("Thread: USB transient stall/error detected — performing endpoint reset & 3-frame blank priming...");

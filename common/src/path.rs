@@ -415,76 +415,94 @@ impl UniversalPath {
             .push(PathSegment::from_lyon_path(&path, color, line_width));
     }
 
-    /// Create a circle path with galvo loop closure (overlap + corner dwell)
+    /// Create a circle path with zero-tail galvo blanking and dwell
     pub fn circle(center: Vec2, radius: f32, color: Color) -> Self {
         let mut seg = PathSegment::empty();
         let num_pts = 32;
         let (r, g, b) = PathPoint::color_to_rgb(color);
+        let start_x = center.x + radius;
+        let start_y = center.y;
 
-        // Blank move to start position
-        seg.points.push(PathPoint::new(center.x + radius, center.y, 0, 0, 0, 3));
+        // 1. Blank move + 4 blanked dwell points at start position (laser OFF, galvo settles)
+        seg.points.push(PathPoint::new(start_x, start_y, 0, 0, 0, 4));
 
-        // Circle perimeter points
-        for i in 0..=num_pts {
+        // 2. 4 lit dwell points at start position (laser ON, galvo stationary)
+        seg.points.push(PathPoint::new(start_x, start_y, r, g, b, 4));
+
+        // 3. Scan 360° circle perimeter
+        for i in 1..=num_pts {
             let angle = (i as f32 / num_pts as f32) * std::f32::consts::TAU;
             let x = center.x + radius * angle.cos();
             let y = center.y + radius * angle.sin();
-            let dwell = if i == 0 || i == num_pts { 3 } else { 0 };
-            seg.points.push(PathPoint::new(x, y, r, g, b, dwell));
+            seg.points.push(PathPoint::new(x, y, r, g, b, 0));
         }
 
-        // Extra 2 overlap points past 360° to ensure 100% galvo loop closure
+        // 4. Extra 2 overlap points past 360° to ensure 100% galvo loop closure
         for i in 1..=2 {
             let angle = (i as f32 / num_pts as f32) * std::f32::consts::TAU;
             let x = center.x + radius * angle.cos();
             let y = center.y + radius * angle.sin();
-            seg.points.push(PathPoint::new(x, y, r, g, b, 2));
+            seg.points.push(PathPoint::new(x, y, r, g, b, 0));
         }
 
-        // Blank move at end
-        seg.points.push(PathPoint::new(center.x + radius, center.y, 0, 0, 0, 3));
+        let end_angle = (2.0 as f32 / num_pts as f32) * std::f32::consts::TAU;
+        let end_x = center.x + radius * end_angle.cos();
+        let end_y = center.y + radius * end_angle.sin();
+
+        // 5. 4 lit dwell points at end position (laser ON, galvo stationary)
+        seg.points.push(PathPoint::new(end_x, end_y, r, g, b, 4));
+
+        // 6. 4 blanked dwell points at end position (laser OFF at end position before moving)
+        seg.points.push(PathPoint::new(end_x, end_y, 0, 0, 0, 4));
 
         Self {
             segments: vec![seg],
         }
     }
 
-    /// Create a balloon path shape (closed circular body + knot + string)
+    /// Create a balloon path shape (closed circular body + knot + string) with zero-tail blanking dwell
     pub fn balloon(center: Vec2, radius: f32, color: Color) -> Self {
         let mut seg = PathSegment::empty();
         let num_pts = 32;
         let (r, g, b) = PathPoint::color_to_rgb(color);
+        let top_x = center.x;
+        let top_y = center.y + radius;
 
-        // Blank move to top of balloon
-        seg.points.push(PathPoint::new(center.x, center.y + radius, 0, 0, 0, 3));
+        // 1. Blank move + 4 blanked dwell points at top of balloon (laser OFF, galvo settles)
+        seg.points.push(PathPoint::new(top_x, top_y, 0, 0, 0, 4));
 
-        // Balloon circular body
-        for i in 0..=num_pts {
+        // 2. 4 lit dwell points at top position (laser ON, galvo stationary)
+        seg.points.push(PathPoint::new(top_x, top_y, r, g, b, 4));
+
+        // 3. Balloon circular body
+        for i in 1..=num_pts {
             let angle = std::f32::consts::FRAC_PI_2 + (i as f32 / num_pts as f32) * std::f32::consts::TAU;
             let x = center.x + radius * angle.cos();
             let y = center.y + radius * angle.sin();
-            let dwell = if i == 0 || i == num_pts { 3 } else { 0 };
-            seg.points.push(PathPoint::new(x, y, r, g, b, dwell));
+            seg.points.push(PathPoint::new(x, y, r, g, b, 0));
         }
 
-        // Extra 2 overlap points to ensure 100% body closure
+        // 4. Extra 2 overlap points to ensure 100% body closure
         for i in 1..=2 {
             let angle = std::f32::consts::FRAC_PI_2 + (i as f32 / num_pts as f32) * std::f32::consts::TAU;
             let x = center.x + radius * angle.cos();
             let y = center.y + radius * angle.sin();
-            seg.points.push(PathPoint::new(x, y, r, g, b, 2));
+            seg.points.push(PathPoint::new(x, y, r, g, b, 0));
         }
 
-        // Balloon Knot at bottom
+        // 5. Balloon Knot at bottom
         let knot_y = center.y - radius;
-        seg.points.push(PathPoint::new(center.x, knot_y, r, g, b, 3));
+        seg.points.push(PathPoint::new(center.x, knot_y, r, g, b, 4));
         seg.points.push(PathPoint::new(center.x - 0.04 * radius, knot_y - 0.05 * radius, r, g, b, 2));
         seg.points.push(PathPoint::new(center.x + 0.04 * radius, knot_y - 0.05 * radius, r, g, b, 2));
         seg.points.push(PathPoint::new(center.x, knot_y, r, g, b, 2));
 
-        // Balloon String
-        seg.points.push(PathPoint::new(center.x, knot_y - 0.15 * radius, r, g, b, 3));
-        seg.points.push(PathPoint::new(center.x, knot_y - 0.15 * radius, 0, 0, 0, 3));
+        // 6. Balloon String
+        let string_y = knot_y - 0.15 * radius;
+        seg.points.push(PathPoint::new(center.x, string_y, r, g, b, 4));
+
+        // 7. Blanked dwell points at end of string (laser OFF before galvo moves to next path)
+        seg.points.push(PathPoint::new(center.x, string_y, 0, 0, 0, 4));
 
         Self {
             segments: vec![seg],
