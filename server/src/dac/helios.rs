@@ -303,7 +303,11 @@ impl HeliosDacController {
         v
     }
 
-    /// Convenience: wait for ready and write frame to DAC with padding to min_pts
+    /// Convenience: wait for ready and write frame to DAC with padding to min_pts.
+    /// Returns:
+    /// - Ok(true) if frame was successfully written to DAC
+    /// - Ok(false) if DAC is busy playing current frame (NOT an error!)
+    /// - Err(String) if an actual USB hardware error occurred
     pub fn write_frame_ready(
         &self,
         dac_num: u32,
@@ -311,26 +315,26 @@ impl HeliosDacController {
         flags: u8,
         points: &[HeliosPoint],
         min_pts: usize,
-    ) -> Result<(), String> {
+    ) -> Result<bool, String> {
         let padded = Self::pad_frame(points, min_pts);
         // Wait for DAC ready status (max 5 polls with 8ms spacing = 40ms max window)
         match self.wait_for_ready(dac_num, 5) {
             Err(e) => return Err(e), // Propagate USB errors immediately
-            Ok(false) => return Err("DAC busy: status timeout".to_string()), // Do not force write on busy endpoint
+            Ok(false) => return Ok(false), // DAC busy playing frame — NOT an error!
             Ok(true) => {}  // Ready
         }
         let res = self.write_frame_native(dac_num, pps, flags, &padded);
         if res.is_ok() {
             // Sleep for 40% of frame playback time (~13.6ms for 1024 pts @ 30kpps).
-            // Waking up 20ms early guarantees Linux thread scheduler jitter (+5ms to +10ms)
-            // will NEVER cause physical hardware DAC FIFO buffer starvation!
             let total_pts = padded.len().max(min_pts) as f32;
             let sleep_micros = ((total_pts / pps.max(HELIOS_MIN_PPS) as f32) * 400_000.0) as u64;
             if sleep_micros > 0 {
                 std::thread::sleep(std::time::Duration::from_micros(sleep_micros));
             }
+            Ok(true)
+        } else {
+            res.map(|_| true)
         }
-        res
     }
 
     /// Write a PathSegment frame to the specified DAC

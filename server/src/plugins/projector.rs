@@ -366,14 +366,18 @@ fn start_dac_output_thread(
                 }
             }
 
-            // ── 4. Write frame to DAC (exact dac-test write_frame_ready pattern) ─
+            // ── 4. Write frame to DAC ─
             match controller.write_frame_ready(0, pps, flags, &frame_buf, dac_min_points) {
-                Ok(_) => {
+                Ok(true) => {
                     consecutive_write_failures = 0;
                     frame_count += 1;
                     if frame_count % 600 == 0 {
                         info!("✓ DAC active: {} frames sent, current frame has {} points", frame_count, frame_buf.len());
                     }
+                }
+                Ok(false) => {
+                    // DAC is busy playing current frame — micro-sleep 4ms and retry smoothly on next tick (NOT an error!)
+                    std::thread::sleep(std::time::Duration::from_millis(4));
                 }
                 Err(e) => {
                     consecutive_write_failures += 1;
