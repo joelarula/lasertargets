@@ -56,3 +56,5 @@ mcp-server/*.log
 # Game statistics reports
 stats/
 **/stats/
+/temp/
+temp/

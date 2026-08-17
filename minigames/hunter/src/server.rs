@@ -8,6 +8,8 @@ use common::{
 };
 use crate::common::{GAME_ID, generate_game_report};
 use crate::model::{BalloonRiseSpeed, BalloonTargetEntity, BroadcastStatsUpdateEvent, CollisionIndicator, GameReport, HunterClickEvent, HunterGameStats, TargetEvent};
+use gamepad::{Btn, GamepadState, PrevGamepadState, ServerGamepadCursor};
+
 
 /// Event for spawning hunter targets (server-only)
 #[derive(Message, Debug, Clone)]
@@ -25,15 +27,66 @@ pub struct HunterTargetEntity {
     pub session_id: bevy::asset::uuid::Uuid,
 }
 
+/// Component for title announcement text overlay
 #[derive(Component)]
-struct HunterTitleAnnouncement {
-    timer: Timer,
+pub struct HunterTitleAnnouncement {
+    pub timer: Timer,
+}
+
+/// Resource tracking the reticle cursor mode and target selection
+#[derive(Resource, Debug, Clone)]
+pub struct HunterTargetSelection {
+    pub selected_index: usize, // 0 = GunShot Mode (Default), 1 = Red Circle, 2 = Yellow Balloon, 3 = Cyan Circle, 4 = Magenta Balloon
+}
+
+impl Default for HunterTargetSelection {
+    fn default() -> Self {
+        Self { selected_index: 0 }
+    }
+}
+
+impl HunterTargetSelection {
+    pub fn get_target(&self) -> Option<HunterTarget> {
+        match self.selected_index {
+            1 => Some(HunterTarget::Basic(0.45, Color::srgb(0.0, 0.9, 1.0))),  // Static Big: Cyan Large Practice Circle
+            2 => Some(HunterTarget::Baloon(0.30, Color::srgb(1.0, 0.9, 0.1))),  // Balloon 1: Yellow Rising Balloon
+            3 => Some(HunterTarget::Baloon(0.20, Color::srgb(1.0, 0.1, 0.9))),  // Balloon 2: Magenta Small Fast Balloon
+            4 => Some(HunterTarget::Baloon(0.25, Color::srgb(0.1, 1.0, 0.3))),  // Balloon 3: Green Medium Balloon
+            _ => None, // 0 = GunShot Mode
+        }
+    }
+
+    pub fn target_name(&self) -> &'static str {
+        match self.selected_index {
+            0 => "Gun Shot Mode",
+            1 => "Cyan Large Practice Circle (0.45m)",
+            2 => "Yellow Rising Balloon (0.30m)",
+            3 => "Magenta Small Fast Balloon (0.20m)",
+            4 => "Green Medium Balloon (0.25m)",
+            _ => "Gun Shot Mode",
+        }
+    }
+
+    pub fn cycle(&mut self) {
+        self.selected_index = (self.selected_index + 1) % 5;
+    }
+
+    pub fn reset_to_gunshot(&mut self) {
+        self.selected_index = 0;
+    }
+}
+
+#[derive(Component)]
+pub struct TargetSpawnImmunity {
+    pub spawn_pos: Vec3,
+    pub radius: f32,
 }
 
 pub struct HunterGameServerPlugin;
 
 impl Plugin for HunterGameServerPlugin {
     fn build(&self, app: &mut App) {
+        app.init_resource::<HunterTargetSelection>();
         app.add_message::<SpawnHunterTargetEvent>();
         app.add_message::<HunterClickEvent>();
         app.add_message::<BroadcastStatsUpdateEvent>();
@@ -41,7 +94,9 @@ impl Plugin for HunterGameServerPlugin {
             Update,
             (
                 spawn_hunter_targets,
+                update_target_spawn_immunity,
                 handle_hunter_clicks,
+                handle_hunter_gamepad_inputs,
                 check_balloon_out_of_bounds,
             )
                 .run_if(in_state(ServerState::InGame))
@@ -263,27 +318,8 @@ fn spawn_hunter_targets(
             UniversalPath::circle(Vec2::ZERO, radius, color)
         };
         
-        // Get local position relative to scene transform
-        let (local_position, spawn_world_pos) = if is_balloon {
-            // Balloon: random X within scene bounds, start below scene bottom
-            let half_width = scene_setup.scene.scene_dimension.x as f32 / 2.0;
-            let half_height = scene_setup.scene.scene_dimension.y as f32 / 2.0;
-            let margin = radius;
-            let x = rand::random_range((-half_width + margin)..(half_width - margin));
-            let local_pos = Vec3::new(x, -half_height - radius, 0.0);
-            
-            let world_pos = if let Ok((_scene_entity, scene_transform)) = scene_query.single() {
-                let scene_matrix = Mat4::from_scale_rotation_translation(
-                    scene_transform.scale,
-                    scene_transform.rotation,
-                    scene_transform.translation,
-                );
-                scene_matrix.transform_point3(local_pos)
-            } else {
-                local_pos
-            };
-            (local_pos, world_pos)
-        } else if let Ok((_scene_entity, scene_transform)) = scene_query.single() {
+        // Get local position relative to scene transform (all target types release from reticle cursor position)
+        let (local_position, spawn_world_pos) = if let Ok((_scene_entity, scene_transform)) = scene_query.single() {
             let mut snapped_world_pos = event.position;
             snapped_world_pos.z = scene_transform.translation.z;
 
@@ -349,6 +385,11 @@ fn spawn_hunter_targets(
             });
         }
         
+        let radius = match &event.target {
+            HunterTarget::Basic(size, _) => *size,
+            HunterTarget::Baloon(size, _) => *size,
+        };
+
         let transform = Transform::from_translation(local_position);
         
         let target_entity = commands.spawn((
@@ -360,6 +401,10 @@ fn spawn_hunter_targets(
                 uuid: target_uuid,
                 reward,
                 session_id,
+            },
+            TargetSpawnImmunity {
+                spawn_pos: event.position,
+                radius,
             },
             path,
             common::path::PathRenderable::default(),
@@ -385,11 +430,92 @@ fn spawn_hunter_targets(
     }
 }
 
+/// System that checks if reticle cursor has moved outside a newly spawned target's radius.
+/// Once cursor leaves, immunity is removed and target becomes shootable!
+fn update_target_spawn_immunity(
+    mut commands: Commands,
+    cursor: Option<Res<ServerGamepadCursor>>,
+    immunity_query: Query<(Entity, &Transform, Option<&ChildOf>, &TargetSpawnImmunity)>,
+    scene_query: Query<(Entity, &Transform), With<SceneEntity>>,
+) {
+    let Some(cursor) = cursor else { return; };
+    let cursor_pos = cursor.position;
+    let scene_transform = scene_query.single().ok().map(|(_, t)| t);
+
+    for (entity, transform, parent, immunity) in immunity_query.iter() {
+        let target_pos = if parent.is_some() {
+            if let Some(scene_transform) = scene_transform {
+                scene_transform.transform_point(transform.translation)
+            } else {
+                transform.translation
+            }
+        } else {
+            transform.translation
+        };
+
+        let dist = cursor_pos.distance(target_pos);
+        if dist > immunity.radius {
+            if let Some(mut e) = commands.get_entity(entity) {
+                e.remove::<TargetSpawnImmunity>();
+                info!("✓ Cursor moved outside spawn radius — target is now shootable");
+            }
+        }
+    }
+}
+
+/// Handles gamepad input during Hunter game:
+/// - Button A (South): Roll / cycle through target types (Basic Red -> Yellow Balloon -> Cyan Large -> Magenta Small Balloon)
+/// - Button B (East): Release selected target into game at reticle position IF pressed on open space (with red shot dot indicator), OR shoot target IF pressed on an existing target!
+fn handle_hunter_gamepad_inputs(
+    state: Option<Res<GamepadState>>,
+    prev: Option<Res<PrevGamepadState>>,
+    cursor: Option<Res<ServerGamepadCursor>>,
+    mut selection: ResMut<HunterTargetSelection>,
+    game_sessions: Query<&GameSession>,
+    mut click_events: MessageWriter<HunterClickEvent>,
+    mut spawn_events: MessageWriter<SpawnHunterTargetEvent>,
+) {
+    let (Some(state), Some(prev), Some(cursor)) = (state, prev, cursor) else { return; };
+    if !state.connected { return; }
+
+    let Some(active_session) = game_sessions.iter().find(|s| s.game_id == GAME_ID && s.state == GameState::InGame) else { return; };
+
+    // Button A (South) -> Roll / Cycle reticle mode: GunShot Mode -> Red Circle -> Yellow Balloon -> Cyan Circle -> Magenta Balloon -> GunShot Mode
+    if state.just_pressed(&prev, Btn::South) {
+        selection.cycle();
+        info!("🎮 [Hunter Mode Switch] Selected cursor mode #{}: {}", selection.selected_index, selection.target_name());
+    }
+
+    // Button B (East) -> If in Target Spawning mode (1-4): Release target into game & auto-reset cursor to GunShot mode (0)!
+    // If in GunShot mode (0): Shoot at reticle cursor position!
+    if state.just_pressed(&prev, Btn::East) {
+        let click_pos = cursor.position;
+
+        if let Some(target_to_spawn) = selection.get_target() {
+            // Currently in Target Spawning mode (Index 1-4) -> Release target into game & auto-reset to GunShot mode!
+            info!("🚀 [Hunter Gamepad] RELEASING target [{}] at {:?}", selection.target_name(), click_pos);
+            spawn_events.write(SpawnHunterTargetEvent {
+                target: target_to_spawn,
+                position: click_pos,
+            });
+            selection.reset_to_gunshot();
+            info!("🎯 [Hunter Gamepad] Reticle cursor mode auto-reset to GunShot Mode");
+        } else {
+            // Currently in GunShot Mode (Index 0) -> Shoot at reticle position!
+            info!("🎯 [Hunter Gamepad] SHOOTING at {:?}", click_pos);
+            click_events.write(HunterClickEvent {
+                session_id: active_session.session_id,
+                click_position: click_pos,
+            });
+        }
+    }
+}
+
 /// Handle click events from clients and detect collisions server-side
 fn handle_hunter_clicks(
     mut commands: Commands,
     mut click_events: MessageReader<HunterClickEvent>,
-    target_query: Query<(Entity, &Transform, Option<&ChildOf>, &HunterTargetEntity)>,
+    target_query: Query<(Entity, &Transform, Option<&ChildOf>, &HunterTargetEntity, Option<&TargetSpawnImmunity>)>,
     scene_query: Query<(Entity, &Transform), With<SceneEntity>>,
     scene_setup: Res<SceneSetup>,
     mut stats: Option<ResMut<HunterGameStats>>,
@@ -404,9 +530,9 @@ fn handle_hunter_clicks(
         let mut hit_any = false;
         
         // Check all targets for collision
-        for (entity, transform, parent, target_entity) in &target_query {
-            // Only check targets for this session
-            if target_entity.session_id != event.session_id {
+        for (entity, transform, parent, target_entity, immunity) in &target_query {
+            // Only check targets for this session, and skip immune targets (newly released target until cursor leaves area)
+            if target_entity.session_id != event.session_id || immunity.is_some() {
                 continue;
             }
 
@@ -674,3 +800,5 @@ fn format_report_text(report: &GameReport) -> String {
     writeln!(s, "---").unwrap();
     s
 }
+
+

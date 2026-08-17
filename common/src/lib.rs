@@ -7,6 +7,7 @@ pub mod scene;
 pub mod state;
 pub mod toolbar;
 pub mod target;
+pub mod shapes;
 
 #[cfg(test)]
 #[path = "../test/scenetest.rs"]

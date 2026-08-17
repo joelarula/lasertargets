@@ -415,37 +415,80 @@ impl UniversalPath {
             .push(PathSegment::from_lyon_path(&path, color, line_width));
     }
 
-    /// Create a circle path
+    /// Create a circle path with galvo loop closure (overlap + corner dwell)
     pub fn circle(center: Vec2, radius: f32, color: Color) -> Self {
-        use lyon_tessellation::math::point;
-        let mut builder = Path::builder();
+        let mut seg = PathSegment::empty();
+        let num_pts = 32;
+        let (r, g, b) = PathPoint::color_to_rgb(color);
 
-        // Create circle with line segments
-        let segments = 64;
-        let mut started = false;
-        for i in 0..=segments {
-            let angle = (i as f32 / segments as f32) * 2.0 * std::f32::consts::PI;
+        // Blank move to start position
+        seg.points.push(PathPoint::new(center.x + radius, center.y, 0, 0, 0, 3));
+
+        // Circle perimeter points
+        for i in 0..=num_pts {
+            let angle = (i as f32 / num_pts as f32) * std::f32::consts::TAU;
             let x = center.x + radius * angle.cos();
             let y = center.y + radius * angle.sin();
-
-            if !started {
-                builder.begin(point(x, y));
-                started = true;
-            } else {
-                builder.line_to(point(x, y));
-            }
+            let dwell = if i == 0 || i == num_pts { 3 } else { 0 };
+            seg.points.push(PathPoint::new(x, y, r, g, b, dwell));
         }
-        builder.end(true);
+
+        // Extra 2 overlap points past 360° to ensure 100% galvo loop closure
+        for i in 1..=2 {
+            let angle = (i as f32 / num_pts as f32) * std::f32::consts::TAU;
+            let x = center.x + radius * angle.cos();
+            let y = center.y + radius * angle.sin();
+            seg.points.push(PathPoint::new(x, y, r, g, b, 2));
+        }
+
+        // Blank move at end
+        seg.points.push(PathPoint::new(center.x + radius, center.y, 0, 0, 0, 3));
 
         Self {
-            segments: vec![PathSegment::from_lyon_path(&builder.build(), color, 1.0)],
+            segments: vec![seg],
         }
     }
 
-    /// Create a balloon path shape (circle for now, can be enhanced later)
+    /// Create a balloon path shape (closed circular body + knot + string)
     pub fn balloon(center: Vec2, radius: f32, color: Color) -> Self {
-        // Start with a circle; can be changed to a teardrop/balloon shape later
-        Self::circle(center, radius, color)
+        let mut seg = PathSegment::empty();
+        let num_pts = 32;
+        let (r, g, b) = PathPoint::color_to_rgb(color);
+
+        // Blank move to top of balloon
+        seg.points.push(PathPoint::new(center.x, center.y + radius, 0, 0, 0, 3));
+
+        // Balloon circular body
+        for i in 0..=num_pts {
+            let angle = std::f32::consts::FRAC_PI_2 + (i as f32 / num_pts as f32) * std::f32::consts::TAU;
+            let x = center.x + radius * angle.cos();
+            let y = center.y + radius * angle.sin();
+            let dwell = if i == 0 || i == num_pts { 3 } else { 0 };
+            seg.points.push(PathPoint::new(x, y, r, g, b, dwell));
+        }
+
+        // Extra 2 overlap points to ensure 100% body closure
+        for i in 1..=2 {
+            let angle = std::f32::consts::FRAC_PI_2 + (i as f32 / num_pts as f32) * std::f32::consts::TAU;
+            let x = center.x + radius * angle.cos();
+            let y = center.y + radius * angle.sin();
+            seg.points.push(PathPoint::new(x, y, r, g, b, 2));
+        }
+
+        // Balloon Knot at bottom
+        let knot_y = center.y - radius;
+        seg.points.push(PathPoint::new(center.x, knot_y, r, g, b, 3));
+        seg.points.push(PathPoint::new(center.x - 0.04 * radius, knot_y - 0.05 * radius, r, g, b, 2));
+        seg.points.push(PathPoint::new(center.x + 0.04 * radius, knot_y - 0.05 * radius, r, g, b, 2));
+        seg.points.push(PathPoint::new(center.x, knot_y, r, g, b, 2));
+
+        // Balloon String
+        seg.points.push(PathPoint::new(center.x, knot_y - 0.15 * radius, r, g, b, 3));
+        seg.points.push(PathPoint::new(center.x, knot_y - 0.15 * radius, 0, 0, 0, 3));
+
+        Self {
+            segments: vec![seg],
+        }
     }
 
     /// Create a diamond (rotated square) path — a square rotated 45° with sharp corner dwells

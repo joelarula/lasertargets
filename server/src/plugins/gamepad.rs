@@ -7,7 +7,6 @@ use crate::plugins::actor::ActorLink;
 use crate::plugins::calibration::SpawnCalibrationRippleEvent;
 use crate::plugins::network::MousePositionEvent;
 use crate::plugins::status::LogStatusReportEvent;
-use hunter::model::HunterClickEvent;
 
 const DIMENSION_STEP: f32 = 1.0;
 const DISTANCE_STEP: f32 = 1.0;
@@ -119,14 +118,12 @@ fn gamepad_cursor_movement(
     });
 }
 
-/// Handles click/fire actions from the B button (Btn::East).
+/// Handles click/ripple actions from the B button (Btn::East) during calibration.
 fn gamepad_actor_click_handler(
     state: Res<GamepadState>,
     prev: Res<PrevGamepadState>,
     cursor: Res<ServerGamepadCursor>,
     calibration_state: Option<Res<State<CalibrationState>>>,
-    game_sessions: Query<&GameSession>,
-    mut click_events: MessageWriter<HunterClickEvent>,
     mut ripple_events: MessageWriter<SpawnCalibrationRippleEvent>,
 ) {
     if state.just_pressed(&prev, Btn::East) {
@@ -136,15 +133,6 @@ fn gamepad_actor_click_handler(
             if *cal.get() == CalibrationState::On {
                 ripple_events.write(SpawnCalibrationRippleEvent {
                     position: cursor.position,
-                });
-            }
-        }
-
-        for session in game_sessions.iter() {
-            if session.game_id == HUNTER_GAME_ID && session.state == GameState::InGame {
-                click_events.write(HunterClickEvent {
-                    session_id: session.session_id,
-                    click_position: cursor.position,
                 });
             }
         }
@@ -268,7 +256,7 @@ fn gamepad_laser_toggle(
     mut projector_config: ResMut<ProjectorConfiguration>,
 ) {
     cooldowns.laser_toggle.tick(time.delta());
-    if state.just_pressed(&prev, Btn::West) && cooldowns.laser_toggle.is_finished() {
+    if state.just_pressed(&prev, Btn::Start) && cooldowns.laser_toggle.is_finished() {
         cooldowns.laser_toggle.reset();
         projector_config.switched_on = !projector_config.switched_on;
         info!("Gamepad: Laser {}", if projector_config.switched_on { "ON" } else { "OFF" });
@@ -300,7 +288,7 @@ fn gamepad_toggle_calibration(
 }
 
 /// Handles cycling between Calibration/Menu -> Game A (Hunter) -> Game B (Snake) -> Calibration/Menu.
-/// Triggers on A (South), Start, or RightBumper buttons.
+/// Triggers on X button (Btn::West).
 fn gamepad_menu_game_switcher(
     time: Res<Time>,
     mut cooldowns: ResMut<GamepadInputCooldowns>,
@@ -319,8 +307,8 @@ fn gamepad_menu_game_switcher(
         return; // Ignore button press while a game or server state transition is queued/pending
     }
 
-    // Button A (Btn::South) ONLY: Cycle Calibration/Menu -> Hunter (Game A) -> Snake (Game B) -> Calibration/Menu
-    let trigger_pressed = state.just_pressed(&prev, Btn::South) && cooldowns.menu_switch.is_finished();
+    // Button X (Btn::West): Cycle Calibration/Menu -> Hunter (Game A) -> Snake (Game B) -> Calibration/Menu
+    let trigger_pressed = state.just_pressed(&prev, Btn::West) && cooldowns.menu_switch.is_finished();
 
     if trigger_pressed {
         cooldowns.menu_switch.reset();
@@ -421,3 +409,4 @@ fn gamepad_snake_direction_handler(
         });
     }
 }
+

@@ -1,0 +1,13 @@
+{
+  "name": "triangle",
+  "description": "Equilateral triangle shape outline with corner dwells",
+  "tags": ["geometry", "ui", "triangle"],
+  "author": "LaserTargets",
+  "line_style": "Continuous",
+  "points": [
+    { "x": 0.0, "y": 1.0, "r": 0, "g": 255, "b": 0, "dwell": 4 },
+    { "x": 0.866, "y": -0.5, "r": 0, "g": 255, "b": 0, "dwell": 4 },
+    { "x": -0.866, "y": -0.5, "r": 0, "g": 255, "b": 0, "dwell": 4 },
+    { "x": 0.0, "y": 1.0, "r": 0, "g": 255, "b": 0, "dwell": 4 }
+  ]
+}

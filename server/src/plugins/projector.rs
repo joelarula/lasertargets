@@ -292,20 +292,18 @@ fn start_dac_output_thread(
         let pps = dac_pps;
         let flags = HELIOS_FLAGS_DEFAULT;
         let mut frame_count: u64 = 0;
-        let mut _consecutive_errors: u32 = 0;
         let mut consecutive_write_failures: u32 = 0;
-        let _max_consecutive_errors: u32 = 100;
         let max_write_failures: u32 = 50;
-        // Grace frames after a recovery: skip the should_reset check for this many frames
-        // to prevent cascade recoveries while the device is still settling.
         let mut recovery_grace_remaining: u32 = 0;
-
-
 
         // Reusable frame buffer to avoid allocation per loop iteration
         let mut frame_buf: Vec<HeliosPoint> = Vec::with_capacity(dac_min_points * 2);
 
         loop {
+            if recovery_grace_remaining > 0 {
+                recovery_grace_remaining -= 1;
+            }
+
             // ── 1. Check shutdown ──────────────────────────────────────────
             if shutdown_rx.try_recv().is_ok() {
                 info!("✓ DAC output thread received shutdown signal, cleaning up...");
@@ -384,57 +382,42 @@ fn start_dac_output_thread(
                         .map(|t| format!("{:.2}s ago", t.elapsed().as_secs_f32()))
                         .unwrap_or_else(|| "first error".to_string());
                     last_error_time = Some(std::time::Instant::now());
+
                     if consecutive_write_failures == 1 || consecutive_write_failures == 3 {
                         warn!("✗ DAC write failed (#{}) at T+{:.1}s (prev err: {}) | {}",
                             consecutive_write_failures, elapsed_secs, since_last_err, e);
                     }
-                    // Trigger fast USB endpoint reset:
-                    // - At failure #1 for -5007 (pipe stall): immediately recover before the C
-                    //   library's internal error counter accumulates (threshold ~300 errors).
-                    // - At failure #3 for -1000 (device closed by C library after self-close).
-                    // - At failure #5 for any other error.
-                    let is_pipe_stall = e.contains("-5007");
-                    let is_device_closed = e.contains("-1000") || e.contains("-1002");
-                    let should_reset = (consecutive_write_failures == 5) || (
-                        recovery_grace_remaining == 0 && (
-                            (is_pipe_stall && consecutive_write_failures == 1)
-                            || (is_device_closed && consecutive_write_failures == 3)
-                        )
-                    );
-                    if recovery_grace_remaining > 0 {
-                        recovery_grace_remaining -= 1;
-                    }
+
+                    // Only trigger a full USB device reset if 8 consecutive writes fail (~250ms of persistent failure).
+                    let should_reset = consecutive_write_failures >= 8;
+                    
                     if should_reset {
-                        // -5007 = LIBUSB_ERROR_PIPE (USB bulk endpoint stalled).
-                        // We do NOT need to unload/reload the library — that causes ~1s of visual loss.
-                        // A lightweight stop() + close_devices() + open_devices() clears the USB halt
-                        // and recovers the endpoint in ~350ms while keeping the C thread alive.
-                        info!("Thread: USB pipe stall/disconnect detected — performing fast endpoint reset (no library reload)...");
+                        info!("Thread: USB transient stall/error detected — performing endpoint reset & 3-frame blank priming...");
                         let _ = controller.stop(0);
                         std::thread::sleep(std::time::Duration::from_millis(50));
                         let _ = controller.close_devices();
-                        std::thread::sleep(std::time::Duration::from_millis(200));
-                        
+                        std::thread::sleep(std::time::Duration::from_millis(150));
+
                         let mut fast_reset_ok = false;
                         if let Ok(devs) = controller.open_devices() {
                             if devs > 0 {
-                                // Feed several blank frames to prime the device before resuming
-                                // normal operation. A single frame isn't enough — the device needs
-                                // ~300ms to fully stabilise after a close+open cycle.
+                                // ── USB DAC Priming Sequence ──────────────────
+                                // Write 3 consecutive blank frames with 80ms delay between them to let hardware FIFO & USB endpoints stabilize!
                                 let mut prime_ok = true;
                                 for _ in 0..3 {
                                     if let Err(err) = controller.write_frame_ready(0, pps, 0, &blank_frame, dac_min_points) {
-                                        warn!("Thread: Priming write failed during fast reset: {}", err);
+                                        warn!("Thread: Priming write failed during reset: {}", err);
                                         prime_ok = false;
                                         break;
                                     }
-                                    std::thread::sleep(std::time::Duration::from_millis(100));
+                                    std::thread::sleep(std::time::Duration::from_millis(80));
                                 }
+
                                 if prime_ok {
                                     let _ = controller.set_shutter(0, true);
-                                    info!("✓ Thread: Fast USB endpoint reset successful!");
+                                    info!("✓ Thread: USB reset & 3-frame blank priming successful!");
                                     consecutive_write_failures = 0;
-                                    recovery_grace_remaining = 10; // suppress re-recovery for 10 frames
+                                    recovery_grace_remaining = 15; // Cooldown grace: suppress re-recovery for 15 frames (~500ms)
                                     fast_reset_ok = true;
                                 }
                             }
@@ -443,9 +426,9 @@ fn start_dac_output_thread(
                         if fast_reset_ok {
                             continue;
                         } else {
-                            warn!("Thread: Fast reset failed or priming failed — falling back to library reload...");
+                            warn!("Thread: Fast reset failed — performing clean C library reload fallback...");
                             drop(controller);
-                            std::thread::sleep(std::time::Duration::from_millis(600));
+                            std::thread::sleep(std::time::Duration::from_millis(500));
                             match HeliosDacController::new() {
                                 Ok(mut new_controller) => {
                                     let mut prime_ok = false;
@@ -458,16 +441,15 @@ fn start_dac_output_thread(
                                                     prime_ok = false;
                                                     break;
                                                 }
-                                                std::thread::sleep(std::time::Duration::from_millis(100));
+                                                std::thread::sleep(std::time::Duration::from_millis(80));
                                             }
                                         }
                                     }
                                     if prime_ok {
                                         let _ = new_controller.set_shutter(0, true);
-                                        std::thread::sleep(std::time::Duration::from_millis(150));
-                                        info!("✓ Thread: Library reload fallback recovery successful!");
+                                        info!("✓ Thread: Clean C library reload recovery successful!");
                                         consecutive_write_failures = 0;
-                                        recovery_grace_remaining = 15;
+                                        recovery_grace_remaining = 20;
                                         controller = new_controller;
                                         continue;
                                     } else {
@@ -482,7 +464,18 @@ fn start_dac_output_thread(
                                 }
                             }
                         }
+                    } else {
+                        // Step out in time with exponential backoff micro-sleeps to let USB endpoints drain:
+                        // Failure 1: 2ms | Failure 2: 4ms | Failure 3: 8ms | Failure 4+: 16ms
+                        let backoff_ms = match consecutive_write_failures {
+                            1 => 2,
+                            2 => 4,
+                            3 => 8,
+                            _ => 16,
+                        };
+                        std::thread::sleep(std::time::Duration::from_millis(backoff_ms));
                     }
+
                     if consecutive_write_failures >= max_write_failures {
                         error!("✗ CRITICAL: {} consecutive write failures. DAC hardware disconnected. Exiting thread.", consecutive_write_failures);
                         let mut connected = connected.lock().unwrap();
@@ -491,7 +484,6 @@ fn start_dac_output_thread(
                         let _ = controller.close_devices();
                         break;
                     }
-                    thread::sleep(std::time::Duration::from_millis(10));
                 }
             }
         }

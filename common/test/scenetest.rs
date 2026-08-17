@@ -77,7 +77,8 @@ fn test_get_projector_view_dimensions() {
         angle: 60.0,
         switched_on: true,
         locked_to_scene: false,
-        connected: false
+        connected: false,
+        ..Default::default()
     };
 
     let scene_setup = SceneSetup::new(scene_config, camera_config, projector_config);
@@ -166,7 +167,8 @@ fn test_get_common_viewport_stats_full_overlap() {
         angle: 90.0,
         switched_on: true,
         locked_to_scene: false,
-        connected: false
+        connected: false,
+        ..Default::default()
     };
 
     let scene_setup = SceneSetup::new(scene_config, camera_config, projector_config);
@@ -227,7 +229,8 @@ fn test_get_common_viewport_stats_partial_overlap() {
         angle: projector_angle,
         switched_on: true,
         locked_to_scene: false,
-        connected: false
+        connected: false,
+        ..Default::default()
     };
 
     // Camera range x: [0, 2]
@@ -264,7 +267,8 @@ fn test_get_common_viewport_stats_partial_overlap() {
         angle: projector_angle,
         switched_on: true,
         locked_to_scene: false,
-        connected: false
+        connected: false,
+        ..Default::default()
     };
 
     let scene_setup = SceneSetup::new(

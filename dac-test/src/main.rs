@@ -2,10 +2,7 @@
 // Tests device connection, frame streaming, and sweeps PPS x point-count combinations
 // to discover optimal, stable performance profiles for Raspberry Pi.
 
-#[path = "../../server/src/dac/helios.rs"]
-mod helios;
-
-use helios::{
+use server::dac::helios::{
     HeliosDacController, HeliosPoint, HELIOS_CENTER_COORD, HELIOS_FLAGS_DEFAULT,
 };
 use log::{error, info, warn};
@@ -564,6 +561,301 @@ fn cmd_shapes(duration_per_shape_secs: u64, shape_filter: Option<usize>, selecti
     info!("✓ All shape pattern tests completed cleanly across {} collections.", collections.len());
 }
 
+use common::shapes::ShapeTemplate;
+use crossterm::event::{self, Event, KeyCode, KeyEventKind};
+use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
+use std::io::{self, Write};
+use std::path::{Path, PathBuf};
+
+struct DraftFile {
+    path: PathBuf,
+    template: ShapeTemplate,
+}
+
+fn scan_json_templates_recursive<P: AsRef<Path>>(dir: P) -> Vec<DraftFile> {
+    let mut files = Vec::new();
+    let path = dir.as_ref();
+    if !path.exists() || !path.is_dir() {
+        return files;
+    }
+    if let Ok(entries) = std::fs::read_dir(path) {
+        for entry in entries.flatten() {
+            let entry_path = entry.path();
+            if entry_path.is_dir() {
+                files.extend(scan_json_templates_recursive(&entry_path));
+            } else if entry_path.is_file() && entry_path.extension().map_or(false, |ext| ext == "json") {
+                if let Ok(content) = std::fs::read_to_string(&entry_path) {
+                    if let Ok(tpl) = ShapeTemplate::from_json(&content) {
+                        files.push(DraftFile {
+                            path: entry_path,
+                            template: tpl,
+                        });
+                    }
+                }
+            }
+        }
+    }
+    files.sort_by(|a, b| a.path.cmp(&b.path));
+    files
+}
+
+fn template_to_helios_frame(template: &ShapeTemplate, min_pts: usize) -> Vec<HeliosPoint> {
+    if template.points.is_empty() {
+        return blank_frame(min_pts);
+    }
+    let mut points = Vec::new();
+    for pt in &template.points {
+        let hx = ((2048.0 + pt.x as f64 * 1400.0).clamp(0.0, 4095.0)) as u16;
+        let hy = ((2048.0 + pt.y as f64 * 1400.0).clamp(0.0, 4095.0)) as u16;
+        let helios_pt = HeliosPoint::new(hx, hy, pt.r, pt.g, pt.b, 255);
+        points.push(helios_pt);
+        for _ in 0..pt.dwell {
+            points.push(helios_pt);
+        }
+    }
+    while points.len() < min_pts {
+        let last = points.last().cloned().unwrap_or(HeliosPoint::blanked(HELIOS_CENTER_COORD, HELIOS_CENTER_COORD));
+        points.push(HeliosPoint::blanked(last.x, last.y));
+    }
+    points
+}
+
+fn resolve_unique_path_and_name(parent_dir: &Path, desired_name: &str, current_path: &Path) -> (PathBuf, String) {
+    let mut candidate_name = desired_name.to_string();
+    let mut candidate_path = parent_dir.join(format!("{}.json", candidate_name));
+
+    if candidate_path.exists() && candidate_path != current_path {
+        let mut count = 1;
+        loop {
+            candidate_name = format!("{}_{}", desired_name, count);
+            candidate_path = parent_dir.join(format!("{}.json", candidate_name));
+            if !candidate_path.exists() || candidate_path == current_path {
+                break;
+            }
+            count += 1;
+        }
+    }
+    (candidate_path, candidate_name)
+}
+
+fn cmd_categorize(scan_dir_opt: Option<&str>) {
+    let scan_dir = scan_dir_opt.unwrap_or("temp/draft");
+    info!("Scanning directory for shape templates: {}", scan_dir);
+
+    let mut drafts = scan_json_templates_recursive(scan_dir);
+    if drafts.is_empty() && scan_dir_opt.is_none() {
+        drafts = scan_json_templates_recursive("assets/shapes/templates/draft");
+    }
+    if drafts.is_empty() && scan_dir_opt.is_none() {
+        drafts = scan_json_templates_recursive("assets/shapes/templates");
+    }
+
+    if drafts.is_empty() {
+        error!("No JSON shape templates found in assets/shapes/templates.");
+        return;
+    }
+
+    info!("Loaded {} shape template(s). Attempting to open Helios DAC...", drafts.len());
+    let dac_opt = match HeliosDacController::new() {
+        Ok(mut dac) => {
+            if let Ok(count) = dac.open_devices() {
+                if count > 0 {
+                    let _ = dac.set_shutter(0, true);
+                    info!("✓ Helios DAC opened successfully. Live laser projection enabled.");
+                    Some(dac)
+                } else {
+                    warn!("No Helios DAC USB devices found. Running in CLI visual inspection mode.");
+                    None
+                }
+            } else {
+                warn!("Could not open Helios DAC device. Running in CLI visual inspection mode.");
+                None
+            }
+        }
+        Err(e) => {
+            warn!("Helios DAC library failed to load ({}). Running in CLI visual inspection mode.", e);
+            None
+        }
+    };
+
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::{Arc, Mutex};
+
+    let active_frame = Arc::new(Mutex::new(Vec::<HeliosPoint>::new()));
+    let is_running = Arc::new(AtomicBool::new(true));
+
+    let active_frame_worker = Arc::clone(&active_frame);
+    let is_running_worker = Arc::clone(&is_running);
+
+    let dac_handle = if let Some(mut dac) = dac_opt {
+        Some(std::thread::spawn(move || {
+            let pps = 20_000u32;
+            let min_pts = 350;
+            while is_running_worker.load(Ordering::Relaxed) {
+                let pts = {
+                    let guard = active_frame_worker.lock().unwrap();
+                    guard.clone()
+                };
+                if !pts.is_empty() {
+                    let _ = dac.write_frame_ready(0, pps, HELIOS_FLAGS_DEFAULT, &pts, min_pts);
+                }
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            let _ = dac.stop(0);
+            let _ = dac.close_devices();
+        }))
+    } else {
+        None
+    };
+
+    let mut current_idx = 0;
+    let min_pts = 350;
+
+    loop {
+        if drafts.is_empty() {
+            println!("\n✓ All draft templates categorized or processed!");
+            break;
+        }
+
+        if current_idx >= drafts.len() {
+            current_idx = drafts.len() - 1;
+        }
+
+        let draft = &drafts[current_idx];
+        let frame = template_to_helios_frame(&draft.template, min_pts);
+
+        // Update active background frame for continuous laser projection
+        *active_frame.lock().unwrap() = frame.clone();
+
+        // Clear screen / print shape details
+        print!("\x1B[2J\x1B[1;1H");
+        println!("{}", "=".repeat(80));
+        println!("  INTERACTIVE SHAPE CATEGORIZER [{}/{}] : {}", current_idx + 1, drafts.len(), draft.template.name);
+        println!("{}", "=".repeat(80));
+        println!("  File Path   : {}", draft.path.display());
+        println!("  Description : {}", draft.template.description);
+        println!("  Tags        : {:?}", draft.template.tags);
+        println!("  Line Style  : {:?}", draft.template.line_style);
+        println!("  Points      : {} (projected: {})", draft.template.points.len(), frame.len());
+        println!("{}", "-".repeat(80));
+        println!("  CONTROLS:");
+        println!("    [-> / N / Space] Next Shape   | [<- / P] Previous Shape");
+        println!("    [R] Rename & Categorize        | [D] Delete File");
+        println!("    [Q / Esc] Quit Categorizer");
+        println!("{}\n", "=".repeat(80));
+
+        if enable_raw_mode().is_err() {
+            break;
+        }
+
+        let mut next_action = None;
+        let start = Instant::now();
+
+        while start.elapsed() < Duration::from_millis(150) {
+            if event::poll(Duration::from_millis(20)).unwrap_or(false) {
+                if let Ok(Event::Key(key)) = event::read() {
+                    if key.kind == KeyEventKind::Press {
+                        match key.code {
+                            KeyCode::Right | KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Char(' ') => {
+                                next_action = Some("next");
+                                break;
+                            }
+                            KeyCode::Left | KeyCode::Char('p') | KeyCode::Char('P') => {
+                                next_action = Some("prev");
+                                break;
+                            }
+                            KeyCode::Char('r') | KeyCode::Char('R') => {
+                                next_action = Some("rename");
+                                break;
+                            }
+                            KeyCode::Char('d') | KeyCode::Char('D') => {
+                                next_action = Some("delete");
+                                break;
+                            }
+                            KeyCode::Char('q') | KeyCode::Char('Q') | KeyCode::Esc => {
+                                next_action = Some("quit");
+                                break;
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+        }
+
+        let _ = disable_raw_mode();
+
+        match next_action {
+            Some("next") => {
+                if current_idx + 1 < drafts.len() {
+                    current_idx += 1;
+                } else {
+                    current_idx = 0;
+                }
+            }
+            Some("prev") => {
+                if current_idx > 0 {
+                    current_idx -= 1;
+                } else {
+                    current_idx = drafts.len() - 1;
+                }
+            }
+            Some("rename") => {
+                let curr_draft = &mut drafts[current_idx];
+                print!("\nEnter new shape name (or 'c' to cancel): ");
+                let _ = io::stdout().flush();
+                let mut input = String::new();
+                if io::stdin().read_line(&mut input).is_ok() {
+                    let cleaned = input.trim();
+                    if cleaned.eq_ignore_ascii_case("c") || cleaned.is_empty() {
+                        println!("✕ Rename cancelled.");
+                    } else {
+                        let parent_dir = curr_draft.path.parent().unwrap_or_else(|| Path::new("."));
+                        let (new_path, final_name) = resolve_unique_path_and_name(parent_dir, cleaned, &curr_draft.path);
+
+                        curr_draft.template.name = final_name.clone();
+                        curr_draft.template.description = format!("Shape {}", final_name);
+                        if !curr_draft.template.tags.iter().any(|t| t == "categorized") {
+                            curr_draft.template.tags.push("categorized".to_string());
+                        }
+
+                        if let Ok(json_out) = curr_draft.template.to_json() {
+                            if std::fs::write(&new_path, json_out).is_ok() {
+                                if new_path != curr_draft.path {
+                                    let _ = std::fs::remove_file(&curr_draft.path);
+                                }
+                                println!("✓ Renamed in place: {} (internal name: '{}')", new_path.display(), final_name);
+                                curr_draft.path = new_path;
+                            }
+                        }
+                    }
+                }
+                std::thread::sleep(Duration::from_millis(600));
+            }
+            Some("delete") => {
+                let curr_draft = &drafts[current_idx];
+                println!("\nDeleting draft file: {}", curr_draft.path.display());
+                let _ = std::fs::remove_file(&curr_draft.path);
+                drafts.remove(current_idx);
+                if current_idx >= drafts.len() && !drafts.is_empty() {
+                    current_idx = drafts.len() - 1;
+                }
+                std::thread::sleep(Duration::from_millis(500));
+            }
+            Some("quit") => {
+                break;
+            }
+            _ => {}
+        }
+    }
+
+    is_running.store(false, Ordering::Relaxed);
+    if let Some(handle) = dac_handle {
+        let _ = handle.join();
+    }
+    println!("\nCategorizer exiting. Done.");
+}
+
 // ─── Entry point ──────────────────────────────────────────────────────────────
 
 fn main() {
@@ -593,6 +885,10 @@ fn main() {
             let custom_file = args.get(4).map(|s| s.as_str());
             cmd_shapes(secs, idx_filter, custom_file);
         }
+        "categorize" | "walk" | "drafts" => {
+            let custom_dir = args.get(2).map(|s| s.as_str());
+            cmd_categorize(custom_dir);
+        }
         _ => {
             eprintln!("Helios DAC Hardware Test & Benchmark Tool");
             eprintln!();
@@ -601,11 +897,12 @@ fn main() {
             eprintln!();
             eprintln!("SCENARIOS:");
             eprintln!("  info                           Print device name, firmware version, status");
-            eprintln!("  blink   [secs]                 Alternate full-white / blank (default 30 s)");
-            eprintln!("  box     [secs]                 Draw a 4-corner box (default 60 s)");
-            eprintln!("  stress  [secs]                 Production-identical loop (default 300 s / 5 min)");
+            eprintln!("  blink      [secs]              Alternate full-white / blank (default 30 s)");
+            eprintln!("  box        [secs]              Draw a 4-corner box (default 60 s)");
+            eprintln!("  stress     [secs]              Production-identical loop (default 300 s / 5 min)");
             eprintln!("  sweep                          Benchmark matrix sweep across PPS & frame sizes");
-            eprintln!("  shapes  [secs] [idx] [set]     Loop shapes across all 3 files (presets: all, patterns, lines, pics)");
+            eprintln!("  shapes     [secs] [idx] [set]  Loop shapes across files (presets: all, patterns, lines, pics)");
+            eprintln!("  categorize [dir_path]          Walk & categorize draft JSON templates interactively (Arrow keys / R to rename)");
             eprintln!();
         }
     }
