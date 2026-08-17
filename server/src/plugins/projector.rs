@@ -295,6 +295,7 @@ fn start_dac_output_thread(
         let mut consecutive_write_failures: u32 = 0;
         let max_write_failures: u32 = 50;
         let mut recovery_grace_remaining: u32 = 0;
+        let mut last_report = std::time::Instant::now();
 
         // Reusable frame buffer to avoid allocation per loop iteration
         let mut frame_buf: Vec<HeliosPoint> = Vec::with_capacity(dac_min_points * 2);
@@ -372,7 +373,10 @@ fn start_dac_output_thread(
                     consecutive_write_failures = 0;
                     frame_count += 1;
                     if frame_count % 600 == 0 {
-                        info!("✓ DAC active: {} frames sent, current frame has {} points", frame_count, frame_buf.len());
+                        let fps = 600.0 / last_report.elapsed().as_secs_f32();
+                        last_report = std::time::Instant::now();
+                        info!("✓ [DAC Telemetry] Active: {} frames sent ({:.1} FPS) | Points: {} | PPS: {} | MinPts: {}",
+                            frame_count, fps, frame_buf.len(), pps, dac_min_points);
                     }
                 }
                 Ok(false) => {
@@ -387,10 +391,8 @@ fn start_dac_output_thread(
                         .unwrap_or_else(|| "first error".to_string());
                     last_error_time = Some(std::time::Instant::now());
 
-                    if consecutive_write_failures == 1 || consecutive_write_failures == 3 {
-                        warn!("✗ DAC write failed (#{}) at T+{:.1}s (prev err: {}) | {}",
-                            consecutive_write_failures, elapsed_secs, since_last_err, e);
-                    }
+                    warn!("✗ [DAC Diagnostic] Write error #{}/25 at T+{:.1}s (prev err: {}) | Error: {}",
+                        consecutive_write_failures, elapsed_secs, since_last_err, e);
 
                     // Only trigger a full USB device reset if 25 consecutive writes fail (~1.2s of persistent failure).
                     let should_reset = consecutive_write_failures >= 25;

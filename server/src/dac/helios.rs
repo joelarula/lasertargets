@@ -188,8 +188,8 @@ impl HeliosDacController {
             let result = (self.lib.get_status)(device_num as c_uint);
             if result == 1 {
                 Ok(true) // 1 = ready
-            } else if result == 0 || result == -1 || result == -1002 {
-                // 0, -1, -1002 = busy playing frame or USB endpoint servicing transfer
+            } else if result == 0 || result == -1 || result == -1002 || result == -7 || result == -9 {
+                // 0, -1, -1002, -7, -9 = busy playing frame or transient USB endpoint busy state
                 Ok(false)
             } else {
                 Err(format!("GetStatus failed with error: {}", result))
@@ -208,6 +208,20 @@ impl HeliosDacController {
                 Ok(())
             }
         }
+    }
+
+    /// Wait until the specified DAC is ready to receive a frame or max_attempts is reached
+    pub fn wait_for_ready(&self, dac_num: u32, max_attempts: usize) -> Result<bool, String> {
+        for _ in 0..max_attempts {
+            match self.get_status(dac_num) {
+                Ok(true) => return Ok(true),
+                Ok(false) => {
+                    std::thread::sleep(std::time::Duration::from_millis(2));
+                }
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(false)
     }
 
     /// Get the number of opened devices
@@ -317,7 +331,7 @@ impl HeliosDacController {
         min_pts: usize,
     ) -> Result<bool, String> {
         let padded = Self::pad_frame(points, min_pts);
-        // Wait for DAC ready status (max 5 polls with 8ms spacing = 40ms max window)
+        // Wait for DAC ready status (max 5 polls with 2ms spacing = 10ms max window)
         match self.wait_for_ready(dac_num, 5) {
             Err(e) => return Err(e), // Propagate USB errors immediately
             Ok(false) => return Ok(false), // DAC busy playing frame — NOT an error!
@@ -325,9 +339,10 @@ impl HeliosDacController {
         }
         let res = self.write_frame_native(dac_num, pps, flags, &padded);
         if res.is_ok() {
-            // Sleep for 40% of frame playback time (~13.6ms for 1024 pts @ 30kpps).
+            // Sleep for 75% of frame playback time (~25.6ms for 1024 pts @ 30kpps).
+            // Waking up 8.5ms before frame end ensures physical hardware FIFO never starves while CPU stays 100% idle!
             let total_pts = padded.len().max(min_pts) as f32;
-            let sleep_micros = ((total_pts / pps.max(HELIOS_MIN_PPS) as f32) * 400_000.0) as u64;
+            let sleep_micros = ((total_pts / pps.max(HELIOS_MIN_PPS) as f32) * 750_000.0) as u64;
             if sleep_micros > 0 {
                 std::thread::sleep(std::time::Duration::from_micros(sleep_micros));
             }
@@ -420,31 +435,7 @@ impl HeliosDacController {
         }
     }
 
-    /// Wait for the DAC to be ready to receive a new frame
-    pub fn wait_for_ready(&self, dac_num: u32, max_attempts: u32) -> Result<bool, String> {
-        let mut attempts = 0;
-        let mut error_retries = 0;
-        loop {
-            match self.get_status(dac_num) {
-                Ok(true) => return Ok(true),
-                Ok(false) => {
-                    attempts += 1;
-                    if max_attempts > 0 && attempts >= max_attempts {
-                        return Ok(false);
-                    }
-                    std::thread::sleep(std::time::Duration::from_millis(2));
-                }
-                Err(e) => {
-                    error_retries += 1;
-                    if error_retries <= 10 {
-                        std::thread::sleep(std::time::Duration::from_millis(2));
-                        continue;
-                    }
-                    return Err(e);
-                }
-            }
-        }
-    }
+
 }
 
 impl Drop for HeliosDacController {
