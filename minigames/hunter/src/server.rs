@@ -100,6 +100,15 @@ pub struct TargetSpawnImmunity {
     pub radius: f32,
 }
 
+/// Component tracking an expanding shot ripple animation for Hunter game clicks
+#[derive(Component)]
+pub struct HunterShotRipple {
+    pub current_radius: f32,
+    pub max_radius: f32,
+    pub growth_rate: f32,
+    pub color: Color,
+}
+
 pub struct HunterGameServerPlugin;
 
 impl Plugin for HunterGameServerPlugin {
@@ -116,6 +125,7 @@ impl Plugin for HunterGameServerPlugin {
                 handle_hunter_clicks,
                 handle_hunter_gamepad_inputs,
                 check_balloon_out_of_bounds,
+                update_hunter_shot_ripples,
             )
                 .run_if(in_state(ServerState::InGame))
                 .run_if(hunter_session_is_running),
@@ -644,12 +654,14 @@ fn handle_hunter_clicks(
             }
         }
 
-        // Despawn any previous click indicator
+        // Despawn any previous click indicators
         for entity in indicator_query.iter() {
-            commands.entity(entity).despawn();
+            if let Ok(mut e) = commands.get_entity(entity) {
+                e.despawn();
+            }
         }
 
-        // Spawn new click indicator at click position (5 cm diameter = 0.025 radius)
+        // Spawn expanding laser ring shot animation at shot location (Gold on target HIT, Red on MISS)
         if let Some(scene_transform) = scene_transform {
             let scene_matrix = Mat4::from_scale_rotation_translation(
                 scene_transform.scale,
@@ -658,15 +670,28 @@ fn handle_hunter_clicks(
             );
             let local_click = scene_matrix.inverse().transform_point3(click_pos);
 
+            let initial_radius = 0.03;
+            let ripple_color = if hit_any {
+                Color::srgb(1.0, 0.95, 0.1) // Gold/Yellow expanding ring on target POP!
+            } else {
+                Color::srgb(1.0, 0.1, 0.0) // Red expanding ring on MISS!
+            };
+
             let indicator_path = UniversalPath::circle(
                 Vec2::ZERO,
-                0.025,
-                Color::srgb(1.0, 0.0, 0.0),
+                initial_radius,
+                ripple_color,
             );
 
             let indicator_transform = Transform::from_translation(local_click);
             let indicator_entity = commands.spawn((
                 CollisionIndicator,
+                HunterShotRipple {
+                    current_radius: initial_radius,
+                    max_radius: 0.35, // Expands out to 35cm radius
+                    growth_rate: 1.4, // Expands in ~0.22 seconds
+                    color: ripple_color,
+                },
                 indicator_transform,
                 GlobalTransform::from(indicator_transform),
                 Visibility::default(),
@@ -677,6 +702,25 @@ fn handle_hunter_clicks(
             if let Some((scene_entity, _)) = scene_result {
                 commands.entity(scene_entity).add_child(indicator_entity);
             }
+        }
+    }
+}
+
+/// Animates expanding laser ring shot ripples for Hunter game clicks
+fn update_hunter_shot_ripples(
+    mut commands: Commands,
+    time: Res<Time>,
+    mut query: Query<(Entity, &mut HunterShotRipple, &mut UniversalPath), With<CollisionIndicator>>,
+) {
+    let dt = time.delta_secs();
+    for (entity, mut ripple, mut path) in query.iter_mut() {
+        ripple.current_radius += ripple.growth_rate * dt;
+        if ripple.current_radius >= ripple.max_radius {
+            if let Ok(mut e) = commands.get_entity(entity) {
+                e.despawn();
+            }
+        } else {
+            *path = UniversalPath::circle(Vec2::ZERO, ripple.current_radius, ripple.color);
         }
     }
 }

@@ -4,7 +4,6 @@ use common::game::{ExitGameEvent, GameSession, InitGameSessionEvent};
 use common::state::{CalibrationState, GameState, ServerState};
 use gamepad::{Btn, GamepadBasePlugin, GamepadState, PrevGamepadState, ServerGamepadCursor, GAMEPAD_STICK_DEADZONE, SERVER_GAMEPAD_CLIENT_ID};
 use crate::plugins::actor::ActorLink;
-use crate::plugins::calibration::SpawnCalibrationRippleEvent;
 use crate::plugins::network::MousePositionEvent;
 use crate::plugins::status::LogStatusReportEvent;
 
@@ -52,7 +51,6 @@ impl Plugin for GamepadInputPlugin {
             gamepad_trigger_status_report,
             gamepad_toggle_calibration,
             gamepad_cursor_movement,
-            gamepad_actor_click_handler,
             gamepad_snake_direction_handler,
         ))
         .add_systems(Update, gamepad_calibration_controls.run_if(in_state(CalibrationState::On)))
@@ -118,26 +116,7 @@ fn gamepad_cursor_movement(
     });
 }
 
-/// Handles click/ripple actions from the B button (Btn::East) during calibration.
-fn gamepad_actor_click_handler(
-    state: Res<GamepadState>,
-    prev: Res<PrevGamepadState>,
-    cursor: Res<ServerGamepadCursor>,
-    calibration_state: Option<Res<State<CalibrationState>>>,
-    mut ripple_events: MessageWriter<SpawnCalibrationRippleEvent>,
-) {
-    if state.just_pressed(&prev, Btn::East) {
-        info!("Gamepad B Button CLICK at position {:?}", cursor.position);
 
-        if let Some(cal) = &calibration_state {
-            if *cal.get() == CalibrationState::On {
-                ripple_events.write(SpawnCalibrationRippleEvent {
-                    position: cursor.position,
-                });
-            }
-        }
-    }
-}
 
 // --- Debug logging ---
 
