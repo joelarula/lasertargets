@@ -275,16 +275,32 @@ fn start_dac_output_thread(
         // Allow the DAC firmware to settle after opening
         std::thread::sleep(std::time::Duration::from_millis(200));
 
-        // Open the shutter
-        if let Err(e) = controller.set_shutter(0, true) {
-            warn!("Thread: Failed to open laser shutter: {}", e);
+        let pps = dac_pps;
+        let flags = HELIOS_FLAGS_DEFAULT;
+
+        // Prime the DAC FIFO with a valid blank frame BEFORE opening the laser shutter!
+        let mut init_ok = false;
+        if let Err(e) = controller.write_frame_native(0, pps, flags, &blank_frame) {
+            warn!("Thread: Initial blank priming frame write failed: {}", e);
         } else {
-            info!("✓ Thread: Laser shutter opened");
-            std::thread::sleep(std::time::Duration::from_millis(150));
+            info!("✓ Thread: Initial DAC blank frame primed successfully");
+            std::thread::sleep(std::time::Duration::from_millis(50));
+
+            // Open the shutter
+            if let Err(e) = controller.set_shutter(0, true) {
+                warn!("Thread: Failed to open laser shutter: {}", e);
+            } else {
+                info!("✓ Thread: Laser shutter opened");
+                std::thread::sleep(std::time::Duration::from_millis(150));
+                init_ok = true;
+            }
         }
 
-        // Successfully opened and verified connection! Set flag to true!
-        {
+        if !init_ok {
+            error!("✗ Thread: Initial DAC setup failed. Entering recovery.");
+            let mut conn = connected.lock().unwrap();
+            *conn = false;
+        } else {
             let mut conn = connected.lock().unwrap();
             *conn = true;
         }
@@ -293,7 +309,6 @@ fn start_dac_output_thread(
         let flags = HELIOS_FLAGS_DEFAULT;
         let mut frame_count: u64 = 0;
         let mut consecutive_write_failures: u32 = 0;
-        let max_write_failures: u32 = 50;
         let mut recovery_grace_remaining: u32 = 0;
         let mut last_report = std::time::Instant::now();
 
@@ -380,8 +395,8 @@ fn start_dac_output_thread(
                     }
                 }
                 Ok(false) => {
-                    // DAC is busy playing current frame — micro-sleep 4ms and retry smoothly on next tick (NOT an error!)
-                    std::thread::sleep(std::time::Duration::from_millis(4));
+                    // DAC is busy playing current frame — micro-sleep 1ms and retry smoothly on next tick (NOT an error!)
+                    std::thread::sleep(std::time::Duration::from_millis(1));
                 }
                 Err(e) => {
                     consecutive_write_failures += 1;
@@ -391,39 +406,39 @@ fn start_dac_output_thread(
                         .unwrap_or_else(|| "first error".to_string());
                     last_error_time = Some(std::time::Instant::now());
 
-                    warn!("✗ [DAC Diagnostic] Write error #{}/25 at T+{:.1}s (prev err: {}) | Error: {}",
-                        consecutive_write_failures, elapsed_secs, since_last_err, e);
+                    const MAX_WRITE_FAILURES: u32 = 5;
+                    warn!("✗ [DAC Diagnostic] Write error #{}/{} at T+{:.1}s (prev err: {}) | Error: {}",
+                        consecutive_write_failures, MAX_WRITE_FAILURES, elapsed_secs, since_last_err, e);
 
-                    // Only trigger a full USB device reset if 25 consecutive writes fail (~1.2s of persistent failure).
-                    let should_reset = consecutive_write_failures >= 25;
-                    
-                    if should_reset {
-                        info!("Thread: USB transient stall/error detected — performing endpoint reset & 3-frame blank priming...");
+                    // Trigger USB endpoint reset & library reload if 5 consecutive writes fail (~150ms of failure)
+                    if consecutive_write_failures >= MAX_WRITE_FAILURES {
+                        info!("Thread: USB transient error threshold reached — executing fast recovery & blank priming...");
                         let _ = controller.stop(0);
-                        std::thread::sleep(std::time::Duration::from_millis(50));
+                        std::thread::sleep(std::time::Duration::from_millis(30));
                         let _ = controller.close_devices();
-                        std::thread::sleep(std::time::Duration::from_millis(150));
+                        std::thread::sleep(std::time::Duration::from_millis(100));
 
                         let mut fast_reset_ok = false;
                         if let Ok(devs) = controller.open_devices() {
                             if devs > 0 {
-                                // ── USB DAC Priming Sequence ──────────────────
-                                // Write 3 consecutive blank frames with 80ms delay between them to let hardware FIFO & USB endpoints stabilize!
+                                std::thread::sleep(std::time::Duration::from_millis(500));
                                 let mut prime_ok = true;
-                                for _ in 0..3 {
-                                    if let Err(err) = controller.write_frame_ready(0, pps, 0, &blank_frame, dac_min_points) {
-                                        warn!("Thread: Priming write failed during reset: {}", err);
+                                for attempt in 0..5 {
+                                    if let Err(err) = controller.write_frame_native(0, pps, 0, &blank_frame) {
+                                        warn!("Thread: Priming write failed during fast reset (attempt {}/5): {}", attempt + 1, err);
                                         prime_ok = false;
+                                        std::thread::sleep(std::time::Duration::from_millis(100));
+                                    } else {
+                                        prime_ok = true;
                                         break;
                                     }
-                                    std::thread::sleep(std::time::Duration::from_millis(80));
                                 }
 
                                 if prime_ok {
                                     let _ = controller.set_shutter(0, true);
-                                    info!("✓ Thread: USB reset & 3-frame blank priming successful!");
+                                    info!("✓ Thread: USB fast reset & blank priming successful!");
                                     consecutive_write_failures = 0;
-                                    recovery_grace_remaining = 15; // Cooldown grace: suppress re-recovery for 15 frames (~500ms)
+                                    recovery_grace_remaining = 15;
                                     fast_reset_ok = true;
                                 }
                             }
@@ -431,24 +446,25 @@ fn start_dac_output_thread(
 
                         if fast_reset_ok {
                             continue;
-                        } else {
-                            warn!("Thread: Fast reset failed — performing clean C library reload fallback...");
-                            drop(controller);
-                            std::thread::sleep(std::time::Duration::from_millis(500));
-                            match HeliosDacController::new() {
-                                Ok(mut new_controller) => {
-                                    let mut prime_ok = false;
-                                    if let Ok(devs) = new_controller.open_devices() {
-                                        if devs > 0 {
+                        }
+
+                        warn!("Thread: Fast reset failed — executing clean C library reload fallback...");
+                        std::thread::sleep(std::time::Duration::from_millis(500));
+                        
+                        let mut reload_ok = false;
+                        if let Ok(mut new_controller) = HeliosDacController::new() {
+                            if let Ok(devs) = new_controller.open_devices() {
+                                if devs > 0 {
+                                    std::thread::sleep(std::time::Duration::from_millis(500));
+                                    let mut prime_ok = true;
+                                    for attempt in 0..5 {
+                                        if let Err(err) = new_controller.write_frame_native(0, pps, 0, &blank_frame) {
+                                            warn!("Thread: Priming write failed during library reload (attempt {}/5): {}", attempt + 1, err);
+                                            prime_ok = false;
+                                            std::thread::sleep(std::time::Duration::from_millis(100));
+                                        } else {
                                             prime_ok = true;
-                                            for _ in 0..3 {
-                                                if let Err(err) = new_controller.write_frame_ready(0, pps, 0, &blank_frame, dac_min_points) {
-                                                    warn!("Thread: Priming write failed during fallback reload: {}", err);
-                                                    prime_ok = false;
-                                                    break;
-                                                }
-                                                std::thread::sleep(std::time::Duration::from_millis(80));
-                                            }
+                                            break;
                                         }
                                     }
                                     if prime_ok {
@@ -457,43 +473,78 @@ fn start_dac_output_thread(
                                         consecutive_write_failures = 0;
                                         recovery_grace_remaining = 20;
                                         controller = new_controller;
-                                        continue;
-                                    } else {
-                                        controller = new_controller;
+                                        reload_ok = true;
                                     }
                                 }
-                                Err(e) => {
-                                    error!("Thread: Failed to reload Helios library: {}", e);
-                                    let mut connected = connected.lock().unwrap();
-                                    *connected = false;
-                                    break;
+                            }
+                        }
+
+                        if reload_ok {
+                            continue;
+                        }
+
+                        // ── Infinite Persistent Auto-Reconnect Loop ────────────
+                        // If USB hardware was physically unplugged or endpoint lost, stay alive in a background retry loop!
+                        warn!("✗ Thread: Hardware link lost — entering persistent auto-reconnect loop (retrying every 2s)...");
+                        {
+                            let mut conn = connected.lock().unwrap();
+                            *conn = false;
+                        }
+
+                        loop {
+                            if shutdown_rx.try_recv().is_ok() {
+                                info!("✓ DAC output thread received shutdown signal while reconnecting");
+                                break;
+                            }
+
+                            std::thread::sleep(std::time::Duration::from_secs(2));
+
+                            info!("Thread: Attempting auto-reconnect to Helios DAC hardware...");
+                            if let Ok(mut new_controller) = HeliosDacController::new() {
+                                if let Ok(devs) = new_controller.open_devices() {
+                                    if devs > 0 {
+                                        std::thread::sleep(std::time::Duration::from_millis(500));
+                                        let mut prime_ok = true;
+                                        for attempt in 0..5 {
+                                            if let Err(err) = new_controller.write_frame_native(0, pps, 0, &blank_frame) {
+                                                warn!("Thread: Auto-reconnect priming failed (attempt {}/5): {}", attempt + 1, err);
+                                                prime_ok = false;
+                                                std::thread::sleep(std::time::Duration::from_millis(100));
+                                            } else {
+                                                prime_ok = true;
+                                                break;
+                                            }
+                                        }
+
+                                        if prime_ok {
+                                            let _ = new_controller.set_shutter(0, true);
+                                            info!("✓ Thread: Auto-reconnect successful! Hardware link restored.");
+                                            controller = new_controller;
+                                            consecutive_write_failures = 0;
+                                            recovery_grace_remaining = 20;
+                                            {
+                                                let mut conn = connected.lock().unwrap();
+                                                *conn = true;
+                                            }
+                                            break;
+                                        }
+                                    }
                                 }
                             }
                         }
                     } else {
-                        // Step out in time with exponential backoff micro-sleeps to let USB endpoints drain:
-                        // Failure 1: 2ms | Failure 2: 4ms | Failure 3: 8ms | Failure 4+: 16ms
+                        // Micro-sleep backoff between transient retries (2ms, 4ms, 8ms)
                         let backoff_ms = match consecutive_write_failures {
                             1 => 2,
                             2 => 4,
-                            3 => 8,
-                            _ => 16,
+                            _ => 8,
                         };
                         std::thread::sleep(std::time::Duration::from_millis(backoff_ms));
-                    }
-
-                    if consecutive_write_failures >= max_write_failures {
-                        error!("✗ CRITICAL: {} consecutive write failures. DAC hardware disconnected. Exiting thread.", consecutive_write_failures);
-                        let mut connected = connected.lock().unwrap();
-                        *connected = false;
-                        let _ = controller.stop(0);
-                        let _ = controller.close_devices();
-                        break;
                     }
                 }
             }
         }
-        error!("✗ DAC output thread terminated due to connection failure.");
+        info!("✓ DAC output thread loop exited gracefully.");
     });
 
     shutdown_tx_clone
@@ -549,15 +600,10 @@ fn update_projector(
         projector_config.set_changed();
     }
 
-    if !connected {
+    if !connected && !dac_controller.thread_running {
         reconnect_timer.0.tick(time.delta());
         if reconnect_timer.0.just_finished() {
-            info!("Attempting DAC reconnect...");
-            if let Some(sender) = dac_controller.shutdown_sender.take() {
-                let _ = sender.send(());
-            }
-            dac_controller.thread_running = false;
-            dac_controller.initialized = false;
+            info!("Attempting DAC initialization...");
             try_initialize_projector_dac(&mut dac_controller, &point_buffer, &mut projector_config);
         }
     } else {
@@ -627,9 +673,7 @@ fn update_point_buffer(
             // Calibration mode is OFF: skip all calibration paths (green rectangle, crosshairs)
             continue;
         }
-        let global_transform = if calibration_path.is_some() {
-            GlobalTransform::from(*transform)
-        } else if let Some(scene_transform) = scene_transform {
+        let global_transform = if let Some(scene_transform) = scene_transform {
             let world_matrix = scene_transform.to_matrix() * transform.to_matrix();
             GlobalTransform::from(Transform::from_matrix(world_matrix))
         } else {

@@ -401,7 +401,9 @@ fn handle_input_messages(
     mut messages: MessageReader<FromClientMessage>,
     mut mouse_position_events: MessageWriter<MousePositionEvent>,
     mut keyboard_input_events: MessageWriter<KeyboardInputEvent>,
-    mut hunter_click_events: MessageWriter<HunterClickEvent>,
+    mut hunter_click_events: MessageWriter<hunter::model::HunterClickEvent>,
+    mut spawn_hunter_target_events: MessageWriter<hunter::server::SpawnHunterTargetEvent>,
+    mut selection: Option<ResMut<hunter::server::HunterTargetSelection>>,
     game_sessions: Query<&GameSession>,
 ) {
     for msg in messages.read() {
@@ -420,16 +422,35 @@ fn handle_input_messages(
                 });
             }
             NetworkMessage::MouseButtonInput { button, pressed, position } => {
-                // Forward mouse clicks to hunter game if session is active
-                if button == "Left" && *pressed {
+                if *pressed {
                     if let Some(position) = position {
-                        // Check if there's an active hunter game session (game_id 101)
                         for session in game_sessions.iter() {
-                            if session.game_id == 101 { // Hunter game ID
-                                hunter_click_events.write(HunterClickEvent {
-                                    session_id: session.session_id,
-                                    click_position: *position,
-                                });
+                            if session.game_id == 101 && session.state == GameState::InGame {
+                                if button == "Right" {
+                                    if let Some(ref mut sel) = selection {
+                                        sel.cycle();
+                                        info!("🖱️ [Hunter Mouse Mode] Cycled target mode #{}: {}", sel.selected_index, sel.target_name());
+                                    }
+                                } else if button == "Left" {
+                                    let mut spawned = false;
+                                    if let Some(ref mut sel) = selection {
+                                        if let Some(target_to_spawn) = sel.get_target() {
+                                            spawn_hunter_target_events.write(hunter::server::SpawnHunterTargetEvent {
+                                                target: target_to_spawn,
+                                                position: *position,
+                                            });
+                                            sel.reset_to_gunshot();
+                                            info!("🖱️ [Hunter Mouse Mode] Spawned target at {:?} and reset mode to GunShot", position);
+                                            spawned = true;
+                                        }
+                                    }
+                                    if !spawned {
+                                        hunter_click_events.write(hunter::model::HunterClickEvent {
+                                            session_id: session.session_id,
+                                            click_position: *position,
+                                        });
+                                    }
+                                }
                                 break;
                             }
                         }
@@ -784,30 +805,39 @@ fn handle_actor_result_events(
     }
 }
 
-/// Broadcasts ServerState and GameState to all clients when they change.
+/// Broadcasts ServerState, GameState, and CalibrationState to all clients when they change.
 fn broadcast_state_on_change(
     mut server: ResMut<QuinnetServer>,
     server_state: Res<State<ServerState>>,
     game_state: Res<State<GameState>>,
+    calibration_state: Res<State<CalibrationState>>,
 ) {
-
     let Some(endpoint) = server.get_endpoint_mut() else {
-        info!("[broadcast_state_on_change] No endpoint available");
         return;
     };
 
     if server_state.is_changed() {
         info!("[broadcast_state_on_change] ServerState changed, broadcasting ServerStateUpdate: {:?}", server_state.get());
         let msg = NetworkMessage::ServerStateUpdate(server_state.get().clone());
-        let payload = msg.to_bytes().expect("Serialize ServerStateResponse");
-        let _ = endpoint.broadcast_payload(payload);
+        if let Ok(payload) = msg.to_bytes() {
+            let _ = endpoint.broadcast_payload(payload);
+        }
     }
 
     if game_state.is_changed() {
         info!("[broadcast_state_on_change] GameState changed, broadcasting GameStateUpdate: {:?}", game_state.get());
         let msg = NetworkMessage::GameStateUpdate(game_state.get().clone());
-        let payload = msg.to_bytes().expect("Serialize GameStateResponse");
-        let _ = endpoint.broadcast_payload(payload);
+        if let Ok(payload) = msg.to_bytes() {
+            let _ = endpoint.broadcast_payload(payload);
+        }
+    }
+
+    if calibration_state.is_changed() {
+        info!("[broadcast_state_on_change] CalibrationState changed, broadcasting CalibrationStateUpdate: {:?}", calibration_state.get());
+        let msg = NetworkMessage::CalibrationStateUpdate(calibration_state.get().clone());
+        if let Ok(payload) = msg.to_bytes() {
+            let _ = endpoint.broadcast_payload(payload);
+        }
     }
 }
 

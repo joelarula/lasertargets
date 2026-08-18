@@ -55,14 +55,15 @@ fn update_scene(
 
             if let Some(ray) = cursor_ray {
                 let scene_position = scene_transform.translation();
-                let scene_plane = InfinitePlane3d::new(scene_transform.forward());
+                let plane_normal = (camera_transform.translation() - scene_position).normalize_or_zero();
+                let scene_plane = InfinitePlane3d::new(Dir3::new(plane_normal).unwrap_or(Dir3::Z));
 
                 if let Some(distance) = ray.intersect_plane(scene_position, scene_plane) {
                     let intersection_point = ray.get_point(distance);
                     let local_pos_3d = scene_transform.affine().inverse().transform_point(intersection_point);
 
-                    if local_pos_3d.x.abs() <= scene_dimensions.x / 2.0
-                        && local_pos_3d.y.abs() <= scene_dimensions.y / 2.0
+                    if local_pos_3d.x.abs() <= scene_dimensions.x * 1.5
+                        && local_pos_3d.y.abs() <= scene_dimensions.y * 1.5
                     {
                         mouse_pos = Some(intersection_point);
                     }

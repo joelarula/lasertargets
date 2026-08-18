@@ -4,7 +4,7 @@
 
 use libloading;
 use std::os::raw::{c_char, c_int, c_uchar, c_uint};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use log::{info, warn, error};
 
 // Point structures matching the working darkelf implementation
@@ -100,7 +100,19 @@ struct HeliosLib {
     get_firmware_version: GetFirmwareVersionFn,
 }
 
+static HELIOS_LIB_SINGLETON: OnceLock<Arc<HeliosLib>> = OnceLock::new();
+
 impl HeliosLib {
+    fn get_or_load() -> Result<Arc<Self>, String> {
+        if let Some(lib) = HELIOS_LIB_SINGLETON.get() {
+            return Ok(lib.clone());
+        }
+        let loaded = Self::load()?;
+        let arc = Arc::new(loaded);
+        let _ = HELIOS_LIB_SINGLETON.set(arc.clone());
+        Ok(arc)
+    }
+
     fn load() -> Result<Self, String> {
         unsafe {
             // The build script copies the DLL to target/<profile>/ next to the executable
@@ -157,12 +169,12 @@ pub struct HeliosDacController {
 }
 
 impl HeliosDacController {
-    /// Create a new controller instance and load the library
+    /// Create a new controller instance and obtain the library singleton
     pub fn new() -> Result<Self, String> {
-        let lib = HeliosLib::load()?;
+        let lib = HeliosLib::get_or_load()?;
         Ok(Self {
             num_devices: 0,
-            lib: Arc::new(lib),
+            lib,
         })
     }
 
@@ -187,12 +199,12 @@ impl HeliosDacController {
         unsafe {
             let result = (self.lib.get_status)(device_num as c_uint);
             if result == 1 {
-                Ok(true) // 1 = ready
-            } else if result == 0 || result == -1 || result == -1002 || result == -7 || result == -9 {
-                // 0, -1, -1002, -7, -9 = busy playing frame or transient USB endpoint busy state
-                Ok(false)
+                Ok(true) // 1 = ready to receive new frame
+            } else if result == 0 {
+                Ok(false) // 0 = DAC is busy playing current frame
             } else {
-                Err(format!("GetStatus failed with error: {}", result))
+                // Negative error code (e.g. -1, -5007, -1000) = USB DAC buffer underflow or device error!
+                Err(format!("GetStatus failed: error {}", result))
             }
         }
     }
@@ -212,11 +224,32 @@ impl HeliosDacController {
 
     /// Wait until the specified DAC is ready to receive a frame or max_attempts is reached
     pub fn wait_for_ready(&self, dac_num: u32, max_attempts: usize) -> Result<bool, String> {
-        for _ in 0..max_attempts {
-            match self.get_status(dac_num) {
+        for i in 0..max_attempts {
+            let mut status_res = Err("Unknown status error".to_string());
+            for attempt in 0..3 {
+                match self.get_status(dac_num) {
+                    Ok(ready) => {
+                        status_res = Ok(ready);
+                        break;
+                    }
+                    Err(e) => {
+                        status_res = Err(e);
+                        let backoff_ms = match attempt {
+                            0 => 2,
+                            1 => 5,
+                            _ => 10,
+                        };
+                        std::thread::sleep(std::time::Duration::from_millis(backoff_ms));
+                    }
+                }
+            }
+
+            match status_res {
                 Ok(true) => return Ok(true),
                 Ok(false) => {
-                    std::thread::sleep(std::time::Duration::from_millis(2));
+                    if i + 1 < max_attempts {
+                        std::thread::sleep(std::time::Duration::from_millis(1));
+                    }
                 }
                 Err(e) => return Err(e),
             }
@@ -289,20 +322,36 @@ impl HeliosDacController {
             return Err(format!("PPS too low: {} (min is {})", pps, HELIOS_MIN_PPS));
         }
 
-        unsafe {
-            let result = (self.lib.write_frame)(
-                dac_num,
-                pps,
-                flags,
-                points.as_ptr(),
-                points.len() as c_uint,
-            );
-            if result < 0 {
-                Err(format!("Failed to write frame: error {}", result))
-            } else {
-                Ok(())
+        let mut last_err = 0;
+        for attempt in 0..3 {
+            unsafe {
+                let result = (self.lib.write_frame)(
+                    dac_num,
+                    pps,
+                    flags,
+                    points.as_ptr(),
+                    points.len() as c_uint,
+                );
+                if result >= 0 {
+                    return Ok(());
+                }
+                last_err = result;
+                if result == -1000 || result == -1002 || result == -1003 || result == -5007 || result == -7 || result == -9 {
+                    // Stepped backoff: 2ms -> 5ms -> 10ms to allow USB controller DMA buffer to settle
+                    let backoff_ms = match attempt {
+                        0 => 2,
+                        1 => 5,
+                        _ => 10,
+                    };
+                    std::thread::sleep(std::time::Duration::from_millis(backoff_ms));
+                } else {
+                    // Hard error - stop retrying immediately
+                    break;
+                }
             }
         }
+
+        Err(format!("Failed to write frame: error {}", last_err))
     }
 
     /// Build a frame padded to `min_pts` with blanked copies of the last point.
@@ -331,18 +380,18 @@ impl HeliosDacController {
         min_pts: usize,
     ) -> Result<bool, String> {
         let padded = Self::pad_frame(points, min_pts);
-        // Wait for DAC ready status (max 5 polls with 2ms spacing = 10ms max window)
-        match self.wait_for_ready(dac_num, 5) {
+        // Wait for DAC ready status (max 40 polls with 1ms spacing = 40ms max polling window)
+        match self.wait_for_ready(dac_num, 40) {
             Err(e) => return Err(e), // Propagate USB errors immediately
             Ok(false) => return Ok(false), // DAC busy playing frame — NOT an error!
             Ok(true) => {}  // Ready
         }
         let res = self.write_frame_native(dac_num, pps, flags, &padded);
         if res.is_ok() {
-            // Sleep for 75% of frame playback time (~25.6ms for 1024 pts @ 30kpps).
-            // Waking up 8.5ms before frame end ensures physical hardware FIFO never starves while CPU stays 100% idle!
+            // Sleep for 80% of total frame playback time (~27.3ms for 1024 pts @ 30kpps, ~80ms for 3000 pts @ 30kpps).
+            // Waking up 20% before frame end ensures wait_for_ready with 1ms polling delivers next frame 1-3ms BEFORE playback finishes!
             let total_pts = padded.len().max(min_pts) as f32;
-            let sleep_micros = ((total_pts / pps.max(HELIOS_MIN_PPS) as f32) * 750_000.0) as u64;
+            let sleep_micros = ((total_pts / pps.max(HELIOS_MIN_PPS) as f32) * 800_000.0) as u64;
             if sleep_micros > 0 {
                 std::thread::sleep(std::time::Duration::from_micros(sleep_micros));
             }

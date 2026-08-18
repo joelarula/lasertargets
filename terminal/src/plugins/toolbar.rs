@@ -11,12 +11,21 @@ mod button_colors {
     pub const INACTIVE_HOVERED: Color = Color::srgba(0.45, 0.50, 0.55, 0.85);
     pub const ACTIVE: Color = Color::srgba(0.30, 0.48, 0.58, 0.85);
     pub const INACTIVE: Color = Color::srgba(0.35, 0.40, 0.45, 0.7);
+
+    // Connection button custom colors
+    pub const CONN_CONNECTED: Color = Color::srgba(0.12, 0.65, 0.28, 0.85);
+    pub const CONN_CONNECTED_HOVER: Color = Color::srgba(0.16, 0.80, 0.35, 0.95);
+    pub const CONN_DISCONNECTED: Color = Color::srgba(0.38, 0.40, 0.44, 0.75);
+    pub const CONN_DISCONNECTED_HOVER: Color = Color::srgba(0.50, 0.53, 0.58, 0.88);
 }
 
 pub struct ToolbarPlugin;
 
 #[derive(Component)]
 struct ToolbarContainer;
+
+#[derive(Component)]
+pub struct ToolbarTooltipMarker;
 
 #[derive(Resource)]
 struct NerdFont(Handle<Font>);
@@ -29,6 +38,7 @@ impl Plugin for ToolbarPlugin {
             .add_systems(Update, (
                 update_button_states,
                 update_button_text,
+                update_hover_tooltips,
                 rebuild_toolbar,
             ).chain());
     }
@@ -245,22 +255,44 @@ fn update_button_states(
     for (button, interaction, mut background_color) in &mut button_query {
         let is_active = items_map.get(&button.name).copied().unwrap_or(false);
 
-        match *interaction {
-            Interaction::Pressed => {
-                *background_color = BackgroundColor(button_colors::PRESSED);
-            }
-            Interaction::Hovered => {
-                if is_active {
-                    *background_color = BackgroundColor(button_colors::ACTIVE_HOVERED);
-                } else {
-                    *background_color = BackgroundColor(button_colors::INACTIVE_HOVERED);
+        if button.name == "connection_status" {
+            match *interaction {
+                Interaction::Pressed => {
+                    *background_color = BackgroundColor(button_colors::PRESSED);
+                }
+                Interaction::Hovered => {
+                    if is_active {
+                        *background_color = BackgroundColor(button_colors::CONN_CONNECTED_HOVER);
+                    } else {
+                        *background_color = BackgroundColor(button_colors::CONN_DISCONNECTED_HOVER);
+                    }
+                }
+                Interaction::None => {
+                    if is_active {
+                        *background_color = BackgroundColor(button_colors::CONN_CONNECTED);
+                    } else {
+                        *background_color = BackgroundColor(button_colors::CONN_DISCONNECTED);
+                    }
                 }
             }
-            Interaction::None => {
-                if is_active {
-                    *background_color = BackgroundColor(button_colors::ACTIVE);
-                } else {
-                    *background_color = BackgroundColor(button_colors::INACTIVE);
+        } else {
+            match *interaction {
+                Interaction::Pressed => {
+                    *background_color = BackgroundColor(button_colors::PRESSED);
+                }
+                Interaction::Hovered => {
+                    if is_active {
+                        *background_color = BackgroundColor(button_colors::ACTIVE_HOVERED);
+                    } else {
+                        *background_color = BackgroundColor(button_colors::INACTIVE_HOVERED);
+                    }
+                }
+                Interaction::None => {
+                    if is_active {
+                        *background_color = BackgroundColor(button_colors::ACTIVE);
+                    } else {
+                        *background_color = BackgroundColor(button_colors::INACTIVE);
+                    }
                 }
             }
         }
@@ -293,5 +325,59 @@ fn update_button_text(
                 }
             }
         }
+    }
+}
+
+/// Dynamic hover tooltip display system for toolbar items
+fn update_hover_tooltips(
+    mut commands: Commands,
+    tooltip_query: Query<Entity, With<ToolbarTooltipMarker>>,
+    button_query: Query<(&ToolbarButton, &Interaction)>,
+    items_query: Query<&ToolbarItem>,
+) {
+    let mut hovered_text: Option<String> = None;
+
+    for (button, interaction) in button_query.iter() {
+        if *interaction == Interaction::Hovered {
+            for item in items_query.iter() {
+                if item.name == button.name {
+                    if let Some(text) = &item.text {
+                        hovered_text = Some(text.clone());
+                    }
+                    break;
+                }
+            }
+        }
+    }
+
+    for entity in tooltip_query.iter() {
+        commands.entity(entity).despawn();
+    }
+
+    if let Some(text) = hovered_text {
+        commands
+            .spawn((
+                ToolbarTooltipMarker,
+                Node {
+                    position_type: PositionType::Absolute,
+                    right: Val::Px(60.0),
+                    top: Val::Px(16.0),
+                    padding: UiRect::axes(Val::Px(10.0), Val::Px(6.0)),
+                    justify_content: JustifyContent::Center,
+                    align_items: AlignItems::Center,
+                    ..default()
+                },
+                BackgroundColor(Color::srgba(0.06, 0.08, 0.12, 0.95)),
+                BorderRadius::all(Val::Px(6.0)),
+                ZIndex(2000),
+            ))
+            .with_child((
+                Text::new(text),
+                TextFont {
+                    font_size: 13.0,
+                    ..default()
+                },
+                TextColor(Color::srgb(0.9, 0.95, 1.0)),
+            ));
     }
 }

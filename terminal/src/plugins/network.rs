@@ -29,7 +29,23 @@ pub struct NetworkingConfiguration {
 
 impl Default for NetworkingConfiguration {
     fn default() -> Self {
-        use std::net::Ipv4Addr;
+        use std::net::{Ipv4Addr, ToSocketAddrs};
+
+        // 1. Environment variable override
+        if let Ok(ip_str) = std::env::var("LASERTARGETS_IP").or_else(|_| std::env::var("SERVER_IP")) {
+            if let Ok(ip) = ip_str.parse::<IpAddr>() {
+                return Self { ip, port: SERVER_PORT };
+            }
+        }
+
+        // 2. Resolve lasertargets.local host via mDNS/DNS (prefer IPv4)
+        if let Ok(addrs) = ("lasertargets.local", SERVER_PORT).to_socket_addrs() {
+            if let Some(addr) = addrs.into_iter().find(|a| a.is_ipv4()) {
+                return Self { ip: addr.ip(), port: SERVER_PORT };
+            }
+        }
+
+        // 3. Fallback IP
         Self {
             ip: IpAddr::V4(Ipv4Addr::new(192, 168, 1, 110)),
             port: SERVER_PORT,
@@ -44,6 +60,7 @@ pub struct NetworkPlugin;
 #[derive(Resource, Default)]
 struct ConnectionAttempt {
     in_flight: bool,
+    last_connection_id: Option<u64>,
 }
 
 impl Plugin for NetworkPlugin {
@@ -91,9 +108,10 @@ fn start_client(
         cert_mode: CertificateVerificationMode::SkipVerification,
         defaultables: Default::default(),
     }) {
-        Ok(_) => {
+        Ok(id) => {
             attempt.in_flight = true;
-            info!("Connection initiated successfully (in_flight set to true)");
+            attempt.last_connection_id = Some(id);
+            info!("Connection initiated successfully (id: {:?})", id);
         }
         Err(e) => warn!("Failed to initiate connection: {:?}", e),
     }
@@ -107,47 +125,47 @@ fn handle_client_connection_events(
     mut next_game_state: ResMut<NextState<GameState>>,
     mut attempt: ResMut<ConnectionAttempt>,
 ) {
-        // Only log state transitions, not every update
-        if client.is_connected() {
-            if *current_state.get() != TerminalState::Connected {
-                info!("Connected to server!");
-                next_state.set(TerminalState::Connected);
-                attempt.in_flight = false;
-                debug!("Set TerminalState::Connected, in_flight = false");
+    if client.is_connected() {
+        if *current_state.get() != TerminalState::Connected {
+            info!("Connected to server!");
+            next_state.set(TerminalState::Connected);
+            attempt.in_flight = false;
+            debug!("Set TerminalState::Connected, in_flight = false");
 
-                if let Some(connection) = client.get_connection_mut() {
-                    let queries = [
-                        NetworkMessage::QueryServerState,
-                        NetworkMessage::QueryGameState,
-                        NetworkMessage::QueryCalibrationState,
-                        NetworkMessage::QueryGameSession,
-                        NetworkMessage::QueryProjectorConfig,
-                        NetworkMessage::QueryCameraConfig,
-                        NetworkMessage::QuerySceneConfig,
-                        NetworkMessage::QuerySceneSetup,
-                    ];
-                    debug!("Sending initial queries to server: {:?}", queries);
-                    for query in queries {
-                        match connection.send_payload(query.to_bytes().unwrap()) {
-                            Ok(_) => debug!("Sent query: {:?}", query),
-                            Err(e) => warn!("Failed to send {:?}: {e}", query),
-                        }
+            if let Some(connection) = client.get_connection_mut() {
+                let queries = [
+                    NetworkMessage::QueryServerState,
+                    NetworkMessage::QueryGameState,
+                    NetworkMessage::QueryCalibrationState,
+                    NetworkMessage::QueryGameSession,
+                    NetworkMessage::QueryProjectorConfig,
+                    NetworkMessage::QueryCameraConfig,
+                    NetworkMessage::QuerySceneConfig,
+                    NetworkMessage::QuerySceneSetup,
+                ];
+                debug!("Sending initial queries to server: {:?}", queries);
+                for query in queries {
+                    match connection.send_payload(query.to_bytes().unwrap()) {
+                        Ok(_) => debug!("Sent query: {:?}", query),
+                        Err(e) => warn!("Failed to send {:?}: {e}", query),
                     }
-                } else {
-                    warn!("No connection available after is_connected()");
                 }
+            } else {
+                warn!("No connection available after is_connected()");
             }
+        }
     } else {
         if *current_state.get() == TerminalState::Connected {
             info!("Disconnected from server!");
             next_state.set(TerminalState::Disconnected);
             next_server_state.set(ServerState::Menu);
             next_game_state.set(GameState::Paused);
+            attempt.in_flight = false;
         } else if *current_state.get() == TerminalState::Disconnected {
             // After being Disconnected, transition to Connecting to trigger automated reconnection
             next_state.set(TerminalState::Connecting);
+            attempt.in_flight = false;
         }
-        attempt.in_flight = false;
     }
 }
 
@@ -157,9 +175,9 @@ fn register_connection_toolbar_button(mut commands: Commands) {
         ToolbarItem {
             name: CONN_BTN_NAME.to_string(),
             order: 0,
-            text: Some("Connection".to_string()),
-            icon: Some("\u{f057}".to_string()), // times-circle icon for disconnected/connecting
-            state: ItemState::Disabled,
+            icon: Some("\u{f0ec}".to_string()), // Network icon
+            text: Some("Disconnected (lasertargets.local)".to_string()),
+            state: ItemState::Off,
             docking: Docking::Right,
             button_size: 36.0,
             ..default()
@@ -169,20 +187,24 @@ fn register_connection_toolbar_button(mut commands: Commands) {
 }
 
 fn update_connection_toolbar_button(
-    terminal_state: Res<State<TerminalState>>,
-    mut button_query: Query<&mut ToolbarItem, With<ConnectionButton>>,
+    client: Res<QuinnetClient>,
+    config: Res<NetworkingConfiguration>,
+    mut item_query: Query<&mut ToolbarItem, With<ConnectionButton>>,
 ) {
-    if terminal_state.is_changed() {
-        let (icon, state) = match *terminal_state.get() {
-            TerminalState::Connected => ("\u{f058}".to_string(), ItemState::On), // check-circle icon for connected
-            TerminalState::Connecting => ("\u{f057}".to_string(), ItemState::Off), // times-circle icon for connecting
-            TerminalState::Disconnected => ("\u{f057}".to_string(), ItemState::Disabled), // times-circle icon for disconnected
-        };
-        
-        if let Ok(mut item) = button_query.single_mut() {
-            item.state = state;
-            item.icon = Some(icon);
-        }
+    let Ok(mut item) = item_query.single_mut() else { return; };
+
+    let is_connected = client.is_connected();
+    let new_state = if is_connected { ItemState::On } else { ItemState::Off };
+    
+    let new_text = if is_connected {
+        format!("Connected to lasertargets.local ({}:{})", config.ip, config.port)
+    } else {
+        format!("Disconnected ({}:{})", config.ip, config.port)
+    };
+
+    if item.state != new_state || item.text.as_deref() != Some(&new_text) {
+        item.state = new_state;
+        item.text = Some(new_text);
     }
 }
 
@@ -466,15 +488,19 @@ fn send_payload_and_log_error(
     ) {
         // Only try to reconnect if not connected
         if !client.is_connected() {
-            // Initialize timer if needed
+            // Initialize timer if needed (3-second interval)
             if timer.0.duration().as_secs_f32() == 0.0 {
-                timer.0 = Timer::from_seconds(2.0, TimerMode::Repeating);
+                timer.0 = Timer::from_seconds(3.0, TimerMode::Repeating);
             }
             timer.0.tick(time.delta());
             if timer.0.just_finished()
                 && *current_state.get() == TerminalState::Connecting
                 && !attempt.in_flight
             {
+                // Close previous connection handle to prevent accumulating multiple pending connections!
+                if let Some(id) = attempt.last_connection_id {
+                    let _ = client.close_connection(id);
+                }
                 match client.open_connection(ClientConnectionConfiguration {
                     addr_config: ClientAddrConfiguration::from_ips(
                         config.ip,
@@ -485,9 +511,10 @@ fn send_payload_and_log_error(
                     cert_mode: CertificateVerificationMode::SkipVerification,
                     defaultables: Default::default(),
                 }) {
-                    Ok(_) => {
+                    Ok(id) => {
                         attempt.in_flight = true;
-                        info!("[Reconnect] Reconnection attempt initiated");
+                        attempt.last_connection_id = Some(id);
+                        info!("[Reconnect] Reconnection attempt initiated (id: {:?})", id);
                     }
                     Err(e) => debug!("[Reconnect] Reconnection attempt failed: {:?}", e),
                 }
@@ -516,8 +543,7 @@ fn register_shutdown_toolbar_button(mut commands: Commands) {
 
 fn handle_shutdown_button(
     mut client: ResMut<QuinnetClient>,
-    terminal_state: Res<State<TerminalState>>,
-    mut toolbar_items: Query<&mut ToolbarItem>,
+    _terminal_state: Res<State<TerminalState>>,
     interaction_query: Query<(&Interaction, &ToolbarItem), (Changed<Interaction>, With<Button>)>,
 ) {
     for (interaction, item) in interaction_query.iter() {

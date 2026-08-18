@@ -7,9 +7,6 @@ use crate::plugins::actor::ActorLink;
 use crate::plugins::projector::{ProjectorDacController, LaserOptimizeConfig, LaserPointBuffer};
 use bevy_quinnet::server::QuinnetServer;
 
-const HUNTER_GAME_ID: u16 = 101;
-const SNAKE_GAME_ID: u16 = 2;
-
 /// Event to trigger logging a complete server status report.
 #[derive(Message, Debug, Clone, Default)]
 pub struct LogStatusReportEvent;
@@ -89,13 +86,8 @@ fn handle_status_report_event(
     } else {
         for (_entity, session, children) in game_sessions.iter() {
             let child_count = children.map_or(0, |c| c.len());
-            let game_name = match session.game_id {
-                HUNTER_GAME_ID => "Hunter Game (ID 101)",
-                SNAKE_GAME_ID => "Snake Game (ID 2)",
-                _ => "Unknown Game",
-            };
             info!("    ┌ Session ID:   {}", session.session_id);
-            info!("    ├ Game Type:    {}", game_name);
+            info!("    ├ Game Name:    {} (ID {})", session.name, session.game_id);
             info!("    └ Active Actors: {} actor(s)", child_count);
         }
     }

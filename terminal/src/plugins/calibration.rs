@@ -22,7 +22,17 @@ pub const DARK_GREY_THIRD: Srgba = Srgba::new(0.663, 0.663, 0.663, 0.3);
 pub const GRID_SPACING: f32 = 0.25;
 
 const INSTRUCTION_TEXT_F3: &str = "Press [F3] to toggle calibration gizmos visibility";
+const INSTRUCTION_TEXT_F4: &str = "Press [F4] to toggle background grid lines visibility";
 const INSTRUCTION_TEXT_MOUSE_DISTANCE: &str = "Press [Mouse Back/Forward] to move scene distance further/closer";
+
+#[derive(Resource, Debug, Clone, PartialEq, Eq)]
+pub struct TerminalGridVisibility(pub bool);
+
+impl Default for TerminalGridVisibility {
+    fn default() -> Self {
+        Self(true)
+    }
+}
 
 #[derive(SystemSet, Debug, Hash, PartialEq, Eq, Clone)]
 pub struct CalibrationSystemSet;
@@ -40,15 +50,15 @@ struct SceneDimsText;
 impl Plugin for CalibrationPlugin {
     fn build(&self, app: &mut App) {
         app
-
+        .init_resource::<TerminalGridVisibility>()
         .add_systems(Startup, setup_calibration_instructions)
         .add_systems(Update, toggle_calibration_visibility.in_set(CalibrationSystemSet))
+        .add_systems(Update, toggle_grid_visibility.in_set(CalibrationSystemSet))
         .add_systems(Update, adjust_scene_distance_with_mouse.in_set(CalibrationSystemSet))
         .add_systems(Update, ensure_calibration_text.in_set(CalibrationSystemSet))
         .add_systems(Update, update_grid.in_set(CalibrationSystemSet).after(CameraSystemSet))
         .add_systems(Update, draw_billboard_gizmos.in_set(CalibrationSystemSet).after(CameraSystemSet))
         .add_systems(Update, draw_projector_billboard.in_set(CalibrationSystemSet).after(CameraSystemSet))
-        .add_systems(Update, draw_scene_crosshair.in_set(CalibrationSystemSet).after(CameraSystemSet))
         .add_systems(Update, draw_mouse_crosshair.in_set(CalibrationSystemSet).after(CameraSystemSet))
         .add_systems(Update, update_calibration_text.in_set(CalibrationSystemSet).after(CameraSystemSet));
     }
@@ -57,6 +67,7 @@ impl Plugin for CalibrationPlugin {
 
 fn setup_calibration_instructions(mut instruction_state: ResMut<InstructionState>) {
     instruction_state.instructions.push(INSTRUCTION_TEXT_F3.to_string());
+    instruction_state.instructions.push(INSTRUCTION_TEXT_F4.to_string());
     instruction_state.instructions.push(INSTRUCTION_TEXT_MOUSE_DISTANCE.to_string());
 }
 
@@ -163,9 +174,24 @@ fn toggle_calibration_visibility(
     }
 }
 
-fn update_grid(mut gizmos: Gizmos, scene_configuration: Res<SceneConfiguration>, display_mode: Res<DisplayMode>, calibration_state: Res<State<CalibrationState>>) {
-    
-    if *calibration_state.get() == CalibrationState::Off {
+fn toggle_grid_visibility(
+    keyboard_input: Res<ButtonInput<KeyCode>>,
+    mut grid_vis: ResMut<TerminalGridVisibility>,
+) {
+    if keyboard_input.just_pressed(KeyCode::F4) {
+        grid_vis.0 = !grid_vis.0;
+        info!("Terminal background grid visibility toggled to: {}", grid_vis.0);
+    }
+}
+
+fn update_grid(
+    mut gizmos: Gizmos,
+    scene_configuration: Res<SceneConfiguration>,
+    display_mode: Res<DisplayMode>,
+    calibration_state: Res<State<CalibrationState>>,
+    grid_vis: Res<TerminalGridVisibility>,
+) {
+    if *calibration_state.get() == CalibrationState::Off || !grid_vis.0 {
         return;
     }
     
@@ -182,35 +208,30 @@ fn update_grid(mut gizmos: Gizmos, scene_configuration: Res<SceneConfiguration>,
 
 fn draw_billboard_gizmos(
     mut gizmos: Gizmos,
-    camera_query: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
-    scene_data: Res<SceneData>,
     scene_configuration: Res<SceneConfiguration>,
     calibration_state: Res<State<CalibrationState>>,
+    grid_vis: Res<TerminalGridVisibility>,
 ) {
     if *calibration_state.get() == CalibrationState::Off {
         return;
     }
     
-    for(_camera, camera_transform) in camera_query.iter(){ // Prefixed with underscore to ignore unused camera variable
-        let billboard_position = scene_configuration.origin.translation;
-        let width = scene_configuration.scene_dimension.x;
-        let height = scene_configuration.scene_dimension.y;
-        
-        // Get the scene plane rotation
-        let billboard_rotation = scene_configuration.origin.rotation;
-        
-        draw_billboard_grid(
-            &mut gizmos,
-            billboard_rotation,
-            billboard_position,
-            width,
-            height,
-            SILVER,
-            DARK_GREY_THIRD,
-            GRID_SPACING,
-            true
-        );
-    }
+    let billboard_position = scene_configuration.origin.translation;
+    let width = scene_configuration.scene_dimension.x;
+    let height = scene_configuration.scene_dimension.y;
+    let billboard_rotation = scene_configuration.origin.rotation;
+    
+    draw_billboard_grid(
+        &mut gizmos,
+        billboard_rotation,
+        billboard_position,
+        width,
+        height,
+        SILVER,
+        DARK_GREY_THIRD,
+        GRID_SPACING,
+        grid_vis.0
+    );
 }
 
 
@@ -356,20 +377,7 @@ fn draw_billboard_grid(
     }
 }
 
-fn draw_scene_crosshair(
-    mut gizmos: Gizmos,
-    scene_setup: Res<SceneSetup>,
-    calibration_state: Res<State<CalibrationState>>,
-) {
-    if *calibration_state.get() == CalibrationState::Off {
-        return;
-    }
-    
-    let center = scene_setup.scene.origin.translation;
-    let crosshair_size = GRID_SPACING * 2.0; // Larger crosshair for scene center
-    gizmos.line(center - Vec3::X * crosshair_size, center + Vec3::X * crosshair_size, RED);
-    gizmos.line(center - Vec3::Y * crosshair_size, center + Vec3::Y * crosshair_size, RED);
-}
+
 
 fn update_calibration_text(
     scene_setup: Res<SceneSetup>,

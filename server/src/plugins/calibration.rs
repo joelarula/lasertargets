@@ -45,11 +45,10 @@ impl Plugin for CalibrationPlugin {
     fn build(&self, app: &mut App) {
         app
             .init_resource::<CalibrationData>()
-            .add_systems(Startup, spawn_calibration_overlays.after(SceneSystemSet))
-            .add_systems(OnEnter(CalibrationState::On), spawn_calibration_overlays.after(SceneSystemSet))
             .add_systems(OnExit(CalibrationState::On), despawn_calibration_overlays.after(SceneSystemSet))
             .add_systems(Update, handle_mouse_position_updates)
             .add_systems(Update, (
+                spawn_calibration_overlays,
                 update_and_maintain_crosshair_positions,
                 cleanup_disconnected_clients,
             ).after(SceneSystemSet))
@@ -61,10 +60,16 @@ impl Plugin for CalibrationPlugin {
 
 fn despawn_calibration_overlays(
     mut commands: Commands,
+    mut registry: ResMut<crate::plugins::path::PathIdRegistry>,
     path_query: Query<Entity, With<CalibrationPath>>,
+    mut despawn_writer: MessageWriter<crate::plugins::path::BroadcastDespawnPath>,
 ) {
     info!("Exiting CalibrationState::On");
     for entity in path_query.iter() {
+        if let Some(path_id) = registry.by_entity.remove(&entity) {
+            despawn_writer.write(crate::plugins::path::BroadcastDespawnPath { uuid: path_id });
+            info!("Broadcasting DespawnPath for calibration overlay {}", path_id);
+        }
         commands.entity(entity).despawn();
     }
 }
@@ -85,22 +90,12 @@ fn handle_mouse_position_updates(
     }
 }fn build_hunter_reticle_path(selection: Option<&hunter::server::HunterTargetSelection>) -> UniversalPath {
     let crosshair_size = 0.4;
-    let half_size = crosshair_size / 2.0;
     let cyan = Color::srgb(0.0, 0.9, 1.0);
     let blank = Color::srgb(0.0, 0.0, 0.0);
     
-    // 1. 3-move crosshair (+)
-    let mut crosshair_seg = common::path::PathSegment::empty();
-    crosshair_seg.push(-half_size, 0.0, blank, 4);
-    crosshair_seg.push(-half_size, 0.0, cyan, 4);
-    crosshair_seg.push(half_size, 0.0, cyan, 4);
-    crosshair_seg.push(half_size, 0.0, blank, 4);
-    crosshair_seg.push(0.0, -half_size, blank, 4);
-    crosshair_seg.push(0.0, -half_size, cyan, 4);
-    crosshair_seg.push(0.0, half_size, cyan, 4);
-    crosshair_seg.push(0.0, half_size, blank, 4);
-
-    let mut segments = vec![crosshair_seg];
+    // 1. Crosshair (+) with 2 separate segments (Horizontal & Vertical)
+    let crosshair_base = UniversalPath::crosshair(Vec2::ZERO, crosshair_size, cyan);
+    let mut segments = crosshair_base.segments;
 
     // 2. Selected target visual preview outline centered at reticle cursor (only in Target Release modes 1-4)
     if let Some(sel) = selection {
@@ -202,7 +197,12 @@ fn update_and_maintain_crosshair_positions(
 
     let selection_changed = hunter_selection.as_ref().map(|s| s.is_changed()).unwrap_or(false);
 
-    for (entity, mut transform, mut global_transform, parent, mut path, crosshair) in crosshair_query.iter_mut() {
+    for (entity, mut transform, mut global_transform, parent, _path, crosshair) in crosshair_query.iter_mut() {
+        if selection_changed {
+            commands.entity(entity).despawn();
+            continue;
+        }
+
         if let Some(&world_pos) = calibration_data.mouse_positions.get(&crosshair.client_id) {
             let local_pos = if parent.is_some() {
                 if let Some(scene_t) = scene_transform {
@@ -216,11 +216,6 @@ fn update_and_maintain_crosshair_positions(
             };
             transform.translation = local_pos;
             *global_transform = GlobalTransform::from(Transform::from_translation(world_pos));
-            
-            // Dynamically update reticle path to display selected target pattern when Button A cycles
-            if selection_changed {
-                *path = build_hunter_reticle_path(hunter_selection.as_deref());
-            }
 
             existing_clients.insert(crosshair.client_id, entity);
         } else {
@@ -338,44 +333,15 @@ fn build_calibration_rectangle_path(scene_dimensions: Vec2) -> UniversalPath {
 /// Spawn a green crosshair at the scene center matching the corner L-brackets
 fn spawn_center_crosshair(
     commands: &mut Commands,
-    scene_setup: &SceneSetup,
+    _scene_setup: &SceneSetup,
     scene_entity: Entity,
 ) {
     let crosshair_size = 0.5;
-    let half_size = crosshair_size / 2.0;
     let green = Color::srgb(0.0, 1.0, 0.0); // Matching green color as corner L-brackets
-    let blank = Color::srgb(0.0, 0.0, 0.0);
-
-    // 3-move green center crosshair path (+):
-    // Move 1: Horizontal line (-half_size -> +half_size)
-    // Move 2: Blanked move to vertical start (0, -half_size)
-    // Move 3: Vertical line (-half_size -> +half_size)
-    let mut center_seg = PathSegment::empty();
-    
-    // Move 1: Horizontal line
-    center_seg.push(-half_size, 0.0, blank, 4);
-    center_seg.push(-half_size, 0.0, green, 4);
-    center_seg.push(half_size, 0.0, green, 4);
-    center_seg.push(half_size, 0.0, blank, 4);
-
-    // Move 2: Blanked move to vertical start
-    center_seg.push(0.0, -half_size, blank, 4);
-
-    // Move 3: Vertical line
-    center_seg.push(0.0, -half_size, green, 4);
-    center_seg.push(0.0, half_size, green, 4);
-    center_seg.push(0.0, half_size, blank, 4);
-
-    let crosshair_path = UniversalPath {
-        segments: vec![center_seg],
-    };
-    let origin = &scene_setup.scene.origin;
-    let transform = Transform::from_translation(origin.translation)
-        .with_rotation(origin.rotation)
-        .with_scale(origin.scale);
+    let crosshair_path = UniversalPath::crosshair(Vec2::ZERO, crosshair_size, green);
     let child_entity = commands.spawn((
-        transform,
-        GlobalTransform::from(transform),
+        Transform::IDENTITY,
+        GlobalTransform::default(),
         Visibility::default(),
         CalibrationPath,
         CalibrationCenterCrosshair,
@@ -383,7 +349,7 @@ fn spawn_center_crosshair(
         common::path::PathRenderable::default(),
     )).id();
     commands.entity(scene_entity).add_child(child_entity);
-    info!("Spawned red center crosshair overlay at {:?}", transform.translation);
+    info!("Spawned green center crosshair overlay parented to SceneEntity");
 }
 
 /// Spawn projection area rectangle at scene center (projection surface)
@@ -393,13 +359,9 @@ fn spawn_projection_area_rectangle(
     scene_entity: Entity,
 ) {
     let rectangle_path = build_calibration_rectangle_path(scene_setup.scene.scene_dimension);
-    let origin = &scene_setup.scene.origin;
-    let transform = Transform::from_translation(origin.translation)
-        .with_rotation(origin.rotation)
-        .with_scale(origin.scale);
     let child_entity = commands.spawn((
-        transform,
-        GlobalTransform::from(transform),
+        Transform::IDENTITY,
+        GlobalTransform::default(),
         Visibility::default(),
         CalibrationPath,
         ProjectionAreaRectangle,
@@ -407,27 +369,39 @@ fn spawn_projection_area_rectangle(
         common::path::PathRenderable::default(),
     )).id();
     commands.entity(scene_entity).add_child(child_entity);
-    info!("Spawned scene corner calibration overlay at {:?}", transform.translation);
+    info!("Spawned scene corner calibration overlay parented to SceneEntity");
 }
 
-/// Spawns overlays only if not already present (called on entering calibration state)
+/// Spawns overlays parented to SceneEntity once SceneEntity is ready
 fn spawn_calibration_overlays(
     mut commands: Commands,
     scene_setup: Res<SceneSetup>,
+    calibration_state: Res<State<CalibrationState>>,
     rectangle_query: Query<Entity, With<ProjectionAreaRectangle>>,
     center_query: Query<Entity, With<CalibrationCenterCrosshair>>,
     scene_entity_query: Query<Entity, With<SceneEntity>>,
 ) {
-    info!("Entering CalibrationState::On");
-    if let Ok(scene_entity) = scene_entity_query.single() {
-        if rectangle_query.iter().next().is_none() {
-            spawn_projection_area_rectangle(&mut commands, &scene_setup, scene_entity);
-        }
-        if center_query.iter().next().is_none() {
-            spawn_center_crosshair(&mut commands, &scene_setup, scene_entity);
-        }
-    } else {
-        warn!("No SceneEntity found for parenting calibration overlays");
+    if *calibration_state.get() != CalibrationState::On {
+        return;
+    }
+
+    let needs_rectangle = rectangle_query.iter().next().is_none();
+    let needs_center = center_query.iter().next().is_none();
+
+    if !needs_rectangle && !needs_center {
+        return;
+    }
+
+    let Ok(scene_entity) = scene_entity_query.single() else {
+        // Wait for SceneEntity to be spawned before creating calibration overlays
+        return;
+    };
+
+    if needs_rectangle {
+        spawn_projection_area_rectangle(&mut commands, &scene_setup, scene_entity);
+    }
+    if needs_center {
+        spawn_center_crosshair(&mut commands, &scene_setup, scene_entity);
     }
 }
 
@@ -439,12 +413,11 @@ fn update_projection_area_rectangle(
     if !scene_setup.is_changed() {
         return;
     }
-    let origin = &scene_setup.scene.origin;
     let rectangle_path = build_calibration_rectangle_path(scene_setup.scene.scene_dimension);
     for (mut transform, mut path) in query.iter_mut() {
-        transform.translation = origin.translation;
-        transform.rotation = origin.rotation;
-        transform.scale = origin.scale;
+        transform.translation = Vec3::ZERO;
+        transform.rotation = Quat::IDENTITY;
+        transform.scale = Vec3::ONE;
         *path = rectangle_path.clone();
     }
 }
@@ -456,10 +429,9 @@ fn update_center_crosshair(
     if !scene_setup.is_changed() {
         return;
     }
-    let origin = &scene_setup.scene.origin;
     for mut transform in query.iter_mut() {
-        transform.translation = origin.translation;
-        transform.rotation = origin.rotation;
-        transform.scale = origin.scale;
+        transform.translation = Vec3::ZERO;
+        transform.rotation = Quat::IDENTITY;
+        transform.scale = Vec3::ONE;
     }
 }

@@ -107,6 +107,12 @@ impl GameRegistry {
     pub fn get_game_by_id(&self, id: u16) -> Option<&Game> {
         self.games.get(&id)
     }
+
+    pub fn all_games(&self) -> Vec<&Game> {
+        let mut list: Vec<&Game> = self.games.values().collect();
+        list.sort_by_key(|g| g.id);
+        list
+    }
 }
 
 

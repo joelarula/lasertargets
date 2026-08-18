@@ -2,6 +2,7 @@ use bevy::prelude::*;
 use common::path::{LaserTextOptions, PathRenderable, PathSegment, UniversalPath};
 use common::scene::{SceneEntity, SceneSetup};
 use common::state::{GameState, ServerState};
+use gamepad::{Btn, GamepadState, PrevGamepadState};
 
 use crate::model::*;
 
@@ -21,6 +22,7 @@ impl Plugin for SnakeGameServerPlugin {
             Update,
             (
                 init_snake_game,
+                handle_snake_gamepad_inputs,
                 handle_direction_input,
                 handle_snake_game_over,
                 animate_snake_title_announcement,
@@ -130,7 +132,9 @@ fn init_snake_game(
             .chain(title_query.iter())
             .chain(border_query.iter())
         {
-            commands.entity(e).despawn();
+            if let Ok(mut entity_cmds) = commands.get_entity(e) {
+                entity_cmds.despawn();
+            }
         }
         if existing_state.is_some() {
             commands.remove_resource::<SnakeState>();
@@ -148,7 +152,9 @@ fn init_snake_game(
         .chain(gem_query.iter())
         .chain(title_query.iter())
     {
-        commands.entity(e).despawn();
+        if let Ok(mut entity_cmds) = commands.get_entity(e) {
+            entity_cmds.despawn();
+        }
     }
 
     // Compute grid from scene dimensions — clamp so grid exactly fits inside scene
@@ -443,6 +449,48 @@ fn spawn_border_entity(commands: &mut Commands, scene_entity: Option<Entity>, w:
     }
 }
 
+/// Handle direction input from gamepad thumbstick and DPad
+fn handle_snake_gamepad_inputs(
+    state: Option<Res<GamepadState>>,
+    prev: Option<Res<PrevGamepadState>>,
+    mut dir_events: MessageWriter<ChangeSnakeDirectionEvent>,
+) {
+    let (Some(state), Some(prev)) = (state, prev) else { return; };
+    if !state.connected { return; }
+
+    let mut desired_dir = None;
+
+    // Check Left Thumbstick Movement (with deadzone)
+    let lx = state.left_stick_x;
+    let ly = state.left_stick_y;
+    let deadzone = 0.35;
+
+    if ly > deadzone && ly.abs() >= lx.abs() {
+        desired_dir = Some(SnakeDirection::Up);
+    } else if ly < -deadzone && ly.abs() >= lx.abs() {
+        desired_dir = Some(SnakeDirection::Down);
+    } else if lx < -deadzone && lx.abs() >= ly.abs() {
+        desired_dir = Some(SnakeDirection::Left);
+    } else if lx > deadzone && lx.abs() >= ly.abs() {
+        desired_dir = Some(SnakeDirection::Right);
+    }
+
+    // Check DPad buttons (just_pressed)
+    if state.just_pressed(&prev, Btn::DPadUp) {
+        desired_dir = Some(SnakeDirection::Up);
+    } else if state.just_pressed(&prev, Btn::DPadDown) {
+        desired_dir = Some(SnakeDirection::Down);
+    } else if state.just_pressed(&prev, Btn::DPadLeft) {
+        desired_dir = Some(SnakeDirection::Left);
+    } else if state.just_pressed(&prev, Btn::DPadRight) {
+        desired_dir = Some(SnakeDirection::Right);
+    }
+
+    if let Some(dir) = desired_dir {
+        dir_events.write(ChangeSnakeDirectionEvent { direction: dir });
+    }
+}
+
 /// Handle direction change events from keyboard input
 fn handle_direction_input(
     mut direction_events: MessageReader<ChangeSnakeDirectionEvent>,
@@ -503,9 +551,9 @@ fn snake_move_tick(
                 state.is_started = true;
                 timer.timer = Timer::from_seconds(INITIAL_TICK_INTERVAL, TimerMode::Repeating);
 
-                for (e, _, _) in head_query.iter() { commands.entity(e).despawn(); }
-                for (e, _) in seg_query.iter() { commands.entity(e).despawn(); }
-                for (e, _, _) in gem_query.iter() { commands.entity(e).despawn(); }
+                for (e, _, _) in head_query.iter() { if let Ok(mut entity_cmds) = commands.get_entity(e) { entity_cmds.despawn(); } }
+                for (e, _) in seg_query.iter() { if let Ok(mut entity_cmds) = commands.get_entity(e) { entity_cmds.despawn(); } }
+                for (e, _, _) in gem_query.iter() { if let Ok(mut entity_cmds) = commands.get_entity(e) { entity_cmds.despawn(); } }
                 let scene_entity = scene_query.single().ok();
                 state.gem_position = random_gem_position(state);
                 state.gem_color = random_color();
@@ -705,7 +753,9 @@ fn cleanup_snake_game(
     timer: Option<Res<SnakeMoveTimer>>,
 ) {
     for e in head_query.iter().chain(seg_query.iter()).chain(gem_query.iter()).chain(title_query.iter()) {
-        commands.entity(e).despawn();
+        if let Ok(mut entity_cmds) = commands.get_entity(e) {
+            entity_cmds.despawn();
+        }
     }
     if state.is_some() {
         commands.remove_resource::<SnakeState>();

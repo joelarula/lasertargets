@@ -31,9 +31,16 @@ impl UniversalPathGizmos for UniversalPath {
             for i in 0..segment.points.len() - 1 {
                 let start_point = &segment.points[i];
                 let end_point = &segment.points[i + 1];
+
+                // Skip blanked laser moves (r=0, g=0, b=0) to eliminate cursor/path tails
+                if (start_point.r == 0 && start_point.g == 0 && start_point.b == 0)
+                    || (end_point.r == 0 && end_point.g == 0 && end_point.b == 0)
+                {
+                    continue;
+                }
                 
-                let start = transform.transform_point(Vec3::new(start_point.x, start_point.y, 0.0));
-                let end = transform.transform_point(Vec3::new(end_point.x, end_point.y, 0.0));
+                let start = transform.transform_point(Vec3::new(start_point.x, start_point.y, 0.05));
+                let end = transform.transform_point(Vec3::new(end_point.x, end_point.y, 0.05));
                 
                 let color = Color::srgb(
                     start_point.r as f32 / 255.0,
@@ -107,34 +114,33 @@ fn handle_spawn_path_events(
             event.uuid, event.position
         );
 
-        let mut transform = Transform::from_translation(event.position);
-
-        let path_entity = commands
-            .spawn((
-                transform,
-                GlobalTransform::from(transform),
-                Visibility::default(),
-                PathId(event.uuid),
-                event.path.clone(),
-                PathRenderable::default(),
-            ))
-            .id();
-
-        // Parent to scene entity if it exists
-        if let Ok((scene_entity, scene_transform)) = scene_query.single() {
+        let (transform, maybe_scene_entity) = if let Ok((scene_entity, scene_transform)) = scene_query.single() {
             let local_pos = scene_transform
                 .to_matrix()
                 .inverse()
                 .transform_point3(event.position);
-            transform.translation = local_pos;
-            commands.entity(path_entity).insert(transform);
-            commands.entity(scene_entity).add_child(path_entity);
+            (Transform::from_translation(local_pos), Some(scene_entity))
+        } else {
+            (Transform::from_translation(event.position), None)
+        };
+
+        let mut entity_cmds = commands.spawn((
+            transform,
+            GlobalTransform::from(transform),
+            Visibility::default(),
+            PathId(event.uuid),
+            event.path.clone(),
+            PathRenderable::default(),
+        ));
+
+        if let Some(scene_entity) = maybe_scene_entity {
+            entity_cmds.insert(ChildOf(scene_entity));
             info!("Spawned path entity as child of scene");
         } else {
             warn!("No scene entity found, spawned path without parent");
         }
 
-        // Track the entity in the registry
+        let path_entity = entity_cmds.id();
         path_registry.paths.insert(event.uuid, path_entity);
     }
 }
@@ -143,7 +149,7 @@ fn handle_spawn_path_events(
 fn attach_paths_to_scene(
     mut commands: Commands,
     scene_query: Query<(Entity, &Transform), With<SceneEntity>>,
-    path_query: Query<(Entity, &GlobalTransform), With<PathId>>,
+    path_query: Query<(Entity, &GlobalTransform), (With<PathId>, Without<ChildOf>)>,
 ) {
     let Ok((scene_entity, scene_transform)) = scene_query.single() else {
         return;

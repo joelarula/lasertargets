@@ -59,7 +59,9 @@ fn cleanup_paths_on_game_exit(
         if let Some(path_id) = registry.by_entity.remove(&entity) {
             despawn_writer.write(BroadcastDespawnPath { uuid: path_id });
         }
-        commands.entity(entity).despawn();
+        if let Ok(mut entity_cmds) = commands.get_entity(entity) {
+            entity_cmds.despawn();
+        }
     }
     registry.by_entity.clear();
 }
@@ -70,7 +72,7 @@ fn broadcast_path_spawns(
     mut registry: ResMut<PathIdRegistry>,
     new_paths: Query<
         (Entity, &UniversalPath, &Transform, Option<&ChildOf>),
-        (Added<UniversalPath>, With<PathRenderable>, Without<CalibrationPath>),
+        (Added<UniversalPath>, With<PathRenderable>),
     >,
     scene_query: Query<&Transform, With<SceneEntity>>,
     mut spawn_writer: MessageWriter<BroadcastSpawnPath>,
@@ -136,7 +138,6 @@ fn broadcast_path_position_updates(
             Changed<Transform>,
             With<UniversalPath>,
             With<PathRenderable>,
-            Without<CalibrationPath>,
         ),
     >,
     scene_query: Query<&Transform, With<SceneEntity>>,

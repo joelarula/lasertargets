@@ -2,6 +2,8 @@
 
 Augmented reality laser game platform.
 
+> 📖 **Developer & Stability Guidelines**: See [INSTRUCTIONS.md](INSTRUCTIONS.md) for USB DAC hardware rules, Bevy ECS conventions, and network state invariants.
+
 ## Local Development Build
 
 Server:
@@ -59,13 +61,12 @@ When a game console controller (Xbox / PlayStation / DirectInput / XInput) is co
 
 | Button | Action | Description |
 | :--- | :--- | :--- |
-| **A (South)** | **Status Report** | Logs diagnostic status report of server mode, peripherals, and network connections |
-| **B (East)** | **Click / Shoot** | Fires virtual mouse click at gamepad cursor position |
-| **X (West)** | **Laser Power Toggle** | Toggles laser projector output On / Off |
-| **Y (North)** | **Calibration Toggle** | Toggles Calibration mode On / Off |
-| **Start** | **Start Hunter Game** | Initializes a new Hunter game session |
-| **Select** | **Start Snake / Exit Game** | Initializes Snake game (in Menu) or exits current active game session |
-| **DPad Up / Down** | **Adjust Height** | Increases / decreases target scene height (when Calibration mode is ON) |
-| **DPad Left / Right** | **Adjust Width** | Increases / decreases target scene width (when Calibration mode is ON) |
-| **LB / RB** | **Adjust Distance** | Moves scene origin closer / further (when Calibration mode is ON) |
-| **LT / RT** | **Adjust Altitude** | Shifts scene vertical offset up / down (when Calibration mode is ON) |
+| **A (South)** | **Cycle Target Selection** | Cycles through reticle modes in Hunter game (GunShot $\rightarrow$ Red Circle $\rightarrow$ Yellow Balloon $\rightarrow$ Cyan Circle $\rightarrow$ Magenta Balloon) |
+| **B (East) / RT** | **Spawn Target / Shoot** | Spawns selected target shape at cursor position (if target selected) or shoots at target (in GunShot mode) |
+| **X (West)** | **Game Menu Switcher** | Cycles through Hunter $\rightarrow$ Snake $\rightarrow$ Main Menu |
+| **Y (North)** | **Calibration Toggle** | Toggles Calibration overlay On / Off |
+| **LB / RB** | **Target Size / Distance** | Increases / decreases target radius in Hunter game, or adjusts scene distance (in Calibration mode) |
+| **Start** | **Laser Power Toggle** | Toggles laser projector power output On / Off |
+| **Select** | **Status Report** | Logs diagnostic status report of server mode, peripherals, and network connections |
+| **DPad Up / Down** | **Adjust Height / Direction** | Adjusts scene height (in Calibration mode) or controls Snake direction |
+| **DPad Left / Right** | **Adjust Width / Direction** | Adjusts scene width (in Calibration mode) or controls Snake direction |

@@ -49,7 +49,8 @@ Write-Host "--- Ensuring directory structure ---" -ForegroundColor Yellow
 $null = ssh $TargetHost "sudo mkdir -p /opt/lasertargets/lib /opt/lasertargets/stats && sudo chown -R lasertargets:lasertargets /opt/lasertargets"
 
 # Deploy binary
-Write-Host "--- Deploying server binary ---" -ForegroundColor Yellow
+$ServerSizeMB = [math]::Round((Get-Item $ServerBinary).Length / 1MB, 1)
+Write-Host "--- Deploying server binary ($ServerSizeMB MB, transferring...) ---" -ForegroundColor Yellow
 $null = ssh $TargetHost "rm -f /opt/lasertargets/server"
 scp $ServerBinary "${TargetHost}:/opt/lasertargets/server"
 $null = ssh $TargetHost "chmod +x /opt/lasertargets/server"

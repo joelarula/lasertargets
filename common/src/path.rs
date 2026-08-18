@@ -527,6 +527,38 @@ impl UniversalPath {
         Self::from_segment(segment)
     }
 
+    /// Create a sharp perpendicular crosshair path with proper arrival/departure dwells & blanking
+    pub fn crosshair(center: Vec2, size: f32, color: Color) -> Self {
+        let half_size = size / 2.0;
+        let blank = Color::NONE;
+
+        // 1. Horizontal Line Segment (-X to +X)
+        let mut horiz_seg = PathSegment::empty();
+        let left_x = center.x - half_size;
+        let right_x = center.x + half_size;
+        let y = center.y;
+
+        horiz_seg.push(left_x, y, blank, 4);  // Blanked arrival dwell
+        horiz_seg.push(left_x, y, color, 4);  // Lit start dwell
+        horiz_seg.push(right_x, y, color, 4); // Lit end dwell
+        horiz_seg.push(right_x, y, blank, 4); // Blanked departure dwell
+
+        // 2. Vertical Line Segment (-Y to +Y)
+        let mut vert_seg = PathSegment::empty();
+        let bottom_y = center.y - half_size;
+        let top_y = center.y + half_size;
+        let x = center.x;
+
+        vert_seg.push(x, bottom_y, blank, 4); // Blanked arrival dwell
+        vert_seg.push(x, bottom_y, color, 4); // Lit start dwell
+        vert_seg.push(x, top_y, color, 4);    // Lit end dwell
+        vert_seg.push(x, top_y, blank, 4);    // Blanked departure dwell
+
+        Self {
+            segments: vec![horiz_seg, vert_seg],
+        }
+    }
+
     /// Create a rectangle path
     pub fn rectangle(top_left: Vec2, size: Vec2, color: Color) -> Self {
         use lyon_tessellation::math::point;

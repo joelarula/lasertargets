@@ -21,6 +21,13 @@ impl UniversalPathGizmos for UniversalPath {
             for i in 0..segment.points.len() - 1 {
                 let start_point = &segment.points[i];
                 let end_point = &segment.points[i + 1];
+
+                // Skip blanked laser moves (r=0, g=0, b=0) to eliminate cursor/path tails
+                if (start_point.r == 0 && start_point.g == 0 && start_point.b == 0)
+                    || (end_point.r == 0 && end_point.g == 0 && end_point.b == 0)
+                {
+                    continue;
+                }
                 
                 let start = transform.transform_point(Vec3::new(start_point.x, start_point.y, 0.0));
                 let end = transform.transform_point(Vec3::new(end_point.x, end_point.y, 0.0));

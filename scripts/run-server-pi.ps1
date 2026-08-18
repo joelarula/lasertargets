@@ -41,6 +41,9 @@ try {
     ssh $TargetHost "sudo systemctl stop lasertargets-server 2>/dev/null; sudo killall -9 server 2>/dev/null || true"
     Start-Sleep -Seconds 1
 
+    Write-Host "--- Optimizing Pi CPU governor & USB power settings ---" -ForegroundColor Yellow
+    $null = ssh $TargetHost "echo performance | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor >/dev/null 2>&1 || true; echo -1 | sudo tee /sys/module/usbcore/parameters/autosuspend >/dev/null 2>&1 || true"
+
     Write-Host "--- Launching server directly (Press Ctrl+C to stop) ---" -ForegroundColor Green
     Write-Host "Log Level: RUST_LOG=$LogLevel" -ForegroundColor DarkGray
     Write-Host "--------------------------------------------------------" -ForegroundColor Gray

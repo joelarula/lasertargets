@@ -10,8 +10,6 @@ use crate::plugins::status::LogStatusReportEvent;
 const DIMENSION_STEP: f32 = 1.0;
 const DISTANCE_STEP: f32 = 1.0;
 const HEIGHT_STEP: f32 = 0.25;
-const HUNTER_GAME_ID: u16 = 101;
-const SNAKE_GAME_ID: u16 = 2;
 
 /// App-specific plugin registering gamepad event handlers for LaserTargets server.
 pub struct GamepadInputPlugin;
@@ -51,7 +49,6 @@ impl Plugin for GamepadInputPlugin {
             gamepad_trigger_status_report,
             gamepad_toggle_calibration,
             gamepad_cursor_movement,
-            gamepad_snake_direction_handler,
         ))
         .add_systems(Update, gamepad_calibration_controls.run_if(in_state(CalibrationState::On)))
         .add_systems(Update, gamepad_laser_toggle)
@@ -276,6 +273,7 @@ fn gamepad_menu_game_switcher(
     game_sessions: Query<&GameSession>,
     next_game_state: Res<NextState<GameState>>,
     next_server_state: Res<NextState<ServerState>>,
+    game_registry: Option<Res<common::game::GameRegistry>>,
     mut init_events: MessageWriter<InitGameSessionEvent>,
     mut exit_events: MessageWriter<ExitGameEvent>,
 ) {
@@ -286,11 +284,22 @@ fn gamepad_menu_game_switcher(
         return; // Ignore button press while a game or server state transition is queued/pending
     }
 
-    // Button X (Btn::West): Cycle Calibration/Menu -> Hunter (Game A) -> Snake (Game B) -> Calibration/Menu
+    // Button X (Btn::West): Cycle Calibration/Menu -> Game 1 -> Game 2 ... -> Calibration/Menu
     let trigger_pressed = state.just_pressed(&prev, Btn::West) && cooldowns.menu_switch.is_finished();
 
     if trigger_pressed {
         cooldowns.menu_switch.reset();
+
+        let available_games = game_registry
+            .as_ref()
+            .map(|r| r.all_games())
+            .unwrap_or_default();
+
+        if available_games.is_empty() {
+            info!("★ Gamepad Menu Switcher: No registered minigames available");
+            return;
+        }
+
         let active_session = game_sessions.iter().find(|s| s.state == GameState::InGame);
         if let Some(current_session) = active_session {
             let current_game_id = current_session.game_id;
@@ -302,25 +311,30 @@ fn gamepad_menu_game_switcher(
                 game_session_uuid: current_uuid,
             });
 
-            if current_game_id == HUNTER_GAME_ID {
-                // Hunter (Game A) -> Snake (Game B)
-                let new_uuid = bevy::asset::uuid::Uuid::new_v4();
-                info!("🎮 GAME STARTED: Snake (Game ID 2) [session {}]", new_uuid);
-                init_events.write(InitGameSessionEvent {
-                    game_id: SNAKE_GAME_ID,
-                    game_session_uuid: new_uuid,
-                    initial_state: GameState::InGame,
-                });
+            // Find index of current game in registered games list
+            if let Some(curr_idx) = available_games.iter().position(|g| g.id == current_game_id) {
+                if curr_idx + 1 < available_games.len() {
+                    let next_game = available_games[curr_idx + 1];
+                    let new_uuid = bevy::asset::uuid::Uuid::new_v4();
+                    info!("🎮 GAME STARTED: {} (Game ID {}) [session {}]", next_game.name, next_game.id, new_uuid);
+                    init_events.write(InitGameSessionEvent {
+                        game_id: next_game.id,
+                        game_session_uuid: new_uuid,
+                        initial_state: GameState::InGame,
+                    });
+                } else {
+                    info!("★ Gamepad Menu Switcher: Switched back to Calibration / Main Menu");
+                }
             } else {
-                // Snake (Game B) -> Calibration / Main Menu
                 info!("★ Gamepad Menu Switcher: Switched back to Calibration / Main Menu");
             }
         } else {
-            // No active InGame session -> Launch Game A (Hunter)
+            // No active InGame session -> Launch first registered game
+            let first_game = available_games[0];
             let new_uuid = bevy::asset::uuid::Uuid::new_v4();
-            info!("🎮 GAME STARTED: Hunter (Game ID 101) [session {}]", new_uuid);
+            info!("🎮 GAME STARTED: {} (Game ID {}) [session {}]", first_game.name, first_game.id, new_uuid);
             init_events.write(InitGameSessionEvent {
-                game_id: HUNTER_GAME_ID,
+                game_id: first_game.id,
                 game_session_uuid: new_uuid,
                 initial_state: GameState::InGame,
             });
@@ -339,53 +353,5 @@ fn gamepad_trigger_status_report(
     }
 }
 
-/// Handles snake direction input from gamepad left thumbstick and DPad
-fn gamepad_snake_direction_handler(
-    state: Res<GamepadState>,
-    prev: Res<PrevGamepadState>,
-    game_sessions: Query<&GameSession>,
-    mut snake_dir_events: MessageWriter<snake::model::ChangeSnakeDirectionEvent>,
-) {
-    if !state.connected { return; }
 
-    let snake_active = game_sessions
-        .iter()
-        .any(|s| s.game_id == SNAKE_GAME_ID && s.state == GameState::InGame);
-
-    if !snake_active { return; }
-
-    let mut desired_dir = None;
-
-    // Check Left Thumbstick Movement (with deadzone)
-    let lx = state.left_stick_x;
-    let ly = state.left_stick_y;
-    let deadzone = 0.35;
-
-    if ly > deadzone && ly.abs() >= lx.abs() {
-        desired_dir = Some(snake::model::SnakeDirection::Up);
-    } else if ly < -deadzone && ly.abs() >= lx.abs() {
-        desired_dir = Some(snake::model::SnakeDirection::Down);
-    } else if lx < -deadzone && lx.abs() >= ly.abs() {
-        desired_dir = Some(snake::model::SnakeDirection::Left);
-    } else if lx > deadzone && lx.abs() >= ly.abs() {
-        desired_dir = Some(snake::model::SnakeDirection::Right);
-    }
-
-    // Check DPad buttons (just_pressed or pressed)
-    if state.just_pressed(&prev, Btn::DPadUp) {
-        desired_dir = Some(snake::model::SnakeDirection::Up);
-    } else if state.just_pressed(&prev, Btn::DPadDown) {
-        desired_dir = Some(snake::model::SnakeDirection::Down);
-    } else if state.just_pressed(&prev, Btn::DPadLeft) {
-        desired_dir = Some(snake::model::SnakeDirection::Left);
-    } else if state.just_pressed(&prev, Btn::DPadRight) {
-        desired_dir = Some(snake::model::SnakeDirection::Right);
-    }
-
-    if let Some(dir) = desired_dir {
-        snake_dir_events.write(snake::model::ChangeSnakeDirectionEvent {
-            direction: dir,
-        });
-    }
-}
 

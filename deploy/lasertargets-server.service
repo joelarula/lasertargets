@@ -8,7 +8,8 @@ Wants=network.target
 Type=simple
 User=lasertargets
 Group=lasertargets
-WorkingDirectory=/opt/lasertargets
+ExecStartPre=-/bin/sh -c 'echo performance | tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor >/dev/null 2>&1 || true'
+ExecStartPre=-/bin/sh -c 'echo -1 | tee /sys/module/usbcore/parameters/autosuspend >/dev/null 2>&1 || true'
 ExecStart=/opt/lasertargets/server
 Environment=LD_LIBRARY_PATH=/opt/lasertargets/lib
 Environment=RUST_LOG=info

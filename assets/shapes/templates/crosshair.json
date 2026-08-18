@@ -1,23 +1,17 @@
 {
   "name": "crosshair",
-  "description": "Tactical 4-quadrant crosshair shape with center reticle gap",
+  "description": "Tactical 2-segment perpendicular crosshair shape with proper dwells and blanking",
   "tags": ["ui", "game", "crosshair", "target"],
   "author": "LaserTargets",
-  "line_style": "Continuous",
+  "line_style": "Independent",
   "points": [
-    { "x": 0.0, "y": 1.0, "r": 255, "g": 0, "b": 0, "dwell": 3 },
-    { "x": 0.0, "y": 0.2, "r": 255, "g": 0, "b": 0, "dwell": 2 },
-    { "x": 0.0, "y": 0.2, "r": 0, "g": 0, "b": 0, "dwell": 0 },
-    { "x": 1.0, "y": 0.0, "r": 0, "g": 0, "b": 0, "dwell": 0 },
-    { "x": 1.0, "y": 0.0, "r": 255, "g": 0, "b": 0, "dwell": 3 },
-    { "x": 0.2, "y": 0.0, "r": 255, "g": 0, "b": 0, "dwell": 2 },
-    { "x": 0.2, "y": 0.0, "r": 0, "g": 0, "b": 0, "dwell": 0 },
-    { "x": 0.0, "y": -1.0, "r": 0, "g": 0, "b": 0, "dwell": 0 },
-    { "x": 0.0, "y": -1.0, "r": 255, "g": 0, "b": 0, "dwell": 3 },
-    { "x": 0.0, "y": -0.2, "r": 255, "g": 0, "b": 0, "dwell": 2 },
-    { "x": 0.0, "y": -0.2, "r": 0, "g": 0, "b": 0, "dwell": 0 },
-    { "x": -1.0, "y": 0.0, "r": 0, "g": 0, "b": 0, "dwell": 0 },
-    { "x": -1.0, "y": 0.0, "r": 255, "g": 0, "b": 0, "dwell": 3 },
-    { "x": -0.2, "y": 0.0, "r": 255, "g": 0, "b": 0, "dwell": 2 }
+    { "x": -1.0, "y": 0.0, "r": 0, "g": 0, "b": 0, "dwell": 4 },
+    { "x": -1.0, "y": 0.0, "r": 255, "g": 255, "b": 255, "dwell": 4 },
+    { "x": 1.0, "y": 0.0, "r": 255, "g": 255, "b": 255, "dwell": 4 },
+    { "x": 1.0, "y": 0.0, "r": 0, "g": 0, "b": 0, "dwell": 4 },
+    { "x": 0.0, "y": -1.0, "r": 0, "g": 0, "b": 0, "dwell": 4 },
+    { "x": 0.0, "y": -1.0, "r": 255, "g": 255, "b": 255, "dwell": 4 },
+    { "x": 0.0, "y": 1.0, "r": 255, "g": 255, "b": 255, "dwell": 4 },
+    { "x": 0.0, "y": 1.0, "r": 0, "g": 0, "b": 0, "dwell": 4 }
   ]
 }
