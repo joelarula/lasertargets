@@ -200,10 +200,9 @@ impl HeliosDacController {
             let result = (self.lib.get_status)(device_num as c_uint);
             if result == 1 {
                 Ok(true) // 1 = ready to receive new frame
-            } else if result == 0 {
-                Ok(false) // 0 = DAC is busy playing current frame
+            } else if result == 0 || result == -1002 || result == -1000 || result == -1003 || result == -5007 || result == -7 || result == -9 {
+                Ok(false) // 0 or transient USB busy status code = DAC is busy playing current frame
             } else {
-                // Negative error code (e.g. -1, -5007, -1000) = USB DAC buffer underflow or device error!
                 Err(format!("GetStatus failed: error {}", result))
             }
         }

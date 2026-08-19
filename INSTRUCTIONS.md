@@ -55,6 +55,11 @@ This document details the core architectural rules, USB hardware constraints, Be
 * Calling `GetStatus()` or `write_frame_ready()` IMMEDIATELY after `open_devices()` fails with USB transfer timeout (`-5007`) or no device (`-1002`) because the physical DAC microcontroller requires a firmware boot delay to initialize internal USB DMA endpoint registers.
 * **Rule**: Always sleep **500ms** (`std::thread::sleep(Duration::from_millis(500))`) immediately after `open_devices()`. Use direct `write_frame_native(0, pps, 0, &blank_frame)` with up to **5 attempts (100ms spacing)** to prime initial blank frames before opening the shutter, bypassing status polling during firmware initialization.
 
+### 1.11 Transient USB Status Code Absorption & Stepped Backoff
+* Helios DAC C library (`libHeliosLaserDAC.so`) returns transient return codes (`-1002`, `-1000`, `-1003`, `-5007`, `-7`, `-9`) when the USB controller or microcontroller endpoint is busy transferring frame data.
+* **Rule**: `get_status` MUST treat these transient status codes as `Ok(false)` (busy playing frame), allowing `wait_for_ready` to micro-sleep (1ms) and poll up to `max_attempts` (120ms window) without incrementing failure counters or triggering false hardware resets.
+* **Rule**: `write_frame_native` uses stepped backoff retries (2ms -> 5ms -> 10ms) to allow USB endpoint FIFOs to settle before reporting a hard failure.
+
 ---
 
 ## 2. Vector Path Rendering & Scene Transforms
@@ -117,10 +122,10 @@ This document details the core architectural rules, USB hardware constraints, Be
   * **Role**: Manages Projector DAC output streaming, scene coordinate transforms, network socket broadcasting, and global gamepad shortcuts.
   * **Rule**: NEVER place minigame-specific logic (e.g. Hunter target spawning or Snake grid movement) or hardcode game IDs/names (`HUNTER_GAME_ID`, `SNAKE_GAME_ID`) inside `server/`. Query `GameRegistry` dynamically.
 * **`common/` (`common::*`)**: Shared protocol data types.
-  * **Role**: Network wire messages (`BroadcastMessage`), common state enums (`ServerState`, `GameState`), configuration resources, and `GameRegistry` definitions.
-  * **Rule**: Contains only shared types, structs, and protocol traits. Zero game execution systems or peripheral hardware drivers.
+  * **Role**: Network wire messages (`NetworkMessage`), common state enums (`ServerState`, `GameState`), configuration resources, and `GameRegistry` definitions.
+  * **Rule**: Contains only shared types, structs, and protocol traits. Zero game execution systems, hardcoded minigame structs, or peripheral hardware drivers. All game-specific events and score stats use generic `GameDataPayload { game_id, session_id, event_tag, payload_json }`.
 * **`minigames/<game_name>/` (`hunter`, `snake`, etc.)**: Self-contained game modules.
-  * **Role**: Each minigame crate MUST own all of its game-specific entities, components, resources, gamepad input listeners, collision detection systems, score stats, and report generators inside `minigames/<game_name>/src/server.rs` and `minigames/<game_name>/src/terminal.rs`.
+  * **Role**: Each minigame crate MUST own all of its game-specific entities, components, resources, gamepad input listeners, collision detection systems, score stats, network payload serialization, and report generators inside `minigames/<game_name>/src/server.rs` and `minigames/<game_name>/src/terminal.rs`.
   * **Rule**: Minigames register themselves dynamically with `GameRegistry` during plugin build (`game_registry.register_game(...)`).
 * **`gamepad/` (`gamepad::*`)**: Hardware controller driver crate.
   * **Role**: Polls raw controller inputs via `gilrs` and exposes thread-safe `GamepadState` and `ServerGamepadCursor` resources.
