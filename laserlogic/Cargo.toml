@@ -5,3 +5,5 @@ edition = "2024"
 
 [dependencies]
 serde = { workspace = true }
+libloading = { workspace = true }
+log = { workspace = true }

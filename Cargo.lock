@@ -3889,6 +3889,8 @@ dependencies = [
 name = "laserlogic"
 version = "0.1.0"
 dependencies = [
+ "libloading",
+ "log",
  "serde",
 ]
 
@@ -5652,6 +5654,7 @@ dependencies = [
  "common",
  "eframe",
  "egui",
+ "laserlogic",
  "libloading",
  "log",
  "pretty_env_logger",

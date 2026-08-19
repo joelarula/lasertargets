@@ -1,8 +1,9 @@
 use common::path::LineStyle;
 use common::shapes::{ShapePoint, ShapeTemplate};
 use eframe::egui;
+use laserlogic::helios::{HeliosDacController, HeliosPoint};
+use laserlogic::{LaserPoint, LaserSegment, OptimizeConfig};
 use std::fs;
-use std::os::raw::{c_int, c_uchar, c_uint};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -11,130 +12,13 @@ use std::time::{Duration, SystemTime};
 
 const DEFAULT_SHAPE_PATH: &str = "assets/shapes/templates/active_shape.json";
 
-// ── Helios DAC FFI & Native Point Structures ──────────────────────────────
-#[repr(C)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct HeliosPoint {
-    pub x: u16, // 0 to 4095
-    pub y: u16, // 0 to 4095
-    pub r: u8,  // 0 to 255
-    pub g: u8,  // 0 to 255
-    pub b: u8,  // 0 to 255
-    pub i: u8,  // Intensity, 0 to 255
-}
-
-impl HeliosPoint {
-    pub fn new(x: u16, y: u16, r: u8, g: u8, b: u8, i: u8) -> Self {
-        Self { x, y, r, g, b, i }
-    }
-    pub fn blanked(x: u16, y: u16) -> Self {
-        Self { x, y, r: 0, g: 0, b: 0, i: 0 }
-    }
-}
-
-type FnOpenDevices = unsafe extern "C" fn() -> c_int;
-type FnCloseDevices = unsafe extern "C" fn() -> c_int;
-type FnWriteFrame = unsafe extern "C" fn(c_uint, c_uint, c_uchar, *const HeliosPoint, c_uint) -> c_int;
-type FnGetStatus = unsafe extern "C" fn(c_uint) -> c_int;
-type FnSetShutter = unsafe extern "C" fn(c_uint, bool) -> c_int;
-
-pub struct LocalHeliosDac {
-    _lib: libloading::Library,
-    open_devices: FnOpenDevices,
-    close_devices: FnCloseDevices,
-    write_frame: FnWriteFrame,
-    get_status: FnGetStatus,
-    set_shutter: FnSetShutter,
-    pub num_devices: i32,
-}
-
-impl LocalHeliosDac {
-    pub fn new() -> Result<Self, String> {
-        let dll_names = if cfg!(target_os = "windows") {
-            vec!["HeliosLaserDAC.dll", "target/debug/HeliosLaserDAC.dll"]
-        } else {
-            vec!["libHeliosLaserDAC.so", "/opt/lasertargets/libHeliosLaserDAC.so"]
-        };
-
-        let mut last_err = String::new();
-        for path in dll_names {
-            if let Ok(lib) = unsafe { libloading::Library::new(path) } {
-                unsafe {
-                    let open_devices: libloading::Symbol<FnOpenDevices> = lib.get(b"HeliosOpenDevices\0").map_err(|e| e.to_string())?;
-                    let close_devices: libloading::Symbol<FnCloseDevices> = lib.get(b"HeliosCloseDevices\0").map_err(|e| e.to_string())?;
-                    let write_frame: libloading::Symbol<FnWriteFrame> = lib.get(b"HeliosWriteFrame\0").map_err(|e| e.to_string())?;
-                    let get_status: libloading::Symbol<FnGetStatus> = lib.get(b"HeliosGetStatus\0").map_err(|e| e.to_string())?;
-                    let set_shutter: libloading::Symbol<FnSetShutter> = lib.get(b"HeliosSetShutter\0").map_err(|e| e.to_string())?;
-
-                    let open_fn = *open_devices;
-                    let close_fn = *close_devices;
-                    let write_fn = *write_frame;
-                    let status_fn = *get_status;
-                    let shutter_fn = *set_shutter;
-
-                    let mut dac = Self {
-                        _lib: lib,
-                        open_devices: open_fn,
-                        close_devices: close_fn,
-                        write_frame: write_fn,
-                        get_status: status_fn,
-                        set_shutter: shutter_fn,
-                        num_devices: 0,
-                    };
-                    dac.num_devices = (dac.open_devices)();
-                    return Ok(dac);
-                }
-            } else {
-                last_err = format!("Could not load DAC DLL from {}", path);
-            }
-        }
-        Err(last_err)
-    }
-
-    pub fn write_frame_ready(&self, dac_num: u32, pps: u32, points: &[HeliosPoint]) -> Result<bool, String> {
-        if points.is_empty() { return Ok(false); }
-
-        // Wait until status is ready or transient busy
-        for _attempt in 0..60 {
-            let st = unsafe { (self.get_status)(dac_num as c_uint) };
-            if st == 1 {
-                let res = unsafe { (self.write_frame)(dac_num as c_uint, pps, 0, points.as_ptr(), points.len() as c_uint) };
-                if res >= 0 {
-                    return Ok(true);
-                } else {
-                    return Err(format!("WriteFrame error {}", res));
-                }
-            } else if st == 0 || st == -1002 || st == -1000 || st == -5007 {
-                thread::sleep(Duration::from_millis(1));
-            } else {
-                return Err(format!("GetStatus error {}", st));
-            }
-        }
-        Ok(false)
-    }
-
-    pub fn set_shutter(&self, dac_num: u32, on: bool) {
-        unsafe { (self.set_shutter)(dac_num as c_uint, on); }
-    }
-}
-
-impl Drop for LocalHeliosDac {
-    fn drop(&mut self) {
-        unsafe {
-            (self.set_shutter)(0, false);
-            (self.close_devices)();
-        }
-    }
-}
-
-// ── Application Entry Point ───────────────────────────────────────────────
 fn main() -> eframe::Result<()> {
     pretty_env_logger::init();
 
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_title("Laser Shape Studio — Local USB DAC & Interactive Editor")
-            .with_inner_size([1280.0, 800.0]),
+            .with_title("Laser Shape Studio — Reusable Laserlogic & Helios DAC")
+            .with_inner_size([1280.0, 820.0]),
         ..Default::default()
     };
 
@@ -151,13 +35,17 @@ struct ShapeEditorApp {
     raw_json: String,
     last_modified: Option<SystemTime>,
     json_error: Option<String>,
-    
-    // Local DAC Thread Controls
+
+    // Laserlogic optimization config
+    optimize_config: OptimizeConfig,
+    optimized_point_count: usize,
+
+    // Shared Helios DAC Thread Controls
     dac_points: Arc<Mutex<Vec<HeliosPoint>>>,
     dac_laser_on: Arc<AtomicBool>,
     dac_status_msg: Arc<Mutex<String>>,
     dac_connected: Arc<AtomicBool>,
-    
+
     // Canvas interaction
     dragged_point_idx: Option<usize>,
 }
@@ -201,51 +89,47 @@ impl Default for ShapeEditorApp {
             }
         }
 
-        let dac_points = Arc::new(Mutex::new(build_helios_points(&template)));
+        let optimize_config = OptimizeConfig::default();
+        let initial_helios = build_optimized_helios_points(&template, &optimize_config);
+        let optimized_point_count = initial_helios.len();
+
+        let dac_points = Arc::new(Mutex::new(initial_helios));
         let dac_laser_on = Arc::new(AtomicBool::new(true));
         let dac_status_msg = Arc::new(Mutex::new("Initializing USB DAC...".to_string()));
         let dac_connected = Arc::new(AtomicBool::new(false));
 
-        // Launch background local USB DAC streaming thread
+        // Launch background thread using laserlogic::helios::HeliosDacController
         let points_clone = Arc::clone(&dac_points);
         let laser_on_clone = Arc::clone(&dac_laser_on);
         let status_clone = Arc::clone(&dac_status_msg);
         let conn_clone = Arc::clone(&dac_connected);
 
         thread::spawn(move || {
-            match LocalHeliosDac::new() {
-                Ok(dac) => {
-                    if dac.num_devices > 0 {
-                        *status_clone.lock().unwrap() = format!("✓ USB Helios DAC Connected ({} Device Found)", dac.num_devices);
-                        conn_clone.store(true, Ordering::Relaxed);
-                        dac.set_shutter(0, true);
+            match HeliosDacController::new() {
+                Ok(mut dac) => {
+                    match dac.open_devices() {
+                        Ok(num) if num > 0 => {
+                            *status_clone.lock().unwrap() = format!("✓ USB Helios DAC Connected ({} Device Found)", num);
+                            conn_clone.store(true, Ordering::Relaxed);
+                            let _ = dac.set_shutter(0, true);
 
-                        let pps = 30000;
-                        let min_pts = 1024;
+                            let pps = 30000;
+                            let min_pts = 1024;
 
-                        while conn_clone.load(Ordering::Relaxed) {
-                            let is_on = laser_on_clone.load(Ordering::Relaxed);
-                            let pts = if is_on {
-                                points_clone.lock().unwrap().clone()
-                            } else {
-                                vec![HeliosPoint::blanked(2048, 2048)]
-                            };
+                            while conn_clone.load(Ordering::Relaxed) {
+                                let is_on = laser_on_clone.load(Ordering::Relaxed);
+                                let pts = if is_on {
+                                    points_clone.lock().unwrap().clone()
+                                } else {
+                                    vec![HeliosPoint::blanked(2048, 2048)]
+                                };
 
-                            let mut frame = pts;
-                            if frame.len() < min_pts {
-                                let last = *frame.last().unwrap_or(&HeliosPoint::blanked(2048, 2048));
-                                while frame.len() < min_pts {
-                                    frame.push(HeliosPoint::blanked(last.x, last.y));
-                                }
-                            } else if frame.len() > min_pts {
-                                frame.truncate(min_pts);
+                                let _ = dac.write_frame_ready(0, pps, 0, &pts, min_pts);
                             }
-
-                            let _ = dac.write_frame_ready(0, pps, &frame);
-                            thread::sleep(Duration::from_millis(5));
                         }
-                    } else {
-                        *status_clone.lock().unwrap() = "✗ No USB Helios DAC hardware detected on this PC".to_string();
+                        _ => {
+                            *status_clone.lock().unwrap() = "✗ No USB Helios DAC hardware detected on this PC".to_string();
+                        }
                     }
                 }
                 Err(e) => {
@@ -260,6 +144,8 @@ impl Default for ShapeEditorApp {
             raw_json,
             last_modified,
             json_error: None,
+            optimize_config,
+            optimized_point_count,
             dac_points,
             dac_laser_on,
             dac_status_msg,
@@ -270,7 +156,6 @@ impl Default for ShapeEditorApp {
 }
 
 impl ShapeEditorApp {
-    /// Watch file on disk for Copilot / external edits
     fn check_file_watcher(&mut self) {
         if !self.file_path.exists() {
             return;
@@ -301,8 +186,9 @@ impl ShapeEditorApp {
         }
     }
 
-    fn update_dac_points(&self) {
-        let pts = build_helios_points(&self.template);
+    fn update_dac_points(&mut self) {
+        let pts = build_optimized_helios_points(&self.template, &self.optimize_config);
+        self.optimized_point_count = pts.len();
         *self.dac_points.lock().unwrap() = pts;
     }
 
@@ -319,23 +205,39 @@ impl ShapeEditorApp {
     }
 }
 
-fn build_helios_points(template: &ShapeTemplate) -> Vec<HeliosPoint> {
-    let mut points = Vec::new();
+fn build_optimized_helios_points(template: &ShapeTemplate, config: &OptimizeConfig) -> Vec<HeliosPoint> {
+    let mut segments = Vec::new();
+    let mut current_segment_pts = Vec::new();
+
     for pt in &template.points {
-        // Map normalized x, y [-1.0, 1.0] to 12-bit DAC coords [0, 4095]
         let dac_x = (((pt.x + 1.0) / 2.0).clamp(0.0, 1.0) * 4095.0) as u16;
         let dac_y = (((pt.y + 1.0) / 2.0).clamp(0.0, 1.0) * 4095.0) as u16;
-        let intensity = if pt.r > 0 || pt.g > 0 || pt.b > 0 { 255 } else { 0 };
 
-        let hp = HeliosPoint::new(dac_x, dac_y, pt.r, pt.g, pt.b, intensity);
-        
-        // Add dwell points
-        let count = (pt.dwell as usize).max(1);
-        for _ in 0..count {
-            points.push(hp);
+        let is_blanked = pt.r == 0 && pt.g == 0 && pt.b == 0;
+        if is_blanked {
+            if !current_segment_pts.is_empty() {
+                segments.push(LaserSegment::new(current_segment_pts));
+                current_segment_pts = Vec::new();
+            }
+        } else {
+            let lp = LaserPoint::new(dac_x, dac_y, pt.r, pt.g, pt.b, 255);
+            let count = (pt.dwell as usize).max(1);
+            for _ in 0..count {
+                current_segment_pts.push(lp);
+            }
         }
     }
-    points
+
+    if !current_segment_pts.is_empty() {
+        segments.push(LaserSegment::new(current_segment_pts));
+    }
+
+    if segments.is_empty() {
+        return vec![HeliosPoint::blanked(2048, 2048)];
+    }
+
+    let optimized_laser_points = laserlogic::optimize::optimize(&segments, config);
+    optimized_laser_points.into_iter().map(HeliosPoint::from).collect()
 }
 
 impl eframe::App for ShapeEditorApp {
@@ -343,14 +245,13 @@ impl eframe::App for ShapeEditorApp {
         ctx.request_repaint_after(Duration::from_millis(50));
         self.check_file_watcher();
 
-        // ── 1. Side Panel: Inspector & Controls ──
+        // ── Side Panel ──
         egui::SidePanel::left("control_panel")
-            .default_width(420.0)
+            .default_width(440.0)
             .show(ctx, |ui| {
-                ui.heading("🎯 Laser Shape Studio (Local DAC)");
+                ui.heading("🎯 Laser Shape Studio (Shared Laserlogic & Helios Crate)");
                 ui.separator();
 
-                // ── Local USB Helios DAC Status ──
                 ui.group(|ui| {
                     ui.label(egui::RichText::new("⚡ Local USB Helios Laser DAC").strong());
                     let status_msg = self.dac_status_msg.lock().unwrap().clone();
@@ -358,15 +259,58 @@ impl eframe::App for ShapeEditorApp {
                     let status_color = if is_conn { egui::Color32::GREEN } else { egui::Color32::LIGHT_RED };
                     ui.colored_label(status_color, &status_msg);
 
-                    let mut laser_on = self.dac_laser_on.load(Ordering::Relaxed);
-                    if ui.checkbox(&mut laser_on, "Laser Output Shutter Enabled").changed() {
-                        self.dac_laser_on.store(laser_on, Ordering::Relaxed);
-                    }
+                    ui.horizontal(|ui| {
+                        let mut laser_on = self.dac_laser_on.load(Ordering::Relaxed);
+                        if ui.checkbox(&mut laser_on, "Laser Output Shutter Enabled").changed() {
+                            self.dac_laser_on.store(laser_on, Ordering::Relaxed);
+                        }
+                    });
                 });
 
-                ui.add_space(8.0);
+                ui.add_space(6.0);
 
-                // ── Template Quick Load ──
+                ui.group(|ui| {
+                    ui.label(egui::RichText::new("🔬 Server Laserlogic Optimizer Telemetry").strong());
+                    ui.horizontal(|ui| {
+                        ui.label(format!("Input Vertices: {}", self.template.points.len()));
+                        ui.separator();
+                        ui.label(egui::RichText::new(format!("Optimized DAC Points: {}", self.optimized_point_count)).strong().color(egui::Color32::LIGHT_GREEN));
+                    });
+
+                    ui.collapsing("⚙️ Laserlogic Optimization Parameters", |ui| {
+                        let mut changed = false;
+                        let mut corner_dwell = self.optimize_config.corner_dwell_points;
+                        if ui.add(egui::DragValue::new(&mut corner_dwell).range(0..=15).prefix("Corner Dwells:")).changed() {
+                            self.optimize_config.corner_dwell_points = corner_dwell;
+                            changed = true;
+                        }
+
+                        let mut blank_end = self.optimize_config.blank_end_dwell;
+                        if ui.add(egui::DragValue::new(&mut blank_end).range(0..=30).prefix("Blank End Dwells:")).changed() {
+                            self.optimize_config.blank_end_dwell = blank_end;
+                            changed = true;
+                        }
+
+                        let mut blank_start = self.optimize_config.blank_start_dwell;
+                        if ui.add(egui::DragValue::new(&mut blank_start).range(0..=30).prefix("Blank Start Dwells:")).changed() {
+                            self.optimize_config.blank_start_dwell = blank_start;
+                            changed = true;
+                        }
+
+                        let mut jump_steps = self.optimize_config.blank_jump_steps;
+                        if ui.add(egui::DragValue::new(&mut jump_steps).range(10..=120).prefix("Blank Jump Steps:")).changed() {
+                            self.optimize_config.blank_jump_steps = jump_steps;
+                            changed = true;
+                        }
+
+                        if changed {
+                            self.update_dac_points();
+                        }
+                    });
+                });
+
+                ui.add_space(6.0);
+
                 ui.group(|ui| {
                     ui.label(egui::RichText::new("📁 Shape Presets").strong());
                     ui.horizontal(|ui| {
@@ -398,9 +342,8 @@ impl eframe::App for ShapeEditorApp {
                     });
                 });
 
-                ui.add_space(8.0);
+                ui.add_space(6.0);
 
-                // ── Point Geometry Inspector ──
                 ui.group(|ui| {
                     ui.label(egui::RichText::new("✏️ Point Geometry Inspector").strong());
                     ui.horizontal(|ui| {
@@ -411,7 +354,7 @@ impl eframe::App for ShapeEditorApp {
                     });
 
                     egui::ScrollArea::vertical()
-                        .max_height(240.0)
+                        .max_height(200.0)
                         .show(ui, |ui| {
                             let mut to_remove = None;
                             let mut changed = false;
@@ -468,9 +411,8 @@ impl eframe::App for ShapeEditorApp {
                         });
                 });
 
-                ui.add_space(8.0);
+                ui.add_space(6.0);
 
-                // ── Raw JSON Editor (Copilot Chat Sync) ──
                 ui.group(|ui| {
                     ui.label(egui::RichText::new("📝 Raw Shape JSON (Copilot Live Sync)").strong());
                     if let Some(ref err) = self.json_error {
@@ -482,7 +424,7 @@ impl eframe::App for ShapeEditorApp {
                         egui::TextEdit::multiline(&mut json_text)
                             .font(egui::TextStyle::Monospace)
                             .code_editor()
-                            .desired_rows(12)
+                            .desired_rows(10)
                             .desired_width(f32::INFINITY),
                     );
 
@@ -503,7 +445,7 @@ impl eframe::App for ShapeEditorApp {
                 });
             });
 
-        // ── 2. Central Panel: Interactive 2D Vector Painter ──
+        // ── Central Panel ──
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.heading("🎨 Interactive 2D Vector Canvas (Drag Vertices with Mouse)");
 
@@ -512,10 +454,8 @@ impl eframe::App for ShapeEditorApp {
             let center = rect.center();
             let scale = (rect.width().min(rect.height()) / 2.8).max(50.0);
 
-            // Background canvas fill
             painter.rect_filled(rect, 0.0, egui::Color32::from_rgb(18, 18, 24));
 
-            // Grid Axes
             let grid_color = egui::Color32::from_rgb(45, 45, 60);
             painter.line_segment(
                 [egui::pos2(rect.left(), center.y), egui::pos2(rect.right(), center.y)],
@@ -526,7 +466,6 @@ impl eframe::App for ShapeEditorApp {
                 egui::Stroke::new(1.0, grid_color),
             );
 
-            // 1.0m Bounding box outline
             let min_box = egui::pos2(center.x - scale, center.y - scale);
             let max_box = egui::pos2(center.x + scale, center.y + scale);
             painter.rect_stroke(
@@ -546,7 +485,6 @@ impl eframe::App for ShapeEditorApp {
                 (x, y)
             };
 
-            // Mouse Drag vertex interaction
             if response.drag_started() {
                 if let Some(pointer_pos) = response.interact_pointer_pos() {
                     let mut closest_idx = None;
@@ -582,7 +520,6 @@ impl eframe::App for ShapeEditorApp {
                 }
             }
 
-            // Draw shape vector lines & vertices
             let points = &self.template.points;
             if points.len() >= 2 {
                 for i in 0..points.len() - 1 {
@@ -599,7 +536,6 @@ impl eframe::App for ShapeEditorApp {
                     }
                 }
 
-                // Draw vertex dots and index numbers
                 for (idx, pt) in points.iter().enumerate() {
                     let screen_pos = shape_to_screen(pt.x, pt.y);
                     let dot_color = egui::Color32::from_rgb(pt.r, pt.g, pt.b);

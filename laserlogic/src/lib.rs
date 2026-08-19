@@ -2,6 +2,7 @@ pub mod corner;
 pub mod optimize;
 pub mod simplify;
 pub mod text_optimize;
+pub mod helios;
 
 use serde::{Deserialize, Serialize};
 
