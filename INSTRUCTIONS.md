@@ -27,7 +27,9 @@ This document details the core architectural rules, USB hardware constraints, Be
   * Short frames are padded with blanked copies of the last point (`HeliosPoint::blanked(last.x, last.y)`).
   * Truncated frames must force $r=0, g=0, b=0, i=0$ on the final point to eliminate trailing laser lines between frames.
 
-### 1.4 Fast Recovery Threshold
+### 1.12 Unified `laserlogic::helios` Module & Hardware Driver Reuse
+* `HeliosDacController`, `HeliosPoint`, and dynamic loading FFI logic reside inside the **`laserlogic` crate** (`laserlogic::helios`).
+* **Rule**: All tools (`shape-editor`, `server`, test utilities) MUST import `HeliosDacController` and `HeliosPoint` from `laserlogic::helios` (or re-exported `server::dac::helios`). Duplicate FFI definitions or custom DAC structs are strictly forbidden to ensure identical USB driver behavior across all tools.
 * Set `MAX_WRITE_FAILURES` to **5 consecutive write failures** (~150ms of communication disruption).
 * Trigger fast USB endpoint reset (`close_devices()` -> `open_devices()`) and 3-frame blank priming immediately after 5 failures to restore output before noticeable frame drops occur.
 
