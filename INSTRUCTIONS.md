@@ -144,3 +144,4 @@ This document details the core architectural rules, USB hardware constraints, Be
 | **Remote Docker Build (Pi 4)** | `.\scripts\docker-build-rpi4-remote.ps1 -RemoteHost joel@192.168.1.110` |
 | **Deploy to Pi** | `.\scripts\deploy-pi.ps1 -TargetHost lasertargets@lasertargets.local` |
 | **Run Interactive Server** | `.\scripts\run-server-pi.ps1 -TargetHost lasertargets@lasertargets.local` |
+| **Run Shape Studio (PC)** | `cargo run --package shape-editor` (or `.\scripts\run-shape-editor.ps1`) |

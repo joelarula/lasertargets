@@ -9,12 +9,15 @@ members = [
     "laserlogic",
     "gamepad",
     "dac-test",
+    "shape-editor",
 ]
 
 [workspace.dependencies]
 bevy = { version = "0.17.1"}
 log = "0.4"
 egui = "0.33"
+eframe = "0.33"
+libloading = "0.8"
 egui_taffy = "0.10"
 bevy_egui = "0.38.0"
 pretty_env_logger = "0.5.0"
