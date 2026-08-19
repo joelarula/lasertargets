@@ -4,8 +4,15 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
 
-    actor::ActorMetaData, config::{CameraConfiguration, ProjectorConfiguration, SceneConfiguration}, game::GameSession, path::UniversalPath, scene::SceneSetup, state::GameState, target::HunterTarget
+    actor::ActorMetaData, config::{CameraConfiguration, ProjectorConfiguration, SceneConfiguration}, game::GameSession, path::UniversalPath, scene::SceneSetup, state::GameState
 };
+
+/// Message wrapper from a client containing the client ID and the NetworkMessage
+#[derive(bevy::prelude::Message, Debug, Clone, Serialize, Deserialize)]
+pub struct FromClientMessage {
+    pub client_id: u64,
+    pub message: NetworkMessage,
+}
 
 /// Network messages exchanged between server and terminal
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -84,30 +91,15 @@ pub enum NetworkMessage {
         pressed: bool,
     },
 
-    // Path
-    SpawnPath(Uuid, UniversalPath, bevy::prelude::Vec3),
-    DespawnPath(Uuid),
-    UpdatePathPosition(Uuid, bevy::prelude::Vec3),
+    // Abstract Minimal Path Scene Stream
+    BroadcastScenePaths(Vec<crate::path::AbstractPathData>),
 
-    //Targeting
-
-    SpawnHunterTarget(HunterTarget, bevy::prelude::Vec3),
-    
-    // Hunter game server broadcasts (server → terminal)
-    HunterStatsUpdate {
+    /// Generic minigame payload broadcast (game_id, session_id, event_tag, payload_json)
+    GameDataPayload {
+        game_id: u16,
         session_id: Uuid,
-        targets_spawned: u32,
-        targets_popped: u32,
-        misses: u32,
-        score: u32,
-    },
-
-    // Snake game server broadcasts (server → terminal)
-    SnakeStatsUpdate {
-        session_id: Uuid,
-        score: u32,
-        length: u32,
-        game_over: bool,
+        event_tag: String,
+        payload_json: String,
     },
 
     // Lifecycle

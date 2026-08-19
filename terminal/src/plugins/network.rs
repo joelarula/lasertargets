@@ -8,9 +8,7 @@ use common::toolbar::{Docking, ItemState, ToolbarItem};
 use std::net::{IpAddr, Ipv6Addr};
 use common::game::{GameSessionUpdate, GameSessionCreated};
 use hunter::model::HunterGameStats;
-use hunter::server::SpawnHunterTargetEvent;
-use snake::model::SnakeGameStats;
-use crate::plugins::path::{SpawnPathEvent, DespawnPathEvent, UpdatePathPositionEvent};
+use common::path::BroadcastScenePaths;
 
 const CONN_BTN_NAME: &str = "connection_status";
 const SHUTDOWN_BTN_NAME: &str = "shutdown_server";
@@ -71,10 +69,6 @@ impl Plugin for NetworkPlugin {
             .init_resource::<ServerInstanceId>()
             .add_message::<GameSessionCreated>()
             .add_message::<GameSessionUpdate>()
-            .add_message::<SpawnHunterTargetEvent>()
-            .add_message::<SpawnPathEvent>()
-            .add_message::<DespawnPathEvent>()
-            .add_message::<UpdatePathPositionEvent>()
             .init_resource::<ReconnectTimer>()
             .add_systems(Startup, start_client)
             .add_systems(Startup, register_connection_toolbar_button)
@@ -218,10 +212,7 @@ fn receive_server_messages(
     mut hunter_stats: Option<ResMut<HunterGameStats>>,
     mut game_session_created_writer: MessageWriter<GameSessionCreated>,
     mut game_session_update_writer: MessageWriter<GameSessionUpdate>,
-    mut spawn_hunter_target_writer: MessageWriter<SpawnHunterTargetEvent>,
-    mut spawn_path_writer: MessageWriter<SpawnPathEvent>,
-    mut despawn_path_writer: MessageWriter<DespawnPathEvent>,
-    mut update_path_position_writer: MessageWriter<UpdatePathPositionEvent>,
+    mut broadcast_scene_paths_writer: MessageWriter<BroadcastScenePaths>,
     mut next_states: ParamSet<(
         ResMut<NextState<ServerState>>,
         ResMut<NextState<GameState>>,
@@ -324,50 +315,50 @@ fn receive_server_messages(
                                     }
                                 }
                             }
-                            NetworkMessage::SpawnHunterTarget(target, position) => {
-                                info!("Received SpawnHunterTarget from server: target={:?}, position={:?}", target, position);
-                                spawn_hunter_target_writer.write(SpawnHunterTargetEvent { target, position });
+                            NetworkMessage::BroadcastScenePaths(paths) => {
+                                broadcast_scene_paths_writer.write(BroadcastScenePaths { paths });
                             }
-                            NetworkMessage::SpawnPath(uuid, path, position) => {
-                                info!("Received SpawnPath from server: uuid={}, position={:?}", uuid, position);
-                                spawn_path_writer.write(SpawnPathEvent { uuid, path, position });
-                            }
-                            NetworkMessage::DespawnPath(uuid) => {
-                                info!("Received DespawnPath from server: uuid={}", uuid);
-                                despawn_path_writer.write(DespawnPathEvent { uuid });
-                            }
-                            NetworkMessage::UpdatePathPosition(uuid, position) => {
-                                debug!("Received UpdatePathPosition from server: uuid={}, position={:?}", uuid, position);
-                                update_path_position_writer.write(UpdatePathPositionEvent { uuid, position });
-                            }
-                            NetworkMessage::HunterStatsUpdate { session_id, targets_spawned, targets_popped, misses, score } => {
-                                if let Some(mut stats) = hunter_stats.as_mut() {
-                                    if stats.session_id != session_id {
-                                        **stats = HunterGameStats {
-                                            session_id,
-                                            targets_spawned,
-                                            targets_popped,
-                                            misses,
-                                            score,
-                                            target_events: Vec::new(),
-                                            game_start_time: 0.0,
-                                        };
-                                    } else {
-                                        stats.targets_spawned = targets_spawned;
-                                        stats.targets_popped = targets_popped;
-                                        stats.misses = misses;
-                                        stats.score = score;
+                            NetworkMessage::GameDataPayload { game_id, session_id, event_tag, payload_json } => {
+                                if event_tag == "hunter_stats" {
+                                    if let Ok(event) = serde_json::from_str::<hunter::model::BroadcastStatsUpdateEvent>(&payload_json) {
+                                        if let Some(mut stats) = hunter_stats.as_mut() {
+                                            if stats.session_id != session_id {
+                                                **stats = HunterGameStats {
+                                                    session_id,
+                                                    targets_spawned: event.targets_spawned,
+                                                    targets_popped: event.targets_popped,
+                                                    misses: event.misses,
+                                                    score: event.score,
+                                                    target_events: Vec::new(),
+                                                    game_start_time: 0.0,
+                                                };
+                                            } else {
+                                                stats.targets_spawned = event.targets_spawned;
+                                                stats.targets_popped = event.targets_popped;
+                                                stats.misses = event.misses;
+                                                stats.score = event.score;
+                                            }
+                                        } else {
+                                            commands.insert_resource(HunterGameStats {
+                                                session_id,
+                                                targets_spawned: event.targets_spawned,
+                                                targets_popped: event.targets_popped,
+                                                misses: event.misses,
+                                                score: event.score,
+                                                target_events: Vec::new(),
+                                                game_start_time: 0.0,
+                                            });
+                                        }
                                     }
-                                } else {
-                                    commands.insert_resource(HunterGameStats {
-                                        session_id,
-                                        targets_spawned,
-                                        targets_popped,
-                                        misses,
-                                        score,
-                                        target_events: Vec::new(),
-                                        game_start_time: 0.0,
-                                    });
+                                } else if event_tag == "snake_stats" {
+                                    if let Ok(event) = serde_json::from_str::<snake::model::BroadcastSnakeStatsEvent>(&payload_json) {
+                                        commands.insert_resource(snake::model::SnakeGameStats {
+                                            session_id,
+                                            score: event.score,
+                                            length: event.length,
+                                            game_over: event.game_over,
+                                        });
+                                    }
                                 }
                             }
                             NetworkMessage::ServerInfo { instance_id } => {
@@ -384,18 +375,10 @@ fn receive_server_messages(
                                         if let Some(mut stats) = hunter_stats.as_mut() {
                                             **stats = HunterGameStats::default();
                                         }
-                                        commands.remove_resource::<SnakeGameStats>();
+                                        commands.remove_resource::<snake::model::SnakeGameStats>();
                                     }
                                     local_instance_id.0 = Some(instance_id);
                                 }
-                            }
-                            NetworkMessage::SnakeStatsUpdate { session_id, score, length, game_over } => {
-                                commands.insert_resource(SnakeGameStats {
-                                    session_id,
-                                    score,
-                                    length,
-                                    game_over,
-                                });
                             }
                             _ => {
                                 info!("Received unhandled message: {:?}", msg);

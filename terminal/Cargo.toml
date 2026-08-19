@@ -15,3 +15,4 @@ pretty_env_logger = { workspace = true }
 bevy_quinnet = { workspace = true }
 bevy_camera = "0.17.2"
 bevy_prototype_lyon = { workspace = true }
+serde_json = { workspace = true }

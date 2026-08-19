@@ -116,6 +116,15 @@ impl GameRegistry {
 }
 
 
+/// Generic game data payload broadcast across the network for any minigame
+#[derive(Message, Debug, Clone, Serialize, Deserialize)]
+pub struct BroadcastGameDataPayload {
+    pub game_id: u16,
+    pub session_id: Uuid,
+    pub event_tag: String,
+    pub payload_json: String,
+}
+
 pub struct GameRegistryPlugin;
 
 impl Plugin for GameRegistryPlugin {
@@ -128,7 +137,8 @@ impl Plugin for GameRegistryPlugin {
             .add_message::<FinishGameEvent>()
             .add_message::<ExitGameEvent>()
             .add_message::<GameSessionUpdate>()
-            .add_message::<GameSessionCreated>();
+            .add_message::<GameSessionCreated>()
+            .add_message::<BroadcastGameDataPayload>();
         app.insert_resource(GameRegistry {
             games: HashMap::new(),
         });

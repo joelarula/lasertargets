@@ -12,7 +12,7 @@ use gamepad::{Btn, GamepadState, PrevGamepadState, ServerGamepadCursor};
 
 
 /// Event for spawning hunter targets (server-only)
-#[derive(Message, Debug, Clone)]
+#[derive(Message, Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SpawnHunterTargetEvent {
     pub target: HunterTarget,
     pub position: Vec3,
@@ -126,6 +126,8 @@ impl Plugin for HunterGameServerPlugin {
                 handle_hunter_gamepad_inputs,
                 animate_hunter_shot_ripples,
                 check_balloon_out_of_bounds,
+                forward_hunter_stats_to_network,
+                handle_incoming_hunter_payloads,
             )
                 .run_if(in_state(ServerState::InGame))
                 .run_if(hunter_session_is_running),
@@ -687,8 +689,8 @@ fn handle_hunter_clicks(
                 CollisionIndicator,
                 HunterShotRipple {
                     current_radius: 0.05,
-                    max_radius: 0.50, // Expands to 50cm radius ripple ring!
-                    growth_rate: 1.8, // Expands at 1.8m/s (~0.25s animation)
+                    max_radius: 0.35, // Expands to 35cm radius ripple ring!
+                    growth_rate: 3.0, // Fast 3.0m/s expansion (~0.10s snappy animation)
                     color: dot_color,
                 },
                 indicator_transform,
@@ -874,6 +876,37 @@ fn format_report_text(report: &GameReport) -> String {
     writeln!(s).unwrap();
     writeln!(s, "---").unwrap();
     s
+}
+
+fn forward_hunter_stats_to_network(
+    mut events: MessageReader<BroadcastStatsUpdateEvent>,
+    mut payload_writer: MessageWriter<common::game::BroadcastGameDataPayload>,
+) {
+    for event in events.read() {
+        if let Ok(json) = serde_json::to_string(event) {
+            payload_writer.write(common::game::BroadcastGameDataPayload {
+                game_id: GAME_ID,
+                session_id: event.session_id,
+                event_tag: "hunter_stats".to_string(),
+                payload_json: json,
+            });
+        }
+    }
+}
+
+fn handle_incoming_hunter_payloads(
+    mut client_messages: MessageReader<common::network::FromClientMessage>,
+    mut spawn_events: MessageWriter<SpawnHunterTargetEvent>,
+) {
+    for msg in client_messages.read() {
+        if let common::network::NetworkMessage::GameDataPayload { game_id, ref event_tag, ref payload_json, .. } = msg.message {
+            if game_id == GAME_ID && event_tag == "spawn_target" {
+                if let Ok(event) = serde_json::from_str::<SpawnHunterTargetEvent>(payload_json) {
+                    spawn_events.write(event);
+                }
+            }
+        }
+    }
 }
 
 

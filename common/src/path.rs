@@ -808,3 +808,16 @@ impl Default for PathRenderable {
         Self { visible: true }
     }
 }
+
+/// Abstract minimal visual path data for client terminal rendering
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AbstractPathData {
+    pub path: UniversalPath,
+    pub position: Vec3,
+}
+
+/// Single aggregated message broadcasting all active abstract scene paths every tick
+#[derive(Message, Debug, Clone, Serialize, Deserialize)]
+pub struct BroadcastScenePaths {
+    pub paths: Vec<AbstractPathData>,
+}

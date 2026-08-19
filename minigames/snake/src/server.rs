@@ -26,6 +26,7 @@ impl Plugin for SnakeGameServerPlugin {
                 handle_direction_input,
                 handle_snake_game_over,
                 animate_snake_title_announcement,
+                forward_snake_stats_to_network,
             ),
         );
         app.add_systems(FixedUpdate, snake_move_tick);
@@ -803,5 +804,21 @@ fn save_snake_report(
             Err(e) => warn!("Failed to save snake JSON report {}: {}", json_path, e),
         },
         Err(e) => warn!("Failed to serialize snake state to JSON: {}", e),
+    }
+}
+
+fn forward_snake_stats_to_network(
+    mut events: MessageReader<BroadcastSnakeStatsEvent>,
+    mut payload_writer: MessageWriter<common::game::BroadcastGameDataPayload>,
+) {
+    for event in events.read() {
+        if let Ok(json) = serde_json::to_string(event) {
+            payload_writer.write(common::game::BroadcastGameDataPayload {
+                game_id: GAME_ID,
+                session_id: event.session_id,
+                event_tag: "snake_stats".to_string(),
+                payload_json: json,
+            });
+        }
     }
 }

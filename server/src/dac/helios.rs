@@ -5,7 +5,7 @@
 use libloading;
 use std::os::raw::{c_char, c_int, c_uchar, c_uint};
 use std::sync::{Arc, OnceLock};
-use log::{info, warn, error};
+use log::info;
 
 // Point structures matching the working darkelf implementation
 #[repr(C)]
@@ -380,8 +380,8 @@ impl HeliosDacController {
         min_pts: usize,
     ) -> Result<bool, String> {
         let padded = Self::pad_frame(points, min_pts);
-        // Wait for DAC ready status (max 40 polls with 1ms spacing = 40ms max polling window)
-        match self.wait_for_ready(dac_num, 40) {
+        // Wait for DAC ready status (max 120 polls with 1ms spacing = 120ms max polling window to support large 3,600pt frames)
+        match self.wait_for_ready(dac_num, 120) {
             Err(e) => return Err(e), // Propagate USB errors immediately
             Ok(false) => return Ok(false), // DAC busy playing frame — NOT an error!
             Ok(true) => {}  // Ready

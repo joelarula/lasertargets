@@ -5514,6 +5514,7 @@ dependencies = [
  "hunter",
  "log",
  "pretty_env_logger",
+ "serde_json",
  "snake",
 ]
 

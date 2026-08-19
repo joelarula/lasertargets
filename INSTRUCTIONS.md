@@ -49,7 +49,7 @@ This document details the core architectural rules, USB hardware constraints, Be
 
 ### 1.9 Dynamic Frame Length Pacing & FIFO Underflow Prevention
 * Large complex frames (> 1500 points, such as text + multiple minigame shapes) require longer playback times (e.g. 100ms for 3000 points @ 30kpps). Fixed short polling windows or 6ms loop retry gaps cause thread wake-up misses, starving the physical DAC buffer and producing `-5007` transfer timeouts.
-* **Rule**: Sleep for **80% of total frame playback time** (`sleep_micros = total_pts / pps * 800_000.0`), poll `get_status` with **1ms micro-sleeps** (up to 40 attempts = 40ms window), and use a **1ms busy retry sleep** in `dac_output_loop`. Next frame is always delivered 1–3ms BEFORE current playback completes regardless of frame size.
+* **Rule**: Sleep for **80% of total frame playback time** (`sleep_micros = total_pts / pps * 800_000.0`), poll `get_status` with **1ms micro-sleeps** (up to **120 attempts = 120ms window**), and use a **1ms busy retry sleep** in `dac_output_loop`. Next frame is always delivered 1–3ms BEFORE current playback completes regardless of frame size (up to 3,600 points).
 
 ### 1.10 USB Firmware Settling Sleep & Direct Priming
 * Calling `GetStatus()` or `write_frame_ready()` IMMEDIATELY after `open_devices()` fails with USB transfer timeout (`-5007`) or no device (`-1002`) because the physical DAC microcontroller requires a firmware boot delay to initialize internal USB DMA endpoint registers.
@@ -103,9 +103,10 @@ This document details the core architectural rules, USB hardware constraints, Be
 * **Rule**: Keep state resets strictly inside discrete connection event handlers (`TerminalState::Connected` / `TerminalState::Disconnected`).
 * **Rule**: Always close existing connection handles via `client.close_connection(id)` before spawning a new connection attempt.
 
-### 4.2 Calibration Overlay Network Broadcast
-* When exiting `CalibrationState::On`, `despawn_calibration_overlays` MUST look up overlay path UUIDs in `PathIdRegistry` and emit `BroadcastDespawnPath`.
-* This guarantees remote terminal clients despawn overlay path handles immediately when calibration is toggled off.
+### 4.2 Combined Abstract Minimal Path Streaming
+* Visual paths rendered on client terminals are streamed via a single aggregated message (`BroadcastScenePaths(Vec<AbstractPathData>)`) sent every tick.
+* **Rule**: Abstract paths contain pure geometric shapes and RGB colors without DAC laser processing (no dwell points, no blanking steps).
+* **Rule**: Despawned scene entities (calibration overlays, popped targets, snake body segments) are automatically omitted from `BroadcastScenePaths`, guaranteeing zero entity tracking desync and zero memory leaks without needing UUID lookups.
 
 ---
 

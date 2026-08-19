@@ -201,7 +201,13 @@ fn handle_balloon_button_click(
             if *terminal_state.get() == TerminalState::Connected {
                 if let Some(connection) = client.get_connection_mut() {
                     let target = common::target::HunterTarget::Baloon(0.2, Color::srgb(1.0, 0.0, 0.0));
-                    let message = NetworkMessage::SpawnHunterTarget(target, Vec3::ZERO);
+                    let payload_json = serde_json::to_string(&crate::server::SpawnHunterTargetEvent { target, position: Vec3::ZERO }).unwrap_or_default();
+                    let message = NetworkMessage::GameDataPayload {
+                        game_id: GAME_ID,
+                        session_id: bevy::asset::uuid::Uuid::nil(),
+                        event_tag: "spawn_target".to_string(),
+                        payload_json,
+                    };
                     if let Ok(payload) = message.to_bytes() {
                         if let Err(e) = connection.send_payload(payload) {
                             bevy::log::warn!("Failed to send spawn balloon message: {:?}", e);
@@ -305,7 +311,13 @@ fn handle_target_drag(
                 if let Some(connection) = client.get_connection_mut() {
                     // Create a basic target with size 0.25 world units
                     let target = common::target::HunterTarget::Basic(0.25, Color::srgb(1.0, 1.0, 1.0));
-                    let message = NetworkMessage::SpawnHunterTarget(target, world_pos);
+                    let payload_json = serde_json::to_string(&crate::server::SpawnHunterTargetEvent { target, position: world_pos }).unwrap_or_default();
+                    let message = NetworkMessage::GameDataPayload {
+                        game_id: GAME_ID,
+                        session_id: bevy::asset::uuid::Uuid::nil(),
+                        event_tag: "spawn_target".to_string(),
+                        payload_json,
+                    };
 
                     if let Ok(payload) = message.to_bytes() {
                         if let Err(e) = connection.send_payload(payload) {

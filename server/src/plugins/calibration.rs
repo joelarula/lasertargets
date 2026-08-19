@@ -60,17 +60,13 @@ impl Plugin for CalibrationPlugin {
 
 fn despawn_calibration_overlays(
     mut commands: Commands,
-    mut registry: ResMut<crate::plugins::path::PathIdRegistry>,
     path_query: Query<Entity, With<CalibrationPath>>,
-    mut despawn_writer: MessageWriter<crate::plugins::path::BroadcastDespawnPath>,
 ) {
     info!("Exiting CalibrationState::On");
     for entity in path_query.iter() {
-        if let Some(path_id) = registry.by_entity.remove(&entity) {
-            despawn_writer.write(crate::plugins::path::BroadcastDespawnPath { uuid: path_id });
-            info!("Broadcasting DespawnPath for calibration overlay {}", path_id);
+        if let Ok(mut entity_cmds) = commands.get_entity(entity) {
+            entity_cmds.despawn();
         }
-        commands.entity(entity).despawn();
     }
 }
 

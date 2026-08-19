@@ -14,11 +14,8 @@ use common::scene::SceneSetup;
 use common::state::{CalibrationState, GameState, ServerInstanceId, ServerState};
 use std::collections::{HashMap, HashSet};
 use std::net::{IpAddr, Ipv4Addr};
-use hunter::model::{BroadcastStatsUpdateEvent, HunterClickEvent};
-use hunter::server::SpawnHunterTargetEvent;
-use snake::model::{BroadcastSnakeStatsEvent, ChangeSnakeDirectionEvent, SnakeDirection, SnakeState, GAME_ID as SNAKE_GAME_ID};
-use crate::plugins::path::{BroadcastDespawnPath, BroadcastPathPosition, BroadcastSpawnPath};
-
+use common::game::BroadcastGameDataPayload;
+use common::path::BroadcastScenePaths;
 use crate::plugins::actor::{
     ActorLink, ActorRegistrationResultEvent, ActorUnregistrationResultEvent, GameActorUpdateEvent,
     RegisterActorEvent, UnregisterActorEvent,
@@ -70,14 +67,7 @@ impl Plugin for NetworkingPlugin {
             .add_message::<ActorUnregistrationResultEvent>()
             .add_message::<MousePositionEvent>()
             .add_message::<KeyboardInputEvent>()
-            .add_message::<SpawnHunterTargetEvent>()
-            .add_message::<HunterClickEvent>()
-            .add_message::<BroadcastStatsUpdateEvent>()
-            .add_message::<BroadcastSpawnPath>()
-            .add_message::<BroadcastDespawnPath>()
-            .add_message::<BroadcastPathPosition>()
-            .add_message::<ChangeSnakeDirectionEvent>()
-            .add_message::<BroadcastSnakeStatsEvent>()
+            .add_message::<BroadcastScenePaths>()
             .init_resource::<NetworkingConfiguration>()
             .add_systems(Startup, start_server)
             .add_systems(Update, receive_network_messages)
@@ -85,10 +75,7 @@ impl Plugin for NetworkingPlugin {
             .add_systems(Update, handle_actor_messages)
             .add_systems(Update, handle_game_session_messages)
             .add_systems(Update, handle_input_messages)
-            .add_systems(Update, handle_hunter_target_messages)
-            .add_systems(Update, broadcast_hunter_events)
-            .add_systems(Update, broadcast_snake_events)
-            .add_systems(Update, handle_snake_direction_input)
+            .add_systems(Update, broadcast_game_data_payloads)
             .add_systems(Update, broadcast_path_events)
             .add_systems(Update, send_ping_periodically)
             .add_systems(Update, handle_lifecycle_messages)
@@ -103,37 +90,17 @@ impl Plugin for NetworkingPlugin {
 
 fn broadcast_path_events(
     mut server: ResMut<QuinnetServer>,
-    mut spawn_events: MessageReader<BroadcastSpawnPath>,
-    mut despawn_events: MessageReader<BroadcastDespawnPath>,
-    mut update_events: MessageReader<BroadcastPathPosition>,
+    mut path_events: MessageReader<BroadcastScenePaths>,
 ) {
     let Some(endpoint) = server.get_endpoint_mut() else {
         return;
     };
 
-    for event in spawn_events.read() {
-        let message = NetworkMessage::SpawnPath(event.uuid, event.path.clone(), event.position);
+    for event in path_events.read() {
+        let message = NetworkMessage::BroadcastScenePaths(event.paths.clone());
         if let Ok(payload) = message.to_bytes() {
             if let Err(e) = endpoint.broadcast_payload(payload) {
-                error!("Failed to broadcast SpawnPath: {}", e);
-            }
-        }
-    }
-
-    for event in despawn_events.read() {
-        let message = NetworkMessage::DespawnPath(event.uuid);
-        if let Ok(payload) = message.to_bytes() {
-            if let Err(e) = endpoint.broadcast_payload(payload) {
-                error!("Failed to broadcast DespawnPath: {}", e);
-            }
-        }
-    }
-
-    for event in update_events.read() {
-        let message = NetworkMessage::UpdatePathPosition(event.uuid, event.position);
-        if let Ok(payload) = message.to_bytes() {
-            if let Err(e) = endpoint.broadcast_payload(payload) {
-                error!("Failed to broadcast UpdatePathPosition: {}", e);
+                error!("Failed to broadcast BroadcastScenePaths: {}", e);
             }
         }
     }
@@ -462,48 +429,25 @@ fn handle_input_messages(
     }
 }
 
-/// Handle hunter target spawn messages
-fn handle_hunter_target_messages(
-    mut messages: MessageReader<FromClientMessage>,
-    mut spawn_hunter_target_events: MessageWriter<SpawnHunterTargetEvent>,
-) {
-    for msg in messages.read() {
-        match &msg.message {
-            NetworkMessage::SpawnHunterTarget(target, position) => {
-                info!("Received SpawnHunterTarget message from client {}", msg.client_id);
-                info!("Received SpawnHunterTarget from client {}: target={:?}, position={:?}", msg.client_id, target, position);
-                spawn_hunter_target_events.write(SpawnHunterTargetEvent {
-                    target: target.clone(),
-                    position: *position,
-                });
-            }
-            _ => {}
-        }
-    }
-}
-
-/// Broadcast hunter game events to all clients
-fn broadcast_hunter_events(
+/// Broadcast generic minigame payloads to all connected clients
+fn broadcast_game_data_payloads(
     mut server: ResMut<QuinnetServer>,
-    mut stats_events: MessageReader<BroadcastStatsUpdateEvent>,
+    mut payload_events: MessageReader<BroadcastGameDataPayload>,
 ) {
     let Some(endpoint) = server.get_endpoint_mut() else {
         return;
     };
-    
-    // Broadcast stats update events
-    for event in stats_events.read() {
-        let message = NetworkMessage::HunterStatsUpdate {
+
+    for event in payload_events.read() {
+        let message = NetworkMessage::GameDataPayload {
+            game_id: event.game_id,
             session_id: event.session_id,
-            targets_spawned: event.targets_spawned,
-            targets_popped: event.targets_popped,
-            misses: event.misses,
-            score: event.score,
+            event_tag: event.event_tag.clone(),
+            payload_json: event.payload_json.clone(),
         };
-        
         if let Ok(payload) = message.to_bytes() {
             if let Err(e) = endpoint.broadcast_payload(payload) {
-                error!("Failed to broadcast stats update: {:?}", e);
+                error!("Failed to broadcast GameDataPayload: {:?}", e);
             }
         }
     }
@@ -841,59 +785,7 @@ fn broadcast_state_on_change(
     }
 }
 
-/// Broadcast snake game stats events to all clients
-fn broadcast_snake_events(
-    mut server: ResMut<QuinnetServer>,
-    mut stats_events: MessageReader<BroadcastSnakeStatsEvent>,
-) {
-    let Some(endpoint) = server.get_endpoint_mut() else {
-        return;
-    };
 
-    for event in stats_events.read() {
-        let message = NetworkMessage::SnakeStatsUpdate {
-            session_id: event.session_id,
-            score: event.score,
-            length: event.length,
-            game_over: event.game_over,
-        };
-        if let Ok(payload) = message.to_bytes() {
-            if let Err(e) = endpoint.broadcast_payload(payload) {
-                error!("Failed to broadcast snake stats update: {:?}", e);
-            }
-        }
-    }
-}
-
-/// Convert arrow-key keyboard events into snake direction changes
-fn handle_snake_direction_input(
-    mut keyboard_events: MessageReader<KeyboardInputEvent>,
-    mut direction_events: MessageWriter<ChangeSnakeDirectionEvent>,
-    snake_state: Option<Res<SnakeState>>,
-    game_sessions: Query<&GameSession>,
-) {
-    // Only process if there's an active snake game
-    let has_snake_session = game_sessions.iter().any(|s| s.game_id == SNAKE_GAME_ID);
-    if !has_snake_session || snake_state.is_none() {
-        return;
-    }
-
-    for event in keyboard_events.read() {
-        if !event.pressed {
-            continue;
-        }
-        let direction = match event.key.as_str() {
-            "ArrowUp" => Some(SnakeDirection::Up),
-            "ArrowDown" => Some(SnakeDirection::Down),
-            "ArrowLeft" => Some(SnakeDirection::Left),
-            "ArrowRight" => Some(SnakeDirection::Right),
-            _ => None,
-        };
-        if let Some(dir) = direction {
-            direction_events.write(ChangeSnakeDirectionEvent { direction: dir });
-        }
-    }
-}
 
 /// Handle server lifecycle messages (Shutdown)
 fn handle_lifecycle_messages(
