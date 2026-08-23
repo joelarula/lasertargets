@@ -102,6 +102,16 @@ pub enum NetworkMessage {
         payload_json: String,
     },
 
+    // Generic Receiver Mode (Terminal streams frames directly to Server DAC)
+    SetReceiverMode {
+        active: bool,
+        source_name: Option<String>,
+    },
+    ReceiverModeUpdate {
+        active: bool,
+        source_name: Option<String>,
+    },
+
     // Lifecycle
     /// Broadcast server instance ID on connection/restart
     ServerInfo {

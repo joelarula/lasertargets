@@ -22,6 +22,7 @@ use crate::plugins::network::NetworkPlugin;
 use crate::plugins::path::PathPlugin;
 use crate::plugins::keyboard::KeyboardPlugin;
 use crate::plugins::mouse::MousePlugin;
+use crate::plugins::editor::ShapeEditorPlugin;
 use hunter::common::HunterGamePlugin;
 use snake::common::SnakeGamePlugin;
 use snake::terminal::SnakeTerminalPlugin;
@@ -61,6 +62,7 @@ fn main() {
     .add_plugins(ProjectorPlugin)
     .add_plugins(ToolbarPlugin)
     .add_plugins(SettingsPlugin)
+    .add_plugins(ShapeEditorPlugin)
     .add_plugins(PathPlugin)
     .add_plugins(KeyboardPlugin)
     .add_plugins(MousePlugin)

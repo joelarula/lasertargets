@@ -92,13 +92,8 @@ This document details the core architectural rules, USB hardware constraints, Be
   * **Button X (West)**: Cycle Game Menu Switcher (Hunter $\rightarrow$ Snake $\rightarrow$ Menu).
   * **Button Start**: Laser Power Toggle On / Off.
   * **Button Select**: Server Diagnostic Report.
-* **Minigame-Specific Gamepad Systems (`minigames/*/src/server.rs`)**:
-  * **Hunter (`handle_hunter_gamepad_inputs`)**:
-    * **Button A (South)**: Cycle target selection reticle mode.
-    * **Button B (East) / RT**: Release selected target shape into scene / Shoot at cursor position.
-    * **LB / RB**: Decrease / Increase target radius.
-  * **Snake (`handle_snake_gamepad_inputs` in `minigames/snake/src/server.rs`)**:
-    * **Left Thumbstick / DPad**: Change snake direction.
+* **Minigame-Specific Gamepad Systems (`minigames/<game_name>/src/server.rs`)**:
+  * **Rule**: Game-specific input mappings, game rules, scoring logic, and state transitions MUST be documented exclusively within each minigame's own module file: `minigames/<game_name>/INSTRUCTIONS.md` (e.g. [`minigames/hunter/INSTRUCTIONS.md`](file:///c:/Users/joela/dev/lasertargets/minigames/hunter/INSTRUCTIONS.md), [`minigames/snake/INSTRUCTIONS.md`](file:///c:/Users/joela/dev/lasertargets/minigames/snake/INSTRUCTIONS.md)).
 * **Rule**: NEVER register minigame-specific button handlers (such as Hunter target spawning or Snake direction handling) in `server/src/plugins/gamepad.rs` to prevent duplicate event execution and button collision bugs.
 
 ---
@@ -110,10 +105,11 @@ This document details the core architectural rules, USB hardware constraints, Be
 * **Rule**: Keep state resets strictly inside discrete connection event handlers (`TerminalState::Connected` / `TerminalState::Disconnected`).
 * **Rule**: Always close existing connection handles via `client.close_connection(id)` before spawning a new connection attempt.
 
-### 4.2 Combined Abstract Minimal Path Streaming
-* Visual paths rendered on client terminals are streamed via a single aggregated message (`BroadcastScenePaths(Vec<AbstractPathData>)`) sent every tick.
-* **Rule**: Abstract paths contain pure geometric shapes and RGB colors without DAC laser processing (no dwell points, no blanking steps).
-* **Rule**: Despawned scene entities (calibration overlays, popped targets, snake body segments) are automatically omitted from `BroadcastScenePaths`, guaranteeing zero entity tracking desync and zero memory leaks without needing UUID lookups.
+### 4.2 VectorFrame Temporal Snapshot Architecture
+* Visual paths rendered on client terminals and streamed to the USB DAC are unified as an atomic **`VectorFrame`** snapshot every engine tick.
+* **Network Stream (`BroadcastScenePaths`)**: Transmits `BroadcastScenePaths { frame: VectorFrame }` containing `frame_id` sequence index and abstract polylines (`Vec<AbstractPathData>`). Terminals render pure geometric shapes at native monitor refresh rates with zero galvo processing overhead.
+* **Projector DAC Stream**: Transforms the same `VectorFrame` into 2D projector bounds ($[-1.0, 1.0]$) and runs `laserlogic::optimize` (TSP segment sorting, angle-proportional corner dwells, laser-off blanking jump step interpolation, and 1024-point frame padding) before streaming to the USB Helios Laser DAC.
+* **Rule**: Despawned scene entities (calibration overlays, popped targets, snake body segments) are automatically omitted from each tick's `VectorFrame`, guaranteeing zero entity tracking desync and zero memory leaks.
 
 ---
 
@@ -132,18 +128,51 @@ This document details the core architectural rules, USB hardware constraints, Be
 * **`gamepad/` (`gamepad::*`)**: Hardware controller driver crate.
   * **Role**: Polls raw controller inputs via `gilrs` and exposes thread-safe `GamepadState` and `ServerGamepadCursor` resources.
   * **Rule**: Contains zero game rules, UI logic, or application state transitions.
-* **`laserlogic/` (`laserlogic::*`)**: Pure vector laser math & optimization crate.
-  * **Role**: TSP path sorting, dwell point calculation, blanking jump insertion, and vector text font rendering.
-  * **Rule**: Pure algorithmic math library. Zero Bevy ECS dependencies, zero USB hardware calls, zero network protocols.
+* **`laserlogic/` (`laserlogic::*`)**: Vector laser math, optimization & DAC driver crate.
+  * **Role**: TSP path sorting, corner dwell calculation, blanking jump insertion, vector text rendering, AND shared Helios USB DAC controller driver (`laserlogic::helios`).
+  * **Skill**: Detailed polyline preparation, corner dwell formulas, and scanner optimization guides are documented in the [**`laser-path-prep` Skill**](file:///.agents/skills/laser-path-prep/SKILL.md).
+  * **Rule**: Holds all DAC FFI logic (`libloading`), status code handling, stepped USB backoffs, and frame point padding. Zero Bevy ECS dependencies, zero network protocols.
+* **`shape-editor/` (`shape-editor::*`)**: Interactive Local Shape Studio & Laser Test Tool.
+  * **Role**: Pure `eframe` + `egui` Painter canvas application for interactive 2D shape editing and live USB DAC preview.
+  * **Rule**: Runs locally on Windows PC with physical USB Helios Laser DAC plugged in. Watches `assets/shapes/templates/active_shape.json` for live Copilot chat edits. Uses `laserlogic::optimize` and `laserlogic::helios` for real-time telemetry stats (Input Vertices vs. Optimized DAC Points).
 
 ---
 
-## 6. Development & Deployment Summary
+## 6. Build Pipeline & Automation Scripts
+
+### 6.1 Local PC Shape Development & Laser Testing
+* **Script**: `.\scripts\run-shape-editor.ps1`
+* **Purpose**: Launches `cargo run --package shape-editor`.
+* **Workflow**:
+  1. Open `shape-editor` on local Windows PC with USB Helios DAC attached.
+  2. Drag vertices on screen or request shape modifications in Copilot chat.
+  3. Copilot edits [`assets/shapes/templates/active_shape.json`](file:///c:/Users/joela/dev/lasertargets/assets/shapes/templates/active_shape.json).
+  4. `shape-editor` disk watcher detects file modification instantly, reloads template, runs `laserlogic::optimize`, and streams optimized points live to USB DAC.
+
+### 6.2 Remote Docker ARM64 Cross-Compilation (Pi 4)
+* **Script**: `.\scripts\docker-build-rpi4-remote.ps1 -RemoteHost <user@host>`
+* **Purpose**: Compiles Linux ARM64 binaries (`aarch64-unknown-linux-gnu`) inside a Docker container on a fast local workstation.
+* **Workflow**: Prevents slow compilation and thermal throttling on physical Raspberry Pi hardware.
+
+### 6.3 Deployment & Remote Execution
+* **Script**: `.\scripts\deploy-pi.ps1 -TargetHost <user@host>`
+  * Deploys compiled `server` binary, `libHeliosLaserDAC.so`, assets, and templates via SSH/SCP to `/opt/lasertargets/`.
+* **Script**: `.\scripts\run-server-pi.ps1 -TargetHost <user@host>`
+  * Executes the host server interactively on Pi with live systemd journal log streaming.
+* **Script**: `.\scripts\optimize-pi-system.ps1`
+  * Tunes Raspberry Pi 4 OS settings: sets CPU governor to `performance`, configures USB buffer depth, and grants `CAP_SYS_NICE` for real-time laser thread scheduling.
+
+---
+
+## 7. Command Reference Summary
 
 | Action | Command |
 | :--- | :--- |
-| **Check Compilation** | `cargo check --package server --package terminal` |
-| **Remote Docker Build (Pi 4)** | `.\scripts\docker-build-rpi4-remote.ps1 -RemoteHost joel@192.168.1.110` |
-| **Deploy to Pi** | `.\scripts\deploy-pi.ps1 -TargetHost lasertargets@lasertargets.local` |
-| **Run Interactive Server** | `.\scripts\run-server-pi.ps1 -TargetHost lasertargets@lasertargets.local` |
-| **Run Shape Studio (PC)** | `cargo run --package shape-editor` (or `.\scripts\run-shape-editor.ps1`) |
+| **Check Workspace Compilation** | `cargo check --workspace` |
+| **Check Core Server & Terminal** | `cargo check --package server --package terminal` |
+| **Run Local Shape Studio (PC)** | `.\scripts\run-shape-editor.ps1` (or `cargo run --package shape-editor`) |
+| **Remote Docker Build (ARM64)** | `.\scripts\docker-build-rpi4-remote.ps1 -RemoteHost joel@192.168.1.110` |
+| **Deploy Assets & Binaries to Pi** | `.\scripts\deploy-pi.ps1 -TargetHost lasertargets@lasertargets.local` |
+| **Run Interactive Server on Pi** | `.\scripts\run-server-pi.ps1 -TargetHost lasertargets@lasertargets.local` |
+| **Optimize Pi OS Performance** | `.\scripts\optimize-pi-system.ps1` |
+

@@ -316,7 +316,9 @@ fn receive_server_messages(
                                 }
                             }
                             NetworkMessage::BroadcastScenePaths(paths) => {
-                                broadcast_scene_paths_writer.write(BroadcastScenePaths { paths });
+                                broadcast_scene_paths_writer.write(BroadcastScenePaths {
+                                    frame: common::path::VectorFrame::new(0, paths),
+                                });
                             }
                             NetworkMessage::GameDataPayload { game_id, session_id, event_tag, payload_json } => {
                                 if event_tag == "hunter_stats" {

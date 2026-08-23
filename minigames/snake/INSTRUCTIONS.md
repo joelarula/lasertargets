@@ -15,6 +15,11 @@ You are working on the Snake minigame for LaserTargets. This is a multiplayer sn
 - **Scoring**: Snakes earn points by collecting snaks
 - **Collision**: Snakes can collide with boundaries and each other
 
+## Gamepad Input Mappings (`handle_snake_gamepad_inputs` in server.rs)
+
+* **Left Thumbstick / DPad**: Change snake direction (Up, Down, Left, Right).
+* **Rule**: Gamepad inputs are handled exclusively inside `minigames/snake/src/server.rs`.
+
 ## Module Structure
 
 Following the standard minigame pattern (see [.github/instructions/minigames.instructions.md](../../.github/instructions/minigames.instructions.md)):

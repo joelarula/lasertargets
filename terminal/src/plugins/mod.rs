@@ -13,3 +13,4 @@ pub mod path;
 pub mod keyboard;
 pub mod mouse;
 pub mod game;
+pub mod editor;

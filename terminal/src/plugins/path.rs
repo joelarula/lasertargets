@@ -66,7 +66,7 @@ fn handle_broadcast_scene_paths(
     mut scene_paths: ResMut<TerminalScenePaths>,
 ) {
     for event in events.read() {
-        scene_paths.0 = event.paths.clone();
+        scene_paths.0 = event.frame.paths.clone();
     }
 }
 

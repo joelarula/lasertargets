@@ -2132,6 +2132,7 @@ version = "0.1.0"
 dependencies = [
  "bevy",
  "bincode",
+ "laserlogic",
  "lyon_geom",
  "lyon_path",
  "lyon_tessellation",
@@ -3892,6 +3893,7 @@ dependencies = [
  "libloading",
  "log",
  "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -6029,6 +6031,7 @@ dependencies = [
  "hunter",
  "log",
  "pretty_env_logger",
+ "serde",
  "serde_json",
  "snake",
 ]

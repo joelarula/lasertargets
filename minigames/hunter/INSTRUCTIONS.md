@@ -197,6 +197,13 @@ Generated automatically in `on_hunter_game_finish` system (OnExit(HunterGameStat
 
 ## Target Interaction
 
+## Gamepad Input Mappings (`handle_hunter_gamepad_inputs` in server.rs)
+
+* **Button A (South)**: Cycle target selection reticle mode.
+* **Button B (East) / RT**: Release selected target shape into scene / Shoot at cursor position.
+* **LB / RB**: Decrease / Increase target radius.
+* **Rule**: Gamepad inputs are handled exclusively inside `minigames/hunter/src/server.rs`.
+
 ### Spawning Targets (✅ IMPLEMENTED)
 **Terminal** (`handle_target_drag` in terminal.rs):
 1. User clicks and holds toolbar button ("spawn_basic_target")

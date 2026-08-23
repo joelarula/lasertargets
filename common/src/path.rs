@@ -380,7 +380,7 @@ impl PathSegmentBuilder {
 }
 
 /// Universal path representation containing multiple segments
-#[derive(Component, Clone, Debug, Serialize, Deserialize)]
+#[derive(Component, Clone, Debug, Serialize, Deserialize, Default)]
 pub struct UniversalPath {
     pub segments: Vec<PathSegment>,
 }
@@ -816,8 +816,154 @@ pub struct AbstractPathData {
     pub position: Vec3,
 }
 
+/// A temporal snapshot frame containing all active scene vector polylines at a single tick.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct VectorFrame {
+    /// Frame sequence index / timestamp counter
+    pub frame_id: u64,
+    /// Collection of all active polylines and their world positions in the frame
+    pub paths: Vec<AbstractPathData>,
+}
+
+impl VectorFrame {
+    pub fn new(frame_id: u64, paths: Vec<AbstractPathData>) -> Self {
+        Self { frame_id, paths }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.paths.is_empty()
+    }
+
+    pub fn len(&self) -> usize {
+        self.paths.len()
+    }
+}
+
 /// Single aggregated message broadcasting all active abstract scene paths every tick
 #[derive(Message, Debug, Clone, Serialize, Deserialize)]
 pub struct BroadcastScenePaths {
-    pub paths: Vec<AbstractPathData>,
+    pub frame: VectorFrame,
+}
+
+/// Easing functions for keyframe vector interpolation
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum EasingFunction {
+    #[default]
+    Linear,
+    EaseInQuad,
+    EaseOutQuad,
+    EaseInOutQuad,
+}
+
+impl EasingFunction {
+    pub fn apply(&self, t: f32) -> f32 {
+        let t = t.clamp(0.0, 1.0);
+        match self {
+            Self::Linear => t,
+            Self::EaseInQuad => t * t,
+            Self::EaseOutQuad => t * (2.0 - t),
+            Self::EaseInOutQuad => {
+                if t < 0.5 {
+                    2.0 * t * t
+                } else {
+                    -1.0 + (4.0 - 2.0 * t) * t
+                }
+            }
+        }
+    }
+}
+
+/// Loop behavior for keyframe path animations
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum LoopMode {
+    #[default]
+    Once,
+    PingPong,
+    Repeat,
+}
+
+/// Component for animating a UniversalPath between two keyframes over time
+#[derive(Component, Debug, Clone, Serialize, Deserialize)]
+pub struct PathAnimation {
+    pub keyframe_a: UniversalPath,
+    pub keyframe_b: UniversalPath,
+    pub duration_secs: f32,
+    pub elapsed_secs: f32,
+    pub easing: EasingFunction,
+    pub loop_mode: LoopMode,
+}
+
+impl PathAnimation {
+    pub fn new(keyframe_a: UniversalPath, keyframe_b: UniversalPath, duration_secs: f32) -> Self {
+        Self {
+            keyframe_a,
+            keyframe_b,
+            duration_secs: duration_secs.max(0.001),
+            elapsed_secs: 0.0,
+            easing: EasingFunction::Linear,
+            loop_mode: LoopMode::Once,
+        }
+    }
+}
+
+/// Signal sources that drive path parameter modulation
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub enum ModulatorSource {
+    /// Time-based Sine Wave Low-Frequency Oscillator (LFO)
+    LfoSine { frequency_hz: f32 },
+    /// Time-based Triangle Wave LFO
+    LfoTriangle { frequency_hz: f32 },
+    /// Gamepad analog axis (e.g. Right Trigger pressure 0.0 - 1.0)
+    GamepadTrigger { value: f32 },
+    /// Target entity health / charge ratio (0.0 - 1.0)
+    Ratio { value: f32 },
+    /// Manual signal parameter input
+    Manual(f32),
+}
+
+impl Default for ModulatorSource {
+    fn default() -> Self {
+        Self::LfoSine { frequency_hz: 1.0 }
+    }
+}
+
+impl ModulatorSource {
+    pub fn sample(&self, elapsed_secs: f32) -> f32 {
+        match self {
+            Self::LfoSine { frequency_hz } => {
+                let radians = elapsed_secs * frequency_hz * std::f32::consts::TAU;
+                (radians.sin() + 1.0) * 0.5
+            }
+            Self::LfoTriangle { frequency_hz } => {
+                let cycle = elapsed_secs * frequency_hz;
+                let rem = cycle.fract();
+                if rem < 0.5 { rem * 2.0 } else { (1.0 - rem) * 2.0 }
+            }
+            Self::GamepadTrigger { value } => value.clamp(0.0, 1.0),
+            Self::Ratio { value } => value.clamp(0.0, 1.0),
+            Self::Manual(val) => val.clamp(0.0, 1.0),
+        }
+    }
+}
+
+/// Modulator component connecting a signal source through an EasingFunction to drive UniversalPath morphing
+#[derive(Component, Debug, Clone, Serialize, Deserialize, Default)]
+pub struct PathModulator {
+    pub source: ModulatorSource,
+    pub easing: EasingFunction,
+    pub keyframe_a: UniversalPath,
+    pub keyframe_b: UniversalPath,
+    pub current_t: f32,
+}
+
+impl PathModulator {
+    pub fn new(keyframe_a: UniversalPath, keyframe_b: UniversalPath, source: ModulatorSource, easing: EasingFunction) -> Self {
+        Self {
+            source,
+            easing,
+            keyframe_a,
+            keyframe_b,
+            current_t: 0.0,
+        }
+    }
 }

@@ -2,7 +2,10 @@
 
 Augmented reality laser game platform.
 
-> 📖 **Developer & Stability Guidelines**: See [INSTRUCTIONS.md](INSTRUCTIONS.md) for USB DAC hardware rules, Bevy ECS conventions, and network state invariants.
+> 📖 **Developer & Stability Guidelines**: See [INSTRUCTIONS.md](INSTRUCTIONS.md) for USB DAC hardware rules, Bevy ECS conventions, and network state invariants.  
+> 🔌 **Hardware Wiring & Pinouts**: See [docs/ILDA_PINOUT.md](docs/ILDA_PINOUT.md) for DB25 to RJ45 (Cat5/Cat6) ILDA adapter pinout mapping.
+
+![Official ILDA DB25 Pinout](docs/images/ilda_pinout_official.png)
 
 ## Local Development Build
 

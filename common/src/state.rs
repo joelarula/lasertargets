@@ -8,6 +8,7 @@ pub enum ServerState {
     #[default]
     Menu,
     InGame,
+    Receiver,
 }
 
 #[derive(SubStates,Debug, Clone, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]

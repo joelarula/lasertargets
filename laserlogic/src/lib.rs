@@ -3,6 +3,8 @@ pub mod optimize;
 pub mod simplify;
 pub mod text_optimize;
 pub mod helios;
+pub mod morph;
+pub mod show;
 
 use serde::{Deserialize, Serialize};
 

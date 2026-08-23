@@ -97,7 +97,7 @@ fn broadcast_path_events(
     };
 
     for event in path_events.read() {
-        let message = NetworkMessage::BroadcastScenePaths(event.paths.clone());
+        let message = NetworkMessage::BroadcastScenePaths(event.frame.paths.clone());
         if let Ok(payload) = message.to_bytes() {
             if let Err(e) = endpoint.broadcast_payload(payload) {
                 error!("Failed to broadcast BroadcastScenePaths: {}", e);
@@ -174,6 +174,7 @@ fn handle_config_messages(
     current_game_state: Res<State<GameState>>,
     current_calibration_state: Res<State<CalibrationState>>,
     mut next_calibration_state: ResMut<NextState<CalibrationState>>,
+    mut next_server_state: ResMut<NextState<ServerState>>,
 ) {
     let Some(endpoint) = server.get_endpoint_mut() else {
         return;
@@ -181,6 +182,17 @@ fn handle_config_messages(
     
     for msg in messages.read() {
         match &msg.message {
+            NetworkMessage::SetReceiverMode { active, source_name } => {
+                let target_state = if *active { ServerState::Receiver } else { ServerState::Menu };
+                if current_state.get() != &target_state {
+                    next_server_state.set(target_state.clone());
+                    info!("Server state changed to {:?} (Receiver Mode: {}) by client {}", target_state, active, msg.client_id);
+                }
+                let reply = NetworkMessage::ReceiverModeUpdate { active: *active, source_name: source_name.clone() };
+                if let Ok(payload) = reply.to_bytes() {
+                    let _ = endpoint.broadcast_payload(payload);
+                }
+            }
             NetworkMessage::Pong { timestamp } => {
                 info!("Received pong from client {} at timestamp {}", msg.client_id, timestamp);
             }
