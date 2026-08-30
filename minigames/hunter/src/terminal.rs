@@ -2,6 +2,7 @@ use bevy::{app::{App, Plugin, Update}, ecs::{component::Component, entity::Entit
 use bevy_quinnet::client::QuinnetClient;
 use common::{game::{GameSessionCreated, GameSessionUpdate}, network::NetworkMessage, path::UniversalPath, scene::{SceneData, SceneSetup}, state::{GameState, ServerState, TerminalState}, toolbar::{Docking, ItemState, ToolbarButton, ToolbarItem}};
 use crate::common::{GAME_ID, HunterGameState, generate_game_report};
+use crate::events::SpawnHunterTargetEvent;
 use crate::model::{HunterGameStats};
 use bevy::prelude::*;
 
@@ -201,7 +202,7 @@ fn handle_balloon_button_click(
             if *terminal_state.get() == TerminalState::Connected {
                 if let Some(connection) = client.get_connection_mut() {
                     let target = common::target::HunterTarget::Baloon(0.2, Color::srgb(1.0, 0.0, 0.0));
-                    let payload_json = serde_json::to_string(&crate::server::SpawnHunterTargetEvent { target, position: Vec3::ZERO }).unwrap_or_default();
+                    let payload_json = serde_json::to_string(&SpawnHunterTargetEvent { target, position: Vec3::ZERO }).unwrap_or_default();
                     let message = NetworkMessage::GameDataPayload {
                         game_id: GAME_ID,
                         session_id: bevy::asset::uuid::Uuid::nil(),
@@ -311,7 +312,7 @@ fn handle_target_drag(
                 if let Some(connection) = client.get_connection_mut() {
                     // Create a basic target with size 0.25 world units
                     let target = common::target::HunterTarget::Basic(0.25, Color::srgb(1.0, 1.0, 1.0));
-                    let payload_json = serde_json::to_string(&crate::server::SpawnHunterTargetEvent { target, position: world_pos }).unwrap_or_default();
+                    let payload_json = serde_json::to_string(&SpawnHunterTargetEvent { target, position: world_pos }).unwrap_or_default();
                     let message = NetworkMessage::GameDataPayload {
                         game_id: GAME_ID,
                         session_id: bevy::asset::uuid::Uuid::nil(),
