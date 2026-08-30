@@ -3890,6 +3890,7 @@ dependencies = [
 name = "laserlogic"
 version = "0.1.0"
 dependencies = [
+ "crossterm",
  "libloading",
  "log",
  "serde",

@@ -8,3 +8,8 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 libloading = { workspace = true }
 log = { workspace = true }
+crossterm = "0.28"
+
+[[bin]]
+name = "dac-test"
+path = "src/bin/dac_test.rs"

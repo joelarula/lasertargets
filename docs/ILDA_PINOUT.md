@@ -29,79 +29,89 @@ This document provides the hardware pinout mapping for connecting an **ILDA DB25
 
 ---
 
-## 2. DB25 to RJ45 (Cat5e / Cat6) Standard T568B Adapter Mapping
+## 2. DB25 to RJ45 Breakout Wiring Diagram
 
-Using twisted-pair network cable for ILDA reduces crosstalk and noise interference over long cable runs (up to 50 meters).
+Your cable sequence: **Orange-White, Orange, Green-White, Blue, Blue-White, Green, Brown-White, Brown** (Pins 1 to 8 in order looking at top of plug):
 
 ```
-          DB25 Male Pinout                    RJ45 Plug (T568B Standard)
+         DB25 Male Pinout                    RJ45 Plug Pinout
   +-------------------------------+         +----------------------------+
   | Pin  1: Galvo X+              | ------> | Pin 1: Orange-White        |
   | Pin 14: Galvo X-              | ------> | Pin 2: Orange              |
   | Pin  2: Galvo Y+              | ------> | Pin 3: Green-White         |
-  | Pin 15: Galvo Y-              | ------> | Pin 6: Green               |
-  | Pin  5: Red Laser (+5V)       | ------> | Pin 4: Blue                |
-  | Pin  6: Green Laser (+5V)     | ------> | Pin 5: Blue-White          |
-  | Pin  7: Blue Laser (+5V)      | ------> | Pin 7: Brown-White         |
-  | Pin 25 & Interlock (GND/Loop) | ------> | Pin 8: Brown               |
-  +-------------------------------+         +----------------------------+
-```
-
----
-
-## 2.1 Standard T568B Adapter Mapping
-
-| RJ45 Pin | Wire Color (T568B) | DB25 Pin | Signal Function | Pair # |
-| :--- | :--- | :--- | :--- | :--- |
-| **Pin 1** | 🟧 White / Orange | **Pin 1** | Galvo X+ | Pair 2 (X Axis Differential) |
-| **Pin 2** | 🟧 Solid Orange | **Pin 14** | Galvo X- | Pair 2 (X Axis Differential) |
-| **Pin 3** | 🟩 White / Green | **Pin 2** | Galvo Y+ | Pair 3 (Y Axis Differential) |
-| **Pin 4** | 🟦 Solid Blue | **Pin 5** | Red Laser Modulation (+5V) | Pair 1 (Colors) |
-| **Pin 5** | 🟦 White / Blue | **Pin 6** | Green Laser Modulation (+5V) | Pair 1 (Colors) |
-| **Pin 6** | 🟩 Solid Green | **Pin 15** | Galvo Y- | Pair 3 (Y Axis Differential) |
-| **Pin 7** | 🟫 White / Brown | **Pin 7** | Blue Laser Modulation (+5V) | Pair 4 (Color & Ground) |
-| **Pin 8** | 🟫 Solid Brown | **Pin 25 & 4-17** | Common GND & Shutter Interlock Loop | Pair 4 (Ground) |
-
----
-
-## 2.2 Your Cable: Sequential Straight-Pair RJ45 Pinout
-
-If your RJ45 plug has the exact wire sequence: **Orange-White, Orange, Blue-White, Blue, Green-White, Green, Brown-White, Brown** (pins 1 to 8 in order):
-
-```
-         DB25 Male Pinout                 Sequential RJ45 Plug (Your Cable)
-  +-------------------------------+         +----------------------------+
-  | Pin  1: Galvo X+              | ------> | Pin 1: Orange-White        |
-  | Pin 14: Galvo X-              | ------> | Pin 2: Orange              |
-  | Pin  2: Galvo Y+              | ------> | Pin 3: Blue-White          |
-  | Pin 15: Galvo Y-              | ------> | Pin 4: Blue                |
-  | Pin  5: Red Laser (+5V)       | ------> | Pin 5: Green-White         |
+  | Pin 15: Galvo Y-              | ------> | Pin 4: Blue (Galvo Y-)     |
+  | Pin  5: Red Laser (+5V)       | ------> | Pin 5: Blue-White          |
   | Pin  6: Green Laser (+5V)     | ------> | Pin 6: Green               |
   | Pin  7: Blue Laser (+5V)      | ------> | Pin 7: Brown-White         |
   | Pin 25 & Interlock (GND/Loop) | ------> | Pin 8: Brown               |
   +-------------------------------+         +----------------------------+
 ```
 
-### Sequential Wire Mapping Table
+---
 
-| RJ45 Pin | Wire Color on Your Cable | DB25 Pin | Signal Function | Pair # |
+## 2.1 DB25 to RJ45 Master Soldering Table
+
+| RJ45 Pin # | Wire Color | DB25 Solder Pin # | Signal Function | Functional Group & Notes |
 | :--- | :--- | :--- | :--- | :--- |
-| **Pin 1** | 🟧 White / Orange | **Pin 1** | Galvo X+ (Positive X Axis) | Pair 1 (Galvo X Differential) |
-| **Pin 2** | 🟧 Solid Orange | **Pin 14** | Galvo X- (Negative X Axis) | Pair 1 (Galvo X Differential) |
-| **Pin 3** | 🟦 White / Blue | **Pin 2** | Galvo Y+ (Positive Y Axis) | Pair 2 (Galvo Y Differential) |
-| **Pin 4** | 🟦 Solid Blue | **Pin 15** | Galvo Y- (Negative Y Axis) | Pair 2 (Galvo Y Differential) |
-| **Pin 5** | 🟩 White / Green | **Pin 5** | Red Laser Modulation (+5V) | Pair 3 (Laser Modulation) |
-| **Pin 6** | 🟩 Solid Green | **Pin 6** | Green Laser Modulation (+5V) | Pair 3 (Laser Modulation) |
-| **Pin 7** | 🟫 White / Brown | **Pin 7** | Blue Laser Modulation (+5V) | Pair 4 (Color & Ground) |
-| **Pin 8** | 🟫 Solid Brown | **Pin 25 & 4-17** | Common GND & Shutter Interlock Loop | Pair 4 (Ground / Safety) |
+| **Pin 1** | 🟧 **Orange-White** | **Pin 1** | **Galvo X+** (Positive X) | ↕️ Galvo Motion Pair 1 |
+| **Pin 2** | 🟧 **Solid Orange** | **Pin 14** | **Galvo X-** (Negative X) | ↕️ Galvo Motion Pair 1 *(Fixes Squeezed Width)* |
+| **Pin 3** | 🟩 **Green-White** | **Pin 2** | **Galvo Y+** (Positive Y) | ↕️ Galvo Motion Pair 2 |
+| **Pin 4** | 🟦 **Solid Blue** | **Pin 15** | **Galvo Y-** (Negative Y) | ↕️ Galvo Motion Pair 2 *(Galvo Y Differential Return)* |
+| **Pin 5** | 🟦 **Blue-White** | **Pin 5** | **Red Laser** (+5V) | 🔴 Laser Color Diode Modulation |
+| **Pin 6** | 🟩 **Solid Green** | **Pin 6** | **Green Laser** (+5V) | 🟢 Laser Color Diode Modulation |
+| **Pin 7** | 🟫 **Brown-White** | **Pin 7** | **Blue Laser** (+5V) | 🔵 Laser Color Diode Modulation *(Fixes Purple Tint)* |
+| **Pin 8** | 🟫 **Solid Brown** | **Pin 25 & 4-17** | **Common GND & Interlock** | ⚡ Signal Ground & Safety Loop (Short Pin 4 to 17) |
 
 ---
 
-## 3. Hardware Notes & Interlock Jumper
+## 2.2 The Logical "4 - 3 - 1" Pin Grouping Rule
 
-1. **Safety Interlock Loop**:
-   * Pins **4** and **17** on the DB25 connector **must be shorted together** (or wired through an emergency E-Stop kill switch). If Pins 4 and 17 are disconnected, most ILDA projectors will activate their internal mechanical safety shutter and block all laser beams.
-2. **Grounding**:
-   * Ensure DB25 Pin 25 is tied to RJ45 Pin 8 and cable shielding to prevent ground loops and galvo jitter.
-3. **Differential Signals**:
-   * Keeping $(X+, X-)$ and $(Y+, Y-)$ on dedicated twisted pairs (Orange/White-Orange & Green/White-Green) ensures maximum noise immunity when driving high-speed galvo scanners up to 30,000 pps.
+```text
+  +-------------------------------------------------------------------------+
+  |  RJ45 Pins 1..4  [ GALVOS ]    ==>  Pin 1: X+,  Pin 2: X-,  Pin 3: Y+,  Pin 4: Y-
+  |  RJ45 Pins 5..7  [ COLORS ]    ==>  Pin 5: Red, Pin 6: Green, Pin 7: Blue
+  |  RJ45 Pin  8     [ MAIN GND ]  ==>  Pin 8: Common Signal Ground & Interlock
+  +-------------------------------------------------------------------------+
+```
+
+* **Pins 1..4 (Galvo Motion)**:
+  * Pin 1 (Orange-White) $\rightarrow$ DB25 Pin 1 (X+)
+  * Pin 2 (Solid Orange) $\rightarrow$ DB25 Pin 14 (X-)
+  * Pin 3 (Green-White) $\rightarrow$ DB25 Pin 2 (Y+)
+  * Pin 4 (Solid Blue) $\rightarrow$ DB25 Pin 15 (Y-)
+* **Pins 5..7 (Laser Colors)**:
+  * Pin 5 (Blue-White) $\rightarrow$ DB25 Pin 5 (Red)
+  * Pin 6 (Solid Green) $\rightarrow$ DB25 Pin 6 (Green)
+  * Pin 7 (Brown-White) $\rightarrow$ DB25 Pin 7 (Blue)
+* **Pin 8 (Ground & Safety)**:
+  * Pin 8 (Solid Brown) $\rightarrow$ DB25 Pin 25 & Interlock (Jumper Pin 4 to 17)
+
+---
+
+## 🛠️ 3. Troubleshooting & Symptoms Guide
+
+> [!TIP]
+> ### Symptom 1: Horizontally Squeezed / Narrow Projection
+> * **Cause**: Missing or shorted **DB25 Pin 14 ($X-$)** line (RJ45 Pin 2 Orange). Without $X-$, Galvo $X$ voltage drops in half.
+> * **Fix**: Resolder DB25 Pin 14 and verify 0 ohms continuity to RJ45 Pin 2.
+>
+> ### Symptom 2: Blue Laser Looks Purple
+> * **Cause**: Wire swap between $X$-axis or Red diode modulation line (DB25 Pin 5) and Blue line (DB25 Pin 7).
+> * **Fix**: Ensure **RJ45 Pin 5 (Blue-White)** connects to **DB25 Pin 5 (Red)** and **RJ45 Pin 7 (Brown-White)** connects to **DB25 Pin 7 (Blue)**.
+>
+> ### Symptom 3: Laser Output Fails / Mechanical Shutter Closed
+> * **Cause**: Open Safety Interlock loop.
+> * **Fix**: Solder a small jumper wire between **DB25 Pin 4** and **DB25 Pin 17**.
+
+---
+
+## 4. Hardware Safety & Assembly Instructions
+
+1. **Keep Untwisted Wire Leads Short**:
+   * Strip only **$1.5\text{ cm}$** of the outer CAT cable jacket and **$2\text{ mm}$** of insulation from wire tips. Keep wire leads inside the DB25 hood as short as possible to prevent noise pickup.
+2. **Insulate Every Solder Cup**:
+   * Use **$1.5\text{ mm}$ heat-shrink tubing** on all DB25 solder cups to prevent bare copper from touching adjacent pins.
+3. **Safety Interlock Loop**:
+   * Pins **4** and **17** on the DB25 connector **must be shorted together** (or wired to an emergency E-Stop kill switch).
+4. **Earth Grounding**:
+   * Connect **DB25 Pin 25** to Common Signal Ground and ensure your laser projector chassis is connected to a 3-prong Earth Ground wall outlet to eliminate static discharge.

@@ -1,4 +1,9 @@
+pub mod components;
+pub mod events;
+pub mod resources;
+pub mod types;
 pub mod model;
 pub mod common;
+pub mod systems;
 pub mod server;
 pub mod terminal;

@@ -126,6 +126,74 @@ impl ShapeEditorState {
         }
         false
     }
+
+    pub fn load_red_test(&mut self) {
+        self.shape = EditableShape {
+            name: "Red Diode Test".to_string(),
+            description: "Pure Red Modulation Test".to_string(),
+            line_style: "Continuous".to_string(),
+            points: vec![
+                EditablePoint { x: -0.7, y: 0.7, r: 255, g: 0, b: 0, dwell: 4 },
+                EditablePoint { x: 0.7, y: 0.7, r: 255, g: 0, b: 0, dwell: 4 },
+                EditablePoint { x: 0.7, y: -0.7, r: 255, g: 0, b: 0, dwell: 4 },
+                EditablePoint { x: -0.7, y: -0.7, r: 255, g: 0, b: 0, dwell: 4 },
+                EditablePoint { x: -0.7, y: 0.7, r: 255, g: 0, b: 0, dwell: 4 },
+            ],
+        };
+        self.status_message = "🔴 Red Diode Test Active".to_string();
+    }
+
+    pub fn load_green_test(&mut self) {
+        self.shape = EditableShape {
+            name: "Green Diode Test".to_string(),
+            description: "Pure Green Modulation Test".to_string(),
+            line_style: "Continuous".to_string(),
+            points: vec![
+                EditablePoint { x: -0.7, y: 0.7, r: 0, g: 255, b: 0, dwell: 4 },
+                EditablePoint { x: 0.7, y: 0.7, r: 0, g: 255, b: 0, dwell: 4 },
+                EditablePoint { x: 0.7, y: -0.7, r: 0, g: 255, b: 0, dwell: 4 },
+                EditablePoint { x: -0.7, y: -0.7, r: 0, g: 255, b: 0, dwell: 4 },
+                EditablePoint { x: -0.7, y: 0.7, r: 0, g: 255, b: 0, dwell: 4 },
+            ],
+        };
+        self.status_message = "🟢 Green Diode Test Active".to_string();
+    }
+
+    pub fn load_blue_test(&mut self) {
+        self.shape = EditableShape {
+            name: "Blue Diode Test".to_string(),
+            description: "Pure Blue Modulation Test".to_string(),
+            line_style: "Continuous".to_string(),
+            points: vec![
+                EditablePoint { x: -0.7, y: 0.7, r: 0, g: 0, b: 255, dwell: 4 },
+                EditablePoint { x: 0.7, y: 0.7, r: 0, g: 0, b: 255, dwell: 4 },
+                EditablePoint { x: 0.7, y: -0.7, r: 0, g: 0, b: 255, dwell: 4 },
+                EditablePoint { x: -0.7, y: -0.7, r: 0, g: 0, b: 255, dwell: 4 },
+                EditablePoint { x: -0.7, y: 0.7, r: 0, g: 0, b: 255, dwell: 4 },
+            ],
+        };
+        self.status_message = "🔵 Blue Diode Test Active".to_string();
+    }
+
+    pub fn load_rgb_xy_test(&mut self) {
+        self.shape = EditableShape {
+            name: "Full RGB & XY Cable Test".to_string(),
+            description: "Top-Left Red, Top-Right Green, Bottom-Right Blue, Bottom-Left White".to_string(),
+            line_style: "Continuous".to_string(),
+            points: vec![
+                EditablePoint { x: -0.8, y: 0.8, r: 255, g: 0, b: 0, dwell: 5 },
+                EditablePoint { x: 0.8, y: 0.8, r: 0, g: 255, b: 0, dwell: 5 },
+                EditablePoint { x: 0.8, y: -0.8, r: 0, g: 0, b: 255, dwell: 5 },
+                EditablePoint { x: -0.8, y: -0.8, r: 255, g: 255, b: 255, dwell: 5 },
+                EditablePoint { x: -0.8, y: 0.8, r: 255, g: 0, b: 0, dwell: 5 },
+                EditablePoint { x: 0.0, y: 0.8, r: 255, g: 255, b: 0, dwell: 3 },
+                EditablePoint { x: 0.0, y: -0.8, r: 0, g: 255, b: 255, dwell: 3 },
+                EditablePoint { x: -0.8, y: 0.0, r: 255, g: 0, b: 255, dwell: 3 },
+                EditablePoint { x: 0.8, y: 0.0, r: 255, g: 255, b: 255, dwell: 3 },
+            ],
+        };
+        self.status_message = "🔬 Full RGB & XY Cable Test Loaded".to_string();
+    }
 }
 
 #[derive(Component)]
@@ -267,6 +335,23 @@ fn ui_shape_editor_panel(
 
                 if ui.button("🔄 Rescan").clicked() {
                     editor_state.scan_templates();
+                }
+            });
+
+            // Cable Hardware Test Suite Quick Buttons
+            ui.horizontal(|ui| {
+                ui.label("🔬 Cable Tests:");
+                if ui.button("🔴 Red").clicked() {
+                    editor_state.load_red_test();
+                }
+                if ui.button("🟢 Green").clicked() {
+                    editor_state.load_green_test();
+                }
+                if ui.button("🔵 Blue").clicked() {
+                    editor_state.load_blue_test();
+                }
+                if ui.button("🌈 Full RGB/XY").clicked() {
+                    editor_state.load_rgb_xy_test();
                 }
             });
 

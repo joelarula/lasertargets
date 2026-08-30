@@ -1,0 +1,78 @@
+# .geminiignore - Patterns ignored during AI analysis, search, and indexing
+
+# Build Artifacts & Caches
+target/
+build/
+dist/
+out/
+bin/
+obj/
+*.wasm
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.dylib
+*.dll
+*.exe
+
+# Large / Generated Lockfiles
+Cargo.lock
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Assets, Media & Binary Files
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.ico
+*.svg
+*.mp4
+*.webm
+*.avi
+*.mov
+*.wav
+*.mp3
+*.ogg
+*.flac
+*.ttf
+*.otf
+*.woff
+*.woff2
+
+# Temp, Scratch & Logs
+temp/
+scratch/
+tmp/
+.cache/
+*.tmp
+*.bak
+*.swp
+*~
+*.log
+*.dump
+*.stackdump
+*.trace
+
+# Database files & journals
+*.sqlite
+*.sqlite3
+*.db
+*.db-wal
+*.db-shm
+
+# IDE & OS Specific
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.code-workspace
+*.user
+*.suo
+
+# Generated Code & Coverage
+coverage/
+.nyc_output/
