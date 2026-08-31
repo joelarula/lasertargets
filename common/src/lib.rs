@@ -9,6 +9,7 @@ pub mod toolbar;
 pub mod target;
 pub mod shapes;
 pub mod show;
+pub mod stream;
 
 #[cfg(test)]
 #[path = "../test/scenetest.rs"]
