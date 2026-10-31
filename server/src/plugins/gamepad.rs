@@ -202,10 +202,10 @@ fn gamepad_calibration_controls(
         };
         match *target_mode {
             CalibrationTargetMode::RigPointA => {
-                info!("🎯 [Gamepad Calibration Mode] -> POINT A: PROJECTOR & CAMERA RIG (Pose & FOV)");
+                info!("🎯 [Gamepad Calibration] -> POINT A: PROJECTOR & CAMERA RIG (Pose & Optical FOV)");
             }
             CalibrationTargetMode::BillboardPointB => {
-                info!("🎯 [Gamepad Calibration Mode] -> POINT B: BILLBOARD PLANE (Wall Position & Dimensions)");
+                info!("🎯 [Gamepad Calibration] -> POINT B: BILLBOARD SCENE (Size, Distance & Middle Position)");
             }
         }
     }
@@ -217,17 +217,91 @@ fn gamepad_calibration_controls(
     // ── Speed Multipliers (Hover vs Boost vs Precision) ──────────────────────
     let speed_mult = if state.left_thumb {
         0.25 // Precision mode (0.25x)
-    } else if state.south || state.right_bumper {
+    } else if state.south {
         2.5  // Boost / Fast Drag mode (2.5x)
     } else {
-        1.0  // Normal Flight mode (1.0x)
+        1.0  // Normal mode (1.0x)
     };
 
-    let fly_speed = 1.8 * speed_mult;   // meters per second
-    let scale_speed = 1.5 * speed_mult; // meters per second
+    let move_speed = 1.8 * speed_mult;   // meters per second
+    let scale_speed = 1.5 * speed_mult;  // meters per second
+    let dist_speed = 2.0 * speed_mult;   // meters per second
     let angle_speed = 15.0 * speed_mult; // degrees per second
 
+    // Modifier: Right Bumper / Right Trigger / Right Thumb pressed down for Scene Middle Position
+    let is_middle_pos_held = state.right_bumper || state.right_trigger || state.right_thumb;
+
     match *target_mode {
+        CalibrationTargetMode::BillboardPointB => {
+            // ─────────────────────────────────────────────────────────────────
+            // ── POINT B: BILLBOARD SCENE (SIZE, DISTANCE & MIDDLE POSITION) ──
+            // ─────────────────────────────────────────────────────────────────
+
+            if is_middle_pos_held {
+                // ── 1. RIGHT BUTTON HELD: SCENE MIDDLE POSITION (CENTER X, Y) ──
+                if state.left_stick_x.abs() > GAMEPAD_STICK_DEADZONE {
+                    scene_config.origin.translation.x += state.left_stick_x * move_speed * dt;
+                }
+                if state.left_stick_y.abs() > GAMEPAD_STICK_DEADZONE {
+                    scene_config.origin.translation.y += state.left_stick_y * move_speed * dt;
+                }
+            } else {
+                // ── 2. LEFT STICK: EXPAND / INPAND SCENE SIZE (WIDTH & HEIGHT) ─
+                // Left Stick X = Expand / Inpand Width (W)
+                if state.left_stick_x.abs() > GAMEPAD_STICK_DEADZONE {
+                    scene_config.scene_dimension.x = (scene_config.scene_dimension.x + state.left_stick_x * scale_speed * dt)
+                        .clamp(0.2, max_dim);
+                }
+                // Left Stick Y = Expand / Inpand Height (H)
+                if state.left_stick_y.abs() > GAMEPAD_STICK_DEADZONE {
+                    scene_config.scene_dimension.y = (scene_config.scene_dimension.y + state.left_stick_y * scale_speed * dt)
+                        .clamp(0.2, max_dim);
+                }
+            }
+
+            // ── 3. RIGHT STICK: FORWARD / BACK (DISTANCE) & UP / DOWN (HEIGHT) ───
+            // Right Stick Y = Forward / Back Distance (Push up = forward/deeper -Z, Pull down = back/closer +Z)
+            if state.right_stick_y.abs() > GAMEPAD_STICK_DEADZONE {
+                scene_config.origin.translation.z -= state.right_stick_y * dist_speed * dt;
+            }
+            // Right Stick X = Up / Down Height Adjustment
+            if state.right_stick_x.abs() > GAMEPAD_STICK_DEADZONE {
+                scene_config.origin.translation.y += state.right_stick_x * move_speed * dt;
+            }
+
+            // ── 4. DISCRETE D-PAD STEP ADJUSTMENTS ───────────────────────────
+            cooldowns.calibration_step.tick(time.delta());
+            if cooldowns.calibration_step.is_finished() {
+                let step = 0.1; // 10cm step
+                let mut changed = false;
+
+                if state.just_pressed(&prev, Btn::DPadUp) {
+                    scene_config.scene_dimension.y = (scene_config.scene_dimension.y + step).min(max_dim);
+                    info!("Gamepad Scene: Height -> {:.2}m", scene_config.scene_dimension.y);
+                    changed = true;
+                }
+                if state.just_pressed(&prev, Btn::DPadDown) {
+                    scene_config.scene_dimension.y = (scene_config.scene_dimension.y - step).max(step);
+                    info!("Gamepad Scene: Height -> {:.2}m", scene_config.scene_dimension.y);
+                    changed = true;
+                }
+                if state.just_pressed(&prev, Btn::DPadRight) {
+                    scene_config.scene_dimension.x = (scene_config.scene_dimension.x + step).min(max_dim);
+                    info!("Gamepad Scene: Width -> {:.2}m", scene_config.scene_dimension.x);
+                    changed = true;
+                }
+                if state.just_pressed(&prev, Btn::DPadLeft) {
+                    scene_config.scene_dimension.x = (scene_config.scene_dimension.x - step).max(step);
+                    info!("Gamepad Scene: Width -> {:.2}m", scene_config.scene_dimension.x);
+                    changed = true;
+                }
+
+                if changed {
+                    cooldowns.calibration_step.reset();
+                }
+            }
+        }
+
         CalibrationTargetMode::RigPointA => {
             // ─────────────────────────────────────────────────────────────────
             // ── POINT A: PROJECTOR & CAMERA RIG CALIBRATION ──────────────────
@@ -235,42 +309,29 @@ fn gamepad_calibration_controls(
 
             // Left Stick X = Lateral Position of Projector & Camera (X)
             if state.left_stick_x.abs() > GAMEPAD_STICK_DEADZONE {
-                let dx = state.left_stick_x * fly_speed * dt;
+                let dx = state.left_stick_x * move_speed * dt;
                 projector_config.origin.translation.x += dx;
                 camera_config.origin.translation.x += dx;
             }
 
             // Left Stick Y = Height / Altitude of Projector & Camera (Y)
             if state.left_stick_y.abs() > GAMEPAD_STICK_DEADZONE {
-                let dy = state.left_stick_y * fly_speed * dt;
+                let dy = state.left_stick_y * move_speed * dt;
                 projector_config.origin.translation.y += dy;
                 camera_config.origin.translation.y += dy;
             }
 
-            // Triggers = Distance to Billboard (Z)
-            if state.right_trigger {
-                // Fly closer to billboard (-Z in room coordinates toward billboard)
-                let dz = fly_speed * dt;
+            // Right Stick Y = Rig Distance to Billboard (Z)
+            if state.right_stick_y.abs() > GAMEPAD_STICK_DEADZONE {
+                let dz = state.right_stick_y * dist_speed * dt;
                 projector_config.origin.translation.z -= dz;
                 camera_config.origin.translation.z -= dz;
             }
-            if state.left_trigger {
-                // Fly further from billboard (+Z)
-                let dz = fly_speed * dt;
-                projector_config.origin.translation.z += dz;
-                camera_config.origin.translation.z += dz;
-            }
 
-            // Right Stick Y = Projector Optical Throw Angle (FOV θ)
-            if state.right_stick_y.abs() > GAMEPAD_STICK_DEADZONE {
-                projector_config.angle = (projector_config.angle + state.right_stick_y * angle_speed * dt)
-                    .clamp(15.0, 90.0);
-            }
-
-            // Right Stick X = Camera FOV Angle
+            // Right Stick X = Projector Optical Throw Angle (FOV θ)
             if state.right_stick_x.abs() > GAMEPAD_STICK_DEADZONE {
-                camera_config.angle = (camera_config.angle + state.right_stick_x * angle_speed * dt)
-                    .clamp(15.0, 120.0);
+                projector_config.angle = (projector_config.angle + state.right_stick_x * angle_speed * dt)
+                    .clamp(15.0, 90.0);
             }
 
             // Automatic Gaze Alignment: Projector & Camera look at Billboard Center
@@ -311,74 +372,6 @@ fn gamepad_calibration_controls(
                     projector_config.origin.translation.x -= step;
                     camera_config.origin.translation.x -= step;
                     info!("Gamepad Rig: Lateral X -> {:.2}m", projector_config.origin.translation.x);
-                    changed = true;
-                }
-
-                if changed {
-                    cooldowns.calibration_step.reset();
-                }
-            }
-        }
-
-        CalibrationTargetMode::BillboardPointB => {
-            // ─────────────────────────────────────────────────────────────────
-            // ── POINT B: BILLBOARD REFLECTION PLANE CALIBRATION ──────────────
-            // ─────────────────────────────────────────────────────────────────
-
-            // Left Stick X = Billboard Center Lateral (X)
-            if state.left_stick_x.abs() > GAMEPAD_STICK_DEADZONE {
-                scene_config.origin.translation.x += state.left_stick_x * fly_speed * dt;
-            }
-
-            // Left Stick Y = Billboard Center Height (Y)
-            if state.left_stick_y.abs() > GAMEPAD_STICK_DEADZONE {
-                scene_config.origin.translation.y += state.left_stick_y * fly_speed * dt;
-            }
-
-            // Triggers = Billboard Wall Distance / Depth (Z)
-            if state.right_trigger {
-                scene_config.origin.translation.z -= fly_speed * dt;
-            }
-            if state.left_trigger {
-                scene_config.origin.translation.z += fly_speed * dt;
-            }
-
-            // Right Stick X = Billboard Width (W)
-            if state.right_stick_x.abs() > GAMEPAD_STICK_DEADZONE {
-                scene_config.scene_dimension.x = (scene_config.scene_dimension.x + state.right_stick_x * scale_speed * dt)
-                    .clamp(0.2, max_dim);
-            }
-
-            // Right Stick Y = Billboard Height (H)
-            if state.right_stick_y.abs() > GAMEPAD_STICK_DEADZONE {
-                scene_config.scene_dimension.y = (scene_config.scene_dimension.y + state.right_stick_y * scale_speed * dt)
-                    .clamp(0.2, max_dim);
-            }
-
-            // Discrete D-Pad steps for Point B
-            cooldowns.calibration_step.tick(time.delta());
-            if cooldowns.calibration_step.is_finished() {
-                let step = 0.1;
-                let mut changed = false;
-
-                if state.just_pressed(&prev, Btn::DPadUp) {
-                    scene_config.scene_dimension.y = (scene_config.scene_dimension.y + step).min(max_dim);
-                    info!("Gamepad Billboard: Height -> {:.2}m", scene_config.scene_dimension.y);
-                    changed = true;
-                }
-                if state.just_pressed(&prev, Btn::DPadDown) {
-                    scene_config.scene_dimension.y = (scene_config.scene_dimension.y - step).max(step);
-                    info!("Gamepad Billboard: Height -> {:.2}m", scene_config.scene_dimension.y);
-                    changed = true;
-                }
-                if state.just_pressed(&prev, Btn::DPadRight) {
-                    scene_config.scene_dimension.x = (scene_config.scene_dimension.x + step).min(max_dim);
-                    info!("Gamepad Billboard: Width -> {:.2}m", scene_config.scene_dimension.x);
-                    changed = true;
-                }
-                if state.just_pressed(&prev, Btn::DPadLeft) {
-                    scene_config.scene_dimension.x = (scene_config.scene_dimension.x - step).max(step);
-                    info!("Gamepad Billboard: Width -> {:.2}m", scene_config.scene_dimension.x);
                     changed = true;
                 }
 

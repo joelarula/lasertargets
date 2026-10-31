@@ -5643,9 +5643,7 @@ dependencies = [
  "hunter",
  "laserlogic",
  "libc",
- "libloading",
  "log",
- "lyon_tessellation",
  "serde",
  "snake",
 ]

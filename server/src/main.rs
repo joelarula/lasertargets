@@ -12,8 +12,7 @@ pub fn create_production_server_app() -> App {
 
     // Add production-only plugins and systems
     app.add_plugins(LogPlugin::default())
-        .add_systems(Startup, setup_server_system)
-        .add_systems(Update, handle_connections_system);
+        .add_systems(Startup, setup_server_system);
 
     app
 }
@@ -25,9 +24,4 @@ fn main() {
 /// System to set up the server at application startup.
 fn setup_server_system() {
     info!("Server setup system executed.");
-}
-
-/// System to handle incoming network connections and messages during regular updates.
-fn handle_connections_system() {
-    // Logic for production connections
 }
