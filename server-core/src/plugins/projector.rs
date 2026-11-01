@@ -10,14 +10,37 @@ use laserlogic::{LaserPoint, LaserSegment, OptimizeConfig};
 
 #[derive(Resource, Clone)]
 pub struct LaserOptimizeConfig(pub OptimizeConfig);
+
+impl Default for LaserOptimizeConfig {
+    fn default() -> Self {
+        Self(OptimizeConfig {
+            start_dwell_points: 6,
+            end_dwell_points: 6,
+            blank_end_dwell: 20,   // Hold laser-off dwell at shape end before jumping
+            blank_start_dwell: 20, // Hold galvo-settle dwell at shape start before firing
+            blank_jump_steps: 24,  // Interpolated travel steps between shapes
+            interp_distance_threshold: 250.0,
+            interp_spacing: 350.0,
+            corner_dwell_points: 6,
+            corner_angle_threshold: 135.0,
+            simplify_min_distance: 0.0,
+            simplify_collinear_angle: 0.0,
+            dynamic_dwell: false,
+            min_dwell: 1,
+            max_dwell: 8,
+            dwell_distance_threshold: 18.0,
+        })
+    }
+}
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::sync::mpsc::{self, Sender};
 use std::thread;
 
 
-static CONNECTED_ARC: Mutex<Option<Arc<Mutex<bool>>>> = Mutex::new(None);
 
-static SWITCHED_ON_ARC: Mutex<Option<Arc<Mutex<bool>>>> = Mutex::new(None);
+
+
 
 #[derive(Resource, Clone)]
 pub struct LaserPointBuffer {
@@ -35,21 +58,28 @@ impl Default for LaserPointBuffer {
 /// Resource for managing the Helios DAC controller
 #[derive(Resource)]
 pub struct ProjectorDacController {
+    /// When false the DAC library is never loaded and no output thread is started (headless tests).
+    pub enabled: bool,
     pub controller: Option<HeliosDacController>,
     pub initialized: bool,
     pub switched_on: bool,
     pub thread_running: bool,
     pub shutdown_sender: Option<Sender<()>>,
+    pub switched_on_flag: Arc<AtomicBool>,
+    pub connected_flag: Arc<AtomicBool>,
 }
 
 impl Default for ProjectorDacController {
     fn default() -> Self {
         Self {
+            enabled: true,
             controller: None,
             initialized: false,
             switched_on: false,
             thread_running: false,
             shutdown_sender: None,
+            switched_on_flag: Arc::new(AtomicBool::new(false)),
+            connected_flag: Arc::new(AtomicBool::new(false)),
         }
     }
 }
@@ -73,37 +103,26 @@ impl Plugin for ProjectorPlugin {
         })
             .insert_resource(ProjectorDacController::default())
             .insert_resource(LaserPointBuffer::default())
-            .insert_resource(LaserOptimizeConfig(OptimizeConfig::default()))
+            .insert_resource(LaserOptimizeConfig::default())
             .init_resource::<DacReconnectTimer>()
             .add_systems(Startup, initialize_projector_dac)
             .add_systems(Update, update_projector)
             .add_systems(Update, update_point_buffer)
-            .add_systems(Update, update_laser_optimize_config)
+            .add_systems(Update, handle_gamepad_laser_toggle)
             .add_systems(Last, shutdown_projector_dac.run_if(on_message::<AppExit>));
     }
 }
 
-/// System to update LaserOptimizeConfig with fixed, safe values
-fn update_laser_optimize_config(
-    mut config: ResMut<LaserOptimizeConfig>,
+fn handle_gamepad_laser_toggle(
+    mut button_events: MessageReader<gamepad::GamepadButtonEvent>,
+    mut projector_config: ResMut<ProjectorConfiguration>,
 ) {
-    config.0 = OptimizeConfig {
-        start_dwell_points: 6,
-        end_dwell_points: 6,
-        blank_end_dwell: 20,   // Hold laser-off dwell at shape end before jumping
-        blank_start_dwell: 20, // Hold galvo-settle dwell at shape start before firing
-        blank_jump_steps: 24,  // Interpolated travel steps between shapes
-        interp_distance_threshold: 250.0,
-        interp_spacing: 350.0,
-        corner_dwell_points: 6,
-        corner_angle_threshold: 135.0,
-        simplify_min_distance: 0.0,
-        simplify_collinear_angle: 0.0,
-        dynamic_dwell: false,
-        min_dwell: 1,
-        max_dwell: 8,
-        dwell_distance_threshold: 18.0,
-    };
+    for event in button_events.read() {
+        if event.button == gamepad::Btn::Start && event.pressed {
+            projector_config.switched_on = !projector_config.switched_on;
+            info!("Laser toggled via Gamepad Start: {}", if projector_config.switched_on { "ON" } else { "OFF" });
+        }
+    }
 }
 
 /// Initialize the Helios DAC controller and start background rendering thread
@@ -125,22 +144,24 @@ fn try_initialize_projector_dac(
     point_buffer: &LaserPointBuffer,
     projector_config: &mut ProjectorConfiguration,
 ) -> bool {
+    if !dac_controller.enabled {
+        return false;
+    }
     match HeliosDacController::new() {
         Ok(controller) => {
             info!("Helios DAC library loaded successfully");
 
-            // Create shared switched_on and connected flags for thread
-            let switched_on_flag = Arc::new(Mutex::new(projector_config.switched_on));
-            // Start as false; background thread will set to true once opened successfully
-            let connected_flag = Arc::new(Mutex::new(false)); 
+            // Synchronize shared atomic flags for the thread
+            dac_controller.switched_on_flag.store(projector_config.switched_on, Ordering::Release);
+            dac_controller.connected_flag.store(false, Ordering::Release);
             
             // Start background thread for continuous DAC output
             info!("✓ Starting DAC output thread (PPS={}, min_pts={})...", projector_config.dac_pps, projector_config.dac_min_points);
             let shutdown_sender = start_dac_output_thread(
                 controller,
                 point_buffer.clone(),
-                switched_on_flag.clone(),
-                connected_flag.clone(),
+                dac_controller.switched_on_flag.clone(),
+                dac_controller.connected_flag.clone(),
                 projector_config.dac_pps,
                 projector_config.dac_min_points,
             );
@@ -149,8 +170,6 @@ fn try_initialize_projector_dac(
             dac_controller.initialized = true;
             dac_controller.shutdown_sender = Some(shutdown_sender);
             dac_controller.switched_on = projector_config.switched_on;
-            set_switched_on_arc(switched_on_flag);
-            set_connected_arc(connected_flag);
             
             // Assume connected is true initially to let the thread try opening devices.
             // If opening fails, the thread will set connected_flag to false, which
@@ -165,12 +184,38 @@ fn try_initialize_projector_dac(
     }
 }
 
+/// Helper to prime DAC FIFO with blank points and safely open shutter
+fn prime_and_open_shutter(
+    controller: &mut HeliosDacController,
+    pps: u32,
+    blank_frame: &[HeliosPoint],
+    context: &str,
+) -> bool {
+    let mut prime_ok = false;
+    for attempt in 0..5 {
+        if let Err(err) = controller.write_frame_native(0, pps, 0, blank_frame) {
+            warn!("Thread: Priming write failed during {} (attempt {}/5): {}", context, attempt + 1, err);
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        } else {
+            prime_ok = true;
+            break;
+        }
+    }
+
+    if prime_ok {
+        let _ = controller.set_shutter(0, true);
+        true
+    } else {
+        false
+    }
+}
+
 /// Start background thread that continuously sends frames to the DAC
 fn start_dac_output_thread(
     controller: HeliosDacController,
     point_buffer: LaserPointBuffer,
-    switched_on: Arc<Mutex<bool>>,
-    connected: Arc<Mutex<bool>>,
+    switched_on: Arc<AtomicBool>,
+    connected: Arc<AtomicBool>,
     dac_pps: u32,
     dac_min_points: usize,
 ) -> Sender<()> {
@@ -236,10 +281,7 @@ fn start_dac_output_thread(
                 Ok(num_devices) if num_devices > 0 => {
                     info!("✓ Thread: Helios DAC: {} device(s) opened", num_devices);
                     devices_opened = true;
-                    {
-                        let mut conn = connected.lock().unwrap();
-                        *conn = true;
-                    }
+                    connected.store(true, Ordering::Release);
                     // Write initial blank frame immediately with loop mode (0 flags) so the SDK background thread has data and does not time out/error
                     let _ = controller.write_frame_ready(0, dac_pps, 0, &blank_frame, dac_min_points);
                     break;
@@ -267,8 +309,7 @@ fn start_dac_output_thread(
 
         if !devices_opened {
             error!("✗ Thread: Failed to open Helios DAC after {} attempts. Thread exiting.", max_retries);
-            let mut conn = connected.lock().unwrap();
-            *conn = false;
+            connected.store(false, Ordering::Release);
             return;
         }
 
@@ -298,11 +339,9 @@ fn start_dac_output_thread(
 
         if !init_ok {
             error!("✗ Thread: Initial DAC setup failed. Entering recovery.");
-            let mut conn = connected.lock().unwrap();
-            *conn = false;
+            connected.store(false, Ordering::Release);
         } else {
-            let mut conn = connected.lock().unwrap();
-            *conn = true;
+            connected.store(true, Ordering::Release);
         }
 
         let pps = dac_pps;
@@ -327,16 +366,12 @@ fn start_dac_output_thread(
                 let _ = controller.close_devices();
                 drop(controller);
                 info!("✓ DAC output thread terminated cleanly");
-                let mut connected = connected.lock().unwrap();
-                *connected = false;
+                connected.store(false, Ordering::Release);
                 break;
             }
 
             // ── 2. Check if laser output is enabled ────────────────────────
-            let is_switched_on = {
-                let on = switched_on.lock().unwrap();
-                *on
-            };
+            let is_switched_on = switched_on.load(Ordering::Acquire);
 
             // ── 3. Ultra-Fast Zero-Allocation Path Streaming ───────────────
             frame_buf.clear();
@@ -422,20 +457,7 @@ fn start_dac_output_thread(
                         if let Ok(devs) = controller.open_devices() {
                             if devs > 0 {
                                 std::thread::sleep(std::time::Duration::from_millis(500));
-                                let mut prime_ok = true;
-                                for attempt in 0..5 {
-                                    if let Err(err) = controller.write_frame_native(0, pps, 0, &blank_frame) {
-                                        warn!("Thread: Priming write failed during fast reset (attempt {}/5): {}", attempt + 1, err);
-                                        prime_ok = false;
-                                        std::thread::sleep(std::time::Duration::from_millis(100));
-                                    } else {
-                                        prime_ok = true;
-                                        break;
-                                    }
-                                }
-
-                                if prime_ok {
-                                    let _ = controller.set_shutter(0, true);
+                                if prime_and_open_shutter(&mut controller, pps, &blank_frame, "fast reset") {
                                     info!("✓ Thread: USB fast reset & blank priming successful!");
                                     consecutive_write_failures = 0;
                                     recovery_grace_remaining = 15;
@@ -456,19 +478,7 @@ fn start_dac_output_thread(
                             if let Ok(devs) = new_controller.open_devices() {
                                 if devs > 0 {
                                     std::thread::sleep(std::time::Duration::from_millis(500));
-                                    let mut prime_ok = true;
-                                    for attempt in 0..5 {
-                                        if let Err(err) = new_controller.write_frame_native(0, pps, 0, &blank_frame) {
-                                            warn!("Thread: Priming write failed during library reload (attempt {}/5): {}", attempt + 1, err);
-                                            prime_ok = false;
-                                            std::thread::sleep(std::time::Duration::from_millis(100));
-                                        } else {
-                                            prime_ok = true;
-                                            break;
-                                        }
-                                    }
-                                    if prime_ok {
-                                        let _ = new_controller.set_shutter(0, true);
+                                    if prime_and_open_shutter(&mut new_controller, pps, &blank_frame, "library reload") {
                                         info!("✓ Thread: Clean C library reload recovery successful!");
                                         consecutive_write_failures = 0;
                                         recovery_grace_remaining = 20;
@@ -486,10 +496,7 @@ fn start_dac_output_thread(
                         // ── Infinite Persistent Auto-Reconnect Loop ────────────
                         // If USB hardware was physically unplugged or endpoint lost, stay alive in a background retry loop!
                         warn!("✗ Thread: Hardware link lost — entering persistent auto-reconnect loop (retrying every 2s)...");
-                        {
-                            let mut conn = connected.lock().unwrap();
-                            *conn = false;
-                        }
+                        connected.store(false, Ordering::Release);
 
                         loop {
                             if shutdown_rx.try_recv().is_ok() {
@@ -504,28 +511,12 @@ fn start_dac_output_thread(
                                 if let Ok(devs) = new_controller.open_devices() {
                                     if devs > 0 {
                                         std::thread::sleep(std::time::Duration::from_millis(500));
-                                        let mut prime_ok = true;
-                                        for attempt in 0..5 {
-                                            if let Err(err) = new_controller.write_frame_native(0, pps, 0, &blank_frame) {
-                                                warn!("Thread: Auto-reconnect priming failed (attempt {}/5): {}", attempt + 1, err);
-                                                prime_ok = false;
-                                                std::thread::sleep(std::time::Duration::from_millis(100));
-                                            } else {
-                                                prime_ok = true;
-                                                break;
-                                            }
-                                        }
-
-                                        if prime_ok {
-                                            let _ = new_controller.set_shutter(0, true);
+                                        if prime_and_open_shutter(&mut new_controller, pps, &blank_frame, "auto-reconnect") {
                                             info!("✓ Thread: Auto-reconnect successful! Hardware link restored.");
                                             controller = new_controller;
                                             consecutive_write_failures = 0;
                                             recovery_grace_remaining = 20;
-                                            {
-                                                let mut conn = connected.lock().unwrap();
-                                                *conn = true;
-                                            }
+                                            connected.store(true, Ordering::Release);
                                             break;
                                         }
                                     }
@@ -581,16 +572,11 @@ fn update_projector(
     // Synchronize DAC controller switched_on with projector_config.switched_on
     if projector_config.is_changed() {
         dac_controller.switched_on = projector_config.switched_on;
-        // Update the shared Arc<bool> for the DAC thread
-        if let Some(flag) = get_switched_on_arc() {
-            let mut on = flag.lock().unwrap();
-            *on = projector_config.switched_on;
-        }
+        dac_controller.switched_on_flag.store(projector_config.switched_on, Ordering::Release);
     }
     // Always keep ProjectorConfiguration.connected in sync with thread connection status
-    let connected = if let Some(flag) = get_connected_arc() {
-        let connected = flag.lock().unwrap();
-        *connected
+    let connected = if dac_controller.thread_running {
+        dac_controller.connected_flag.load(Ordering::Acquire)
     } else {
         dac_controller.initialized
     };
@@ -634,7 +620,7 @@ fn update_point_buffer(
     point_buffer: Res<LaserPointBuffer>,
     optimize_config: Res<LaserOptimizeConfig>,
     calibration_state: Option<Res<State<CalibrationState>>>,
-    path_query: Query<(&UniversalPath, &Transform, Option<&ChildOf>, Option<&CalibrationPath>)>,
+    path_query: Query<(&UniversalPath, &Transform, Option<&CalibrationPath>)>,
     scene_query: Query<&Transform, With<SceneEntity>>,
 ) {
     let is_calibration_on = calibration_state
@@ -645,11 +631,6 @@ fn update_point_buffer(
     // Only update buffer if projector is enabled
     if !projector_config.switched_on {
         return;
-    }
-
-    let path_count = path_query.iter().count();
-    if path_count > 0 {
-        debug!("Update buffer: Found {} UniversalPath entities", path_count);
     }
 
     // Scene boundaries for automatic out-of-scene culling & blanking
@@ -668,7 +649,7 @@ fn update_point_buffer(
     let mut general_segments: Vec<LaserSegment> = Vec::new();
     let scene_transform = scene_query.single().ok();
 
-    for (universal_path, transform, _parent, calibration_path) in path_query.iter() {
+    for (universal_path, transform, calibration_path) in path_query.iter() {
         if calibration_path.is_some() && !is_calibration_on {
             // Calibration mode is OFF: skip all calibration paths (green rectangle, crosshairs)
             continue;
@@ -837,20 +818,5 @@ fn world_to_projector_coordinates(
     Some((x, y))
 }
 
-fn set_switched_on_arc(flag: Arc<Mutex<bool>>) {
-    let mut lock = SWITCHED_ON_ARC.lock().unwrap();
-    *lock = Some(flag);
-}
-fn get_switched_on_arc() -> Option<Arc<Mutex<bool>>> {
-    let lock = SWITCHED_ON_ARC.lock().unwrap();
-    lock.clone()
-}
-fn set_connected_arc(flag: Arc<Mutex<bool>>) {
-    let mut lock = CONNECTED_ARC.lock().unwrap();
-    *lock = Some(flag);
-}
-fn get_connected_arc() -> Option<Arc<Mutex<bool>>> {
-    let lock = CONNECTED_ARC.lock().unwrap();
-    lock.clone()
-}
-
+
+

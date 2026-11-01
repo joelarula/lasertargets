@@ -2138,6 +2138,7 @@ dependencies = [
  "lyon_tessellation",
  "serde",
  "serde_json",
+ "test-harness",
 ]
 
 [[package]]
@@ -2421,6 +2422,7 @@ dependencies = [
  "log",
  "serde",
  "serde_json",
+ "test-harness",
 ]
 
 [[package]]
@@ -5677,6 +5679,7 @@ dependencies = [
  "log",
  "serde",
  "serde_json",
+ "test-harness",
 ]
 
 [[package]]
@@ -6072,6 +6075,13 @@ dependencies = [
 
 [[package]]
 name = "terminal-ui"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+]
+
+[[package]]
+name = "test-harness"
 version = "0.1.0"
 dependencies = [
  "bevy",

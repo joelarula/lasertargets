@@ -153,10 +153,12 @@ fn test_update_scene_config_broadcast() {
     }
 }
 mod util;
-use common::state::SessionState;
+use bevy::asset::uuid::Uuid;
+use common::session::{FinishSessionEvent, PauseSessionEvent, ResumeSessionEvent, Session};
+use common::state::{ServerState, SessionState};
 use util::{
-    ReceivedMessages, TEST_PORT_BASE, connect_client, create_test_client, create_test_server,
-    flush_server_messages,
+    ReceivedMessages, TEST_PORT_BASE, client_send, connect_client, create_test_client,
+    create_test_game_server, create_test_server, flush_server_messages,
 };
 
 use bevy::prelude::*;
@@ -276,14 +278,12 @@ fn test_server_sends_message_client_receives() {
             !received_messages.0.is_empty(),
             "Client should have received a message"
         );
-        let message = received_messages.0[0].clone();
-
-        match message {
-            NetworkMessage::Ping { timestamp } => {
-                assert_eq!(timestamp, test_timestamp, "Timestamp should match");
-            }
-            _ => panic!("Expected Ping message, got {:?}", message),
-        }
+        assert!(
+            received_messages.0.iter().any(|m| matches!(m, NetworkMessage::Ping { timestamp } if *timestamp == test_timestamp)),
+            "Expected Ping with timestamp {} in {:?}",
+            test_timestamp,
+            received_messages.0
+        );
     }
 }
 
@@ -327,7 +327,8 @@ fn test_bidirectional_message_exchange() {
             let received_messages = client_app.world().resource::<ReceivedMessages>();
             received_messages
                 .0
-                .get(0)
+                .iter()
+                .find(|m| matches!(m, NetworkMessage::Ping { timestamp } if *timestamp == ping_timestamp))
                 .expect("Client should have received Ping")
                 .clone()
         };
@@ -356,7 +357,8 @@ fn test_bidirectional_message_exchange() {
         let received_messages = server_app.world().resource::<ReceivedMessages>();
         let message = received_messages
             .0
-            .get(0)
+            .iter()
+            .find(|m| matches!(m, NetworkMessage::Pong { .. }))
             .expect("Server should have received Pong")
             .clone();
 
@@ -473,20 +475,20 @@ fn test_server_broadcasts_to_multiple_clients() {
     // Both clients receive the message
     {
         let received_messages = client1.world().resource::<ReceivedMessages>();
-        assert!(!received_messages.0.is_empty());
-        match received_messages.0[0] {
-            NetworkMessage::Ping { timestamp } => assert_eq!(timestamp, broadcast_timestamp),
-            _ => panic!("Expected Ping"),
-        }
+        assert!(
+            received_messages.0.iter().any(|m| matches!(m, NetworkMessage::Ping { timestamp } if *timestamp == broadcast_timestamp)),
+            "Expected broadcast Ping in {:?}",
+            received_messages.0
+        );
     }
 
     {
         let received_messages = client2.world().resource::<ReceivedMessages>();
-        assert!(!received_messages.0.is_empty());
-        match received_messages.0[0] {
-            NetworkMessage::Ping { timestamp } => assert_eq!(timestamp, broadcast_timestamp),
-            _ => panic!("Expected Ping"),
-        }
+        assert!(
+            received_messages.0.iter().any(|m| matches!(m, NetworkMessage::Ping { timestamp } if *timestamp == broadcast_timestamp)),
+            "Expected broadcast Ping in {:?}",
+            received_messages.0
+        );
     }
 }
 
@@ -624,584 +626,193 @@ fn test_update_config_broadcast() {
         );
     }
 }
+// --- session channel ---------------------------------------------------------
+//
+// Session lifecycle logic is covered in-process by server-core/tests/session_menu_test.rs.
+// These tests only check that the lifecycle crosses the network: OpenSession/CloseSession
+// from a client, SessionCreated/SessionUpdate/ServerStateUpdate back to clients.
+
+/// Step server and clients until every client has received a message matching `predicate`.
+fn pump_until(
+    server_app: &mut App,
+    client_apps: &mut [&mut App],
+    predicate: impl Fn(&NetworkMessage) -> bool,
+) {
+    for _ in 0..50 {
+        server_app.update();
+        for client_app in client_apps.iter_mut() {
+            client_app.update();
+        }
+        let all_received = client_apps.iter().all(|c| {
+            c.world().resource::<ReceivedMessages>().0.iter().any(&predicate)
+        });
+        if all_received {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    panic!("expected message never reached every client");
+}
+
+/// Connect a client and step until the server has accepted it.
+fn connect_and_wait(server_app: &mut App, client_app: &mut App, port: u16) {
+    let before = server_app.world().resource::<QuinnetServer>().endpoint().clients().len();
+    connect_client(client_app, port);
+    for _ in 0..50 {
+        server_app.update();
+        client_app.update();
+        if server_app.world().resource::<QuinnetServer>().endpoint().clients().len() > before {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    panic!("client never connected");
+}
+
+/// Connect a client to a game server and open a Hunter session; returns its id.
+fn open_hunter_session(server_app: &mut App, client_app: &mut App, port: u16) -> Uuid {
+    connect_and_wait(server_app, client_app, port);
+
+    let session_id = Uuid::new_v4();
+    client_send(
+        client_app,
+        NetworkMessage::OpenSession {
+            session_id,
+            channel_name: hunter::common::GAME_NAME.to_string(),
+        },
+    );
+    pump_until(server_app, &mut [client_app], |m| {
+        matches!(m, NetworkMessage::SessionCreated(s) if s.session_id == session_id)
+    });
+    // The spawned Session also goes out as a SessionUpdate; wait so later updates are in order
+    pump_until(server_app, &mut [client_app], |m| {
+        matches!(m, NetworkMessage::SessionUpdate(s) if s.session_id == session_id)
+    });
+    session_id
+}
+
+fn clear_received(client_app: &mut App) {
+    client_app.world_mut().resource_mut::<ReceivedMessages>().0.clear();
+}
+
+fn session_states(client_app: &App, session_id: Uuid) -> Vec<SessionState> {
+    client_app
+        .world()
+        .resource::<ReceivedMessages>()
+        .0
+        .iter()
+        .filter_map(|m| match m {
+            NetworkMessage::SessionUpdate(s) if s.session_id == session_id => Some(s.state.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
 #[test]
-fn test_init_game_session() {
+fn test_open_session_creates_session_and_notifies_client() {
     let test_port = TEST_PORT_BASE + 15;
-    let mut server_app = create_test_server(test_port);
+    let mut server_app = create_test_game_server(test_port);
     let mut client_app = create_test_client();
 
-    connect_client(&mut client_app, test_port);
-    std::thread::sleep(Duration::from_millis(200));
+    let session_id = open_hunter_session(&mut server_app, &mut client_app, test_port);
 
-    // Client initiates a game session
-        let game_id = 1u16;
-        let session_id = bevy::asset::uuid::Uuid::new_v4();
-        {
-            let mut client = client_app.world_mut().resource_mut::<QuinnetClient>();
-            let connection = client.get_connection_mut().unwrap();
-            let payload = NetworkMessage::InitGameSession(session_id, game_id, SessionState::Paused)
-                .to_bytes()
-                .expect("Serialize");
-            connection.send_payload(payload).unwrap();
-        }
+    let created = client_app
+        .world()
+        .resource::<ReceivedMessages>()
+        .0
+        .iter()
+        .find_map(|m| match m {
+            NetworkMessage::SessionCreated(s) => Some(s.clone()),
+            _ => None,
+        })
+        .unwrap();
+    assert_eq!(created.session_id, session_id);
+    assert_eq!(created.game_id, hunter::common::GAME_ID);
+    assert!(created.start_timestamp.is_some());
 
-    client_app.update();
-    std::thread::sleep(Duration::from_millis(150));
-    flush_server_messages(&mut server_app);
-    std::thread::sleep(Duration::from_millis(150));
-    client_app.update();
+    pump_until(&mut server_app, &mut [&mut client_app], |m| {
+        matches!(m, NetworkMessage::ServerStateUpdate(ServerState::Session))
+    });
 
-    // Verify client receives GameSessionResponse
-    {
-        let received = client_app.world().resource::<ReceivedMessages>();
-        let found = received
-            .0
-            .iter()
-            .any(|m| matches!(m, NetworkMessage::GameSessionUpdate(_)));
-        assert!(found, "Expected GameSessionResponse");
-    }
+    let mut sessions = server_app.world_mut().query::<&Session>();
+    let ids: Vec<Uuid> = sessions.iter(server_app.world()).map(|s| s.session_id).collect();
+    assert_eq!(ids, vec![session_id]);
 }
 
 #[test]
-fn test_start_game_session() {
+fn test_session_created_is_broadcast_to_all_clients() {
     let test_port = TEST_PORT_BASE + 16;
-    let mut server_app = create_test_server(test_port);
-    let mut client_app = create_test_client();
+    let mut server_app = create_test_game_server(test_port);
+    let mut client1_app = create_test_client();
+    let mut client2_app = create_test_client();
 
-    connect_client(&mut client_app, test_port);
-    std::thread::sleep(Duration::from_millis(200));
+    connect_and_wait(&mut server_app, &mut client2_app, test_port);
 
-    // Init game
-    let game_id = 2u16;
-    {
-        let mut client = client_app.world_mut().resource_mut::<QuinnetClient>();
-        let connection = client.get_connection_mut().unwrap();
-            let session_id = bevy::asset::uuid::Uuid::new_v4();
-            let payload = NetworkMessage::InitGameSession(session_id, game_id,SessionState::Paused)
-                .to_bytes()
-                .expect("Serialize");
-            connection.send_payload(payload).unwrap();
-    }
+    let session_id = open_hunter_session(&mut server_app, &mut client1_app, test_port);
 
-    client_app.update();
-    std::thread::sleep(Duration::from_millis(100));
-    flush_server_messages(&mut server_app);
-    std::thread::sleep(Duration::from_millis(100));
-    client_app.update();
-
-    // Get game UUID from response
-    let game_uuid = {
-        let received = client_app.world().resource::<ReceivedMessages>();
-            if let Some(NetworkMessage::GameSessionUpdate(session)) = received.0.iter().find(|m| matches!(m, NetworkMessage::GameSessionUpdate(_))) {
-                session.session_id
-        } else {
-            panic!("No GameSessionResponse received");
-        }
-    };
-
-    // Clear messages and start game
-    {
-        let mut client = client_app.world_mut().resource_mut::<QuinnetClient>();
-        let connection = client.get_connection_mut().unwrap();
-        let payload = NetworkMessage::StartGameSession(game_uuid)
-            .to_bytes()
-            .expect("Serialize");
-        connection.send_payload(payload).unwrap();
-    }
-
-    client_app.update();
-    std::thread::sleep(Duration::from_millis(100));
-    flush_server_messages(&mut server_app);
-    std::thread::sleep(Duration::from_millis(100));
-    client_app.update();
-
-    // Verify game session is updated
-    {
-        let received = client_app.world().resource::<ReceivedMessages>();
-        let found = received
-            .0
-            .iter()
-            .find(|m| {
-                if let NetworkMessage::GameSessionUpdate(session) = m {
-                    session.session_id == game_uuid && session.state == SessionState::Active
-                } else {
-                    false
-                }
-            });
-        assert!(found.is_some(), "Expected started GameSession in response");
-    }
+    pump_until(&mut server_app, &mut [&mut client2_app], |m| {
+        matches!(m, NetworkMessage::SessionCreated(s) if s.session_id == session_id)
+    });
 }
 
 #[test]
-fn test_pause_game_session() {
+fn test_session_lifecycle_updates_reach_client() {
     let test_port = TEST_PORT_BASE + 17;
-    let mut server_app = create_test_server(test_port);
+    let mut server_app = create_test_game_server(test_port);
     let mut client_app = create_test_client();
 
-    connect_client(&mut client_app, test_port);
-    std::thread::sleep(Duration::from_millis(200));
+    let session_id = open_hunter_session(&mut server_app, &mut client_app, test_port);
 
-    // Init game
-    let game_id = 3u16;
-    {
-        let mut client = client_app.world_mut().resource_mut::<QuinnetClient>();
-        let connection = client.get_connection_mut().unwrap();
-            let session_id = bevy::asset::uuid::Uuid::new_v4();
-            let payload = NetworkMessage::InitGameSession(session_id, game_id, SessionState::Paused)
-                .to_bytes()
-                .expect("Serialize");
-            connection.send_payload(payload).unwrap();
-    }
+    clear_received(&mut client_app);
 
-    client_app.update();
-    std::thread::sleep(Duration::from_millis(100));
-    flush_server_messages(&mut server_app);
-    std::thread::sleep(Duration::from_millis(100));
-    client_app.update();
+    // Pause/resume/finish have no client message; they are raised server-side by games and the menu
+    server_app.world_mut().write_message(PauseSessionEvent { session_id });
+    pump_until(&mut server_app, &mut [&mut client_app], |m| {
+        matches!(m, NetworkMessage::SessionUpdate(s) if s.state == SessionState::Paused)
+    });
 
-    let game_uuid = {
-        let received = client_app.world().resource::<ReceivedMessages>();
-            if let Some(NetworkMessage::GameSessionUpdate(session)) = received.0.iter().find(|m| matches!(m, NetworkMessage::GameSessionUpdate(_))) {
-                session.session_id
-        } else {
-            panic!("No GameSessionResponse");
-        }
-    };
+    server_app.world_mut().write_message(ResumeSessionEvent { session_id });
+    pump_until(&mut server_app, &mut [&mut client_app], |m| {
+        matches!(m, NetworkMessage::SessionUpdate(s) if s.state == SessionState::Active)
+    });
 
-    // Pause game
-    {
-        let mut client = client_app.world_mut().resource_mut::<QuinnetClient>();
-        let connection = client.get_connection_mut().unwrap();
-        let payload = NetworkMessage::PauseGameSession(game_uuid)
-            .to_bytes()
-            .expect("Serialize");
-        connection.send_payload(payload).unwrap();
-    }
+    server_app.world_mut().write_message(FinishSessionEvent { session_id });
+    pump_until(&mut server_app, &mut [&mut client_app], |m| {
+        matches!(m, NetworkMessage::SessionUpdate(s) if s.state == SessionState::Finished)
+    });
 
-    client_app.update();
-    std::thread::sleep(Duration::from_millis(100));
-    flush_server_messages(&mut server_app);
-    std::thread::sleep(Duration::from_millis(100));
-    client_app.update();
-
-    // Verify game session is paused
-    {
-        let received = client_app.world().resource::<ReceivedMessages>();
-        let found = received
-            .0
-            .iter()
-            .find(|m| {
-                if let NetworkMessage::GameSessionUpdate(session) = m {
-                    session.session_id == game_uuid && session.state == SessionState::Paused
-                } else {
-                    false
-                }
-            });
-        assert!(found.is_some(), "Expected paused GameSession");
-    }
+    // Each transition is sent exactly once
+    let states = session_states(&client_app, session_id);
+    assert_eq!(
+        states,
+        vec![SessionState::Paused, SessionState::Active, SessionState::Finished]
+    );
 }
 
 #[test]
-fn test_resume_game_session() {
+fn test_close_session_finishes_session_and_returns_to_menu() {
     let test_port = TEST_PORT_BASE + 18;
-    let mut server_app = create_test_server(test_port);
+    let mut server_app = create_test_game_server(test_port);
     let mut client_app = create_test_client();
 
-    connect_client(&mut client_app, test_port);
-    std::thread::sleep(Duration::from_millis(200));
+    let session_id = open_hunter_session(&mut server_app, &mut client_app, test_port);
+    pump_until(&mut server_app, &mut [&mut client_app], |m| {
+        matches!(m, NetworkMessage::ServerStateUpdate(ServerState::Session))
+    });
 
-    // Init game
-    let game_id = 4u16;
-    {
-        let mut client = client_app.world_mut().resource_mut::<QuinnetClient>();
-        let connection = client.get_connection_mut().unwrap();
-            let session_id = bevy::asset::uuid::Uuid::new_v4();
-            let payload = NetworkMessage::InitGameSession(session_id, game_id, SessionState::Paused)
-                .to_bytes()
-                .expect("Serialize");
-            connection.send_payload(payload).unwrap();
-    }
+    clear_received(&mut client_app);
 
-    client_app.update();
-    std::thread::sleep(Duration::from_millis(100));
-    flush_server_messages(&mut server_app);
-    std::thread::sleep(Duration::from_millis(100));
-    client_app.update();
+    client_send(&mut client_app, NetworkMessage::CloseSession { session_id });
+    pump_until(&mut server_app, &mut [&mut client_app], |m| {
+        matches!(m, NetworkMessage::SessionUpdate(s) if s.session_id == session_id && s.state == SessionState::Finished)
+    });
+    pump_until(&mut server_app, &mut [&mut client_app], |m| {
+        matches!(m, NetworkMessage::ServerStateUpdate(ServerState::Menu))
+    });
 
-    let game_uuid = {
-        let received = client_app.world().resource::<ReceivedMessages>();
-            if let Some(NetworkMessage::GameSessionUpdate(session)) = received.0.iter().find(|m| matches!(m, NetworkMessage::GameSessionUpdate(_))) {
-                session.session_id
-        } else {
-            panic!("No GameSessionResponse");
-        }
-    };
-
-    // Pause then resume
-    {
-        let mut client = client_app.world_mut().resource_mut::<QuinnetClient>();
-        let connection = client.get_connection_mut().unwrap();
-        let payload = NetworkMessage::PauseGameSession(game_uuid)
-            .to_bytes()
-            .expect("Serialize");
-        connection.send_payload(payload).unwrap();
-    }
-
-    client_app.update();
-    std::thread::sleep(Duration::from_millis(100));
-    flush_server_messages(&mut server_app);
-
-    {
-        let mut client = client_app.world_mut().resource_mut::<QuinnetClient>();
-        let connection = client.get_connection_mut().unwrap();
-        let payload = NetworkMessage::ResumeGameSession(game_uuid)
-            .to_bytes()
-            .expect("Serialize");
-        connection.send_payload(payload).unwrap();
-    }
-
-    client_app.update();
-    std::thread::sleep(Duration::from_millis(100));
-    flush_server_messages(&mut server_app);
-    std::thread::sleep(Duration::from_millis(100));
-    client_app.update();
-
-    // Verify game session is not paused
-    {
-        let received = client_app.world().resource::<ReceivedMessages>();
-        let found = received
-            .0
-            .iter()
-            .find(|m| {
-                if let NetworkMessage::GameSessionUpdate(session) = m {
-                    session.session_id == game_uuid && session.state != SessionState::Paused
-                } else {
-                    false
-                }
-            });
-        assert!(found.is_some(), "Expected resumed GameSession");
-    }
+    let mut sessions = server_app.world_mut().query::<&Session>();
+    assert_eq!(sessions.iter(server_app.world()).count(), 0, "session entity should be despawned");
 }
-
-#[test]
-fn test_stop_game_session() {
-    let test_port = TEST_PORT_BASE + 19;
-    let mut server_app = create_test_server(test_port);
-    let mut client_app = create_test_client();
-
-    connect_client(&mut client_app, test_port);
-    std::thread::sleep(Duration::from_millis(200));
-
-    // Init game
-    let game_id = 5u16;
-    {
-        let mut client = client_app.world_mut().resource_mut::<QuinnetClient>();
-        let connection = client.get_connection_mut().unwrap();
-            let session_id = bevy::asset::uuid::Uuid::new_v4();
-            let payload = NetworkMessage::InitGameSession(session_id, game_id, SessionState::Paused)
-                .to_bytes()
-                .expect("Serialize");
-            connection.send_payload(payload).unwrap();
-    }
-
-    client_app.update();
-    std::thread::sleep(Duration::from_millis(100));
-    flush_server_messages(&mut server_app);
-    std::thread::sleep(Duration::from_millis(100));
-    client_app.update();
-
-    let game_uuid = {
-        let received = client_app.world().resource::<ReceivedMessages>();
-            if let Some(NetworkMessage::GameSessionUpdate(session)) = received.0.iter().find(|m| matches!(m, NetworkMessage::GameSessionUpdate(_))) {
-                session.session_id
-        } else {
-            panic!("No GameSessionResponse");
-        }
-    };
-
-    // Stop game
-    {
-        let mut client = client_app.world_mut().resource_mut::<QuinnetClient>();
-        let connection = client.get_connection_mut().unwrap();
-        let payload = NetworkMessage::FinishGameSession(game_uuid)
-            .to_bytes()
-            .expect("Serialize");
-        connection.send_payload(payload).unwrap();
-    }
-
-    client_app.update();
-    std::thread::sleep(Duration::from_millis(100));
-    flush_server_messages(&mut server_app);
-
-    // Verify game was despawned by checking it's no longer in active sessions
-    {
-        let mut game_sessions = server_app.world_mut().query::<&common::game::GameSession>();
-        let found = game_sessions.iter(server_app.world()).find(|session| session.session_id == game_uuid);
-        assert!(found.is_none(), "Game session should be despawned");
-    }
-}
-
-#[test]
-fn test_register_actor_success() {
-    let test_port = TEST_PORT_BASE + 20;
-    let mut server_app = create_test_server(test_port);
-    let mut client_app = create_test_client();
-
-    connect_client(&mut client_app, test_port);
-    std::thread::sleep(Duration::from_millis(200));
-
-    // Init game
-    let game_id = 6u16;
-    {
-        let mut client = client_app.world_mut().resource_mut::<QuinnetClient>();
-        let connection = client.get_connection_mut().unwrap();
-            let session_id = bevy::asset::uuid::Uuid::new_v4();
-            let payload = NetworkMessage::InitGameSession(session_id, game_id, SessionState::Paused)
-                .to_bytes()
-                .expect("Serialize");
-            connection.send_payload(payload).unwrap();
-    }
-
-    client_app.update();
-    std::thread::sleep(Duration::from_millis(100));
-    flush_server_messages(&mut server_app);
-    std::thread::sleep(Duration::from_millis(100));
-    client_app.update();
-
-    let game_uuid = {
-        let received = client_app.world().resource::<ReceivedMessages>();
-            if let Some(NetworkMessage::GameSessionUpdate(session)) = received.0.iter().find(|m| matches!(m, NetworkMessage::GameSessionUpdate(_))) {
-                session.session_id
-        } else {
-            panic!("No GameSessionResponse");
-        }
-    };
-
-    // Register actor
-    {
-        let mut client = client_app.world_mut().resource_mut::<QuinnetClient>();
-        let connection = client.get_connection_mut().unwrap();
-        let payload = NetworkMessage::RegisterActor(game_uuid, "Player1".to_string(), vec!["Controller".to_string()])
-            .to_bytes()
-            .expect("Serialize");
-        connection.send_payload(payload).unwrap();
-    }
-
-    client_app.update();
-    std::thread::sleep(Duration::from_millis(100));
-    flush_server_messages(&mut server_app);
-    std::thread::sleep(Duration::from_millis(100));
-    client_app.update();
-
-    // Verify ActorResponse received
-    {
-        let received = client_app.world().resource::<ReceivedMessages>();
-        let found = received
-            .0
-            .iter()
-            .find(|m| matches!(m, NetworkMessage::ActorResponse(_)));
-        assert!(found.is_some(), "Expected ActorResponse");
-    }
-}
-
-#[test]
-fn test_register_actor_game_not_found() {
-    let test_port = TEST_PORT_BASE + 21;
-    let mut server_app = create_test_server(test_port);
-    let mut client_app = create_test_client();
-
-    connect_client(&mut client_app, test_port);
-    std::thread::sleep(Duration::from_millis(200));
-
-    // Try to register actor for non-existent game
-    let fake_game_uuid = bevy::asset::uuid::Uuid::new_v4();
-    {
-        let mut client = client_app.world_mut().resource_mut::<QuinnetClient>();
-        let connection = client.get_connection_mut().unwrap();
-        let payload = NetworkMessage::RegisterActor(fake_game_uuid, "Player1".to_string(), vec!["Controller".to_string()])
-            .to_bytes()
-            .expect("Serialize");
-        connection.send_payload(payload).unwrap();
-    }
-
-    client_app.update();
-    std::thread::sleep(Duration::from_millis(100));
-    flush_server_messages(&mut server_app);
-    flush_server_messages(&mut server_app);  // Extra flush to ensure message is sent over network
-    std::thread::sleep(Duration::from_millis(200));
-    client_app.update();
-
-    // Verify ActorError received
-    {
-        let received = client_app.world().resource::<ReceivedMessages>();
-        let found = received
-            .0
-            .iter()
-            .find(|m| matches!(m, NetworkMessage::ActorError(_)));
-        assert!(found.is_some(), "Expected ActorError, but received: {:?}", received.0);
-    }
-}
-
-#[test]
-fn test_unregister_actor_success() {
-    let test_port = TEST_PORT_BASE + 22;
-    let mut server_app = create_test_server(test_port);
-    let mut client_app = create_test_client();
-
-    connect_client(&mut client_app, test_port);
-    std::thread::sleep(Duration::from_millis(200));
-
-    // Init game
-    let game_id = 6u16;
-    let session_id = bevy::asset::uuid::Uuid::new_v4();
-    {
-        let mut client = client_app.world_mut().resource_mut::<QuinnetClient>();
-        let connection = client.get_connection_mut().unwrap();
-        let payload = NetworkMessage::InitGameSession(session_id, game_id, SessionState::Paused)
-            .to_bytes()
-            .expect("Serialize");
-        connection.send_payload(payload).unwrap();
-    }
-
-    client_app.update();
-    std::thread::sleep(Duration::from_millis(100));
-    flush_server_messages(&mut server_app);
-    std::thread::sleep(Duration::from_millis(100));
-    client_app.update();
-
-    let game_uuid = {
-        let received = client_app.world().resource::<ReceivedMessages>();
-            if let Some(NetworkMessage::GameSessionUpdate(session)) = received.0.iter().find(|m| matches!(m, NetworkMessage::GameSessionUpdate(_))) {
-                session.session_id
-        } else {
-            panic!("No GameSessionResponse");
-        }
-    };
-
-    // Register actor
-    let actor_uuid = {
-        let mut client = client_app.world_mut().resource_mut::<QuinnetClient>();
-        let connection = client.get_connection_mut().unwrap();
-        let payload = NetworkMessage::RegisterActor(game_uuid, "Player1".to_string(), vec!["Controller".to_string()])
-            .to_bytes()
-            .expect("Serialize");
-        connection.send_payload(payload).unwrap();
-        bevy::asset::uuid::Uuid::new_v4()
-    };
-
-    client_app.update();
-    std::thread::sleep(Duration::from_millis(100));
-    flush_server_messages(&mut server_app);
-    std::thread::sleep(Duration::from_millis(100));
-    client_app.update();
-
-    // Get registered actor UUID
-    let registered_actor_uuid = {
-        let received = client_app.world().resource::<ReceivedMessages>();
-        if let Some(NetworkMessage::ActorResponse(meta)) = received.0.iter().find(|m| matches!(m, NetworkMessage::ActorResponse(_))) {
-            meta.actors.get(0).map(|a| a.uuid).unwrap_or(actor_uuid)
-        } else {
-            actor_uuid
-        }
-    };
-
-    // Unregister actor
-    {
-        let mut client = client_app.world_mut().resource_mut::<QuinnetClient>();
-        let connection = client.get_connection_mut().unwrap();
-        let payload = NetworkMessage::UnregisterActor(game_uuid, registered_actor_uuid)
-            .to_bytes()
-            .expect("Serialize");
-        connection.send_payload(payload).unwrap();
-    }
-
-    client_app.update();
-    std::thread::sleep(Duration::from_millis(100));
-    flush_server_messages(&mut server_app);
-    std::thread::sleep(Duration::from_millis(100));
-    client_app.update();
-
-    // Verify ActorResponse received (with empty actors list)
-    {
-        let received = client_app.world().resource::<ReceivedMessages>();
-        let found = received
-            .0
-            .iter()
-            .find(|m| matches!(m, NetworkMessage::ActorResponse(_)));
-        assert!(found.is_some(), "Expected ActorResponse on unregister");
-    }
-}
-
-#[test]
-fn test_unregister_nonexistent_actor() {
-    let test_port = TEST_PORT_BASE + 23;
-    let mut server_app = create_test_server(test_port);
-    let mut client_app = create_test_client();
-
-    connect_client(&mut client_app, test_port);
-    std::thread::sleep(Duration::from_millis(200));
-
-    // Init game
-    let game_id = 7u16;
-    let session_id = bevy::asset::uuid::Uuid::new_v4();
-    {
-        let mut client = client_app.world_mut().resource_mut::<QuinnetClient>();
-        let connection = client.get_connection_mut().unwrap();
-        let payload = NetworkMessage::InitGameSession(session_id, game_id, SessionState::Paused)
-            .to_bytes()
-            .expect("Serialize");
-        connection.send_payload(payload).unwrap();
-    }
-
-    client_app.update();
-    std::thread::sleep(Duration::from_millis(100));
-    flush_server_messages(&mut server_app);
-    std::thread::sleep(Duration::from_millis(100));
-    client_app.update();
-
-    let game_uuid = {
-        let received = client_app.world().resource::<ReceivedMessages>();
-            if let Some(NetworkMessage::GameSessionUpdate(session)) = received.0.iter().find(|m| matches!(m, NetworkMessage::GameSessionUpdate(_))) {
-                session.session_id
-        } else {
-            panic!("No GameSessionResponse");
-        }
-    };
-
-    // Try to unregister non-existent actor
-    let fake_actor_uuid = bevy::asset::uuid::Uuid::new_v4();
-    {
-        let mut client = client_app.world_mut().resource_mut::<QuinnetClient>();
-        let connection = client.get_connection_mut().unwrap();
-        let payload = NetworkMessage::UnregisterActor(game_uuid, fake_actor_uuid)
-            .to_bytes()
-            .expect("Serialize");
-        connection.send_payload(payload).unwrap();
-    }
-
-    client_app.update();
-    std::thread::sleep(Duration::from_millis(100));
-    flush_server_messages(&mut server_app);
-    std::thread::sleep(Duration::from_millis(100));
-    client_app.update();
-
-    // Verify ActorError received
-    {
-        let received = client_app.world().resource::<ReceivedMessages>();
-        let found = received
-            .0
-            .iter()
-            .find(|m| {
-                if let NetworkMessage::ActorError(msg) = m {
-                    msg.contains("not found")
-                } else {
-                    false
-                }
-            });
-        assert!(found.is_some(), "Expected ActorError for non-existent actor");
-    }
-}
-
 
 #[test]
 fn test_curator_menu_workflow_lifecycle() {
@@ -1211,6 +822,7 @@ fn test_curator_menu_workflow_lifecycle() {
     let mut server_app = App::new();
     server_app.add_plugins(MinimalPlugins.set(ScheduleRunnerPlugin::run_once()));
     server::add_common_server_plugins(&mut server_app);
+    util::disable_dac(&mut server_app);
     server_app.add_plugins(hunter::common::HunterGamePlugin)
         .add_plugins(snake::common::SnakeGamePlugin);
 
@@ -1281,6 +893,7 @@ fn test_curator_menu_network_prompt_selection() {
     let mut server_app = App::new();
     server_app.add_plugins(MinimalPlugins.set(ScheduleRunnerPlugin::run_once()));
     server::add_common_server_plugins(&mut server_app);
+    util::disable_dac(&mut server_app);
     server_app.add_plugins(hunter::common::HunterGamePlugin)
         .add_plugins(snake::common::SnakeGamePlugin);
 

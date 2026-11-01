@@ -62,11 +62,15 @@ fn clear_paths_on_disconnect(mut scene_paths: ResMut<TerminalScenePaths>) {
 }
 
 fn handle_broadcast_scene_paths(
+    mut last_frame_id: Local<u64>,
     mut events: MessageReader<BroadcastScenePaths>,
     mut scene_paths: ResMut<TerminalScenePaths>,
 ) {
     for event in events.read() {
-        scene_paths.0 = event.frame.paths.clone();
+        if event.frame.frame_id > *last_frame_id || *last_frame_id == 0 {
+            *last_frame_id = event.frame.frame_id;
+            scene_paths.0 = event.frame.paths.clone();
+        }
     }
 }
 

@@ -5,18 +5,16 @@ use bevy_quinnet::server::{
     certificate::CertificateRetrievalMode,
 };
 use bevy_quinnet::shared::ClientId;
-use common::actor::Actor;
+use common::actor::ActorLink;
 use common::config::{CameraConfiguration, ProjectorConfiguration, SceneConfiguration};
-use common::game::{ExitGameEvent, GameSession, GameSessionCreated, InitGameSessionEvent};
-use common::network::{NetworkMessage, SERVER_HOST, SERVER_PORT};
-use common::scene::SceneSetup;
-use common::state::{CalibrationState, SessionState, ServerInstanceId, ServerState};
-use std::collections::{HashMap, HashSet};
-use std::net::{IpAddr, Ipv4Addr};
+use common::network::{NetworkMessage, SERVER_PORT};
 use common::path::BroadcastScenePaths;
-use crate::plugins::actor::{
-    ActorLink, ActorRegistrationResultEvent, ActorUnregistrationResultEvent, GameActorUpdateEvent,
-};
+use common::scene::SceneSetup;
+use common::session::{ChannelRegistry, CloseSessionEvent, InitSessionEvent, Session, SessionCreated, SessionUpdate};
+use crate::plugins::session::SessionLifecycleSet;
+use common::state::{CalibrationState, ServerInstanceId, ServerState};
+use std::collections::HashSet;
+use std::net::{IpAddr, Ipv4Addr};
 
 #[derive(Resource, Debug, Clone)]
 pub struct NetworkingConfiguration {
@@ -46,26 +44,26 @@ pub struct NetworkingPlugin;
 impl Plugin for NetworkingPlugin {
     fn build(&self, app: &mut App) {
         app.add_message::<FromClientMessage>()
-            .add_message::<GameActorUpdateEvent>()
-            .add_message::<ActorRegistrationResultEvent>()
-            .add_message::<ActorUnregistrationResultEvent>()
             .add_message::<MousePositionEvent>()
             .add_message::<MouseButtonInputEvent>()
             .add_message::<KeyboardInputEvent>()
-            .add_message::<BroadcastScenePaths>()
             .init_resource::<NetworkingConfiguration>()
             .add_systems(Startup, start_server)
             .add_systems(Update, receive_network_messages)
             .add_systems(Update, handle_config_messages)
-                        .add_systems(Update, handle_game_session_messages)
+            .add_systems(Update, handle_session_messages)
             .add_systems(Update, handle_input_messages)
             .add_systems(Update, broadcast_path_events)
-            .add_systems(Update, send_ping_periodically)
+            .add_systems(
+                Update,
+                send_ping_periodically.run_if(
+                    bevy::time::common_conditions::on_timer(std::time::Duration::from_secs(10)),
+                ),
+            )
             .add_systems(Update, handle_lifecycle_messages)
-            .add_systems(Update, handle_game_session_created)
-            .add_systems(Update, send_game_session_updates)
-            .add_systems(Update, handle_game_actor_update_event)
-            .add_systems(Update, handle_actor_result_events)
+            .add_systems(Update, handle_session_created)
+            .add_systems(Update, send_session_updates)
+            .add_systems(Update, send_closed_session_updates.after(SessionLifecycleSet))
             .add_systems(Update, broadcast_scene_setup_on_change)
             .add_systems(Update, broadcast_state_on_change)
             .add_systems(Update, broadcast_curator_prompts)
@@ -74,6 +72,48 @@ impl Plugin for NetworkingPlugin {
     }
 }
 
+/// Helper function to send a network message to a specific client and log any error.
+fn send_network_message(
+    endpoint: &mut Endpoint,
+    client_id: ClientId,
+    message: &NetworkMessage,
+    error_context: &str,
+) {
+    debug!("Sending message {:?} to client {} ({})", message, client_id, error_context);
+    match message.to_bytes() {
+        Ok(payload) => {
+            if let Err(e) = endpoint.send_payload(client_id, payload) {
+                error!(
+                    "Failed to send {} to client {}: {}",
+                    error_context, client_id, e
+                );
+            }
+        }
+        Err(e) => {
+            error!(
+                "Failed to serialize {} for client {}: {}",
+                error_context, client_id, e
+            );
+        }
+    }
+}
+
+/// Helper function to broadcast a network message to all clients and log any error.
+fn broadcast_network_message(endpoint: &mut Endpoint, message: &NetworkMessage, error_context: &str) {
+    debug!("Broadcasting message {:?} ({})", message, error_context);
+    match message.to_bytes() {
+        Ok(payload) => {
+            if let Err(e) = endpoint.broadcast_payload(payload) {
+                error!("Failed to broadcast {}: {}", error_context, e);
+            }
+        }
+        Err(e) => {
+            error!("Failed to serialize {} for broadcast: {}", error_context, e);
+        }
+    }
+}
+
+/// Broadcast path events to all clients
 fn broadcast_path_events(
     mut server: ResMut<QuinnetServer>,
     mut path_events: MessageReader<BroadcastScenePaths>,
@@ -83,12 +123,8 @@ fn broadcast_path_events(
     };
 
     for event in path_events.read() {
-        let message = NetworkMessage::BroadcastScenePaths(event.frame.paths.clone());
-        if let Ok(payload) = message.to_bytes() {
-            if let Err(e) = endpoint.broadcast_payload(payload) {
-                error!("Failed to broadcast BroadcastScenePaths: {}", e);
-            }
-        }
+        let message = NetworkMessage::BroadcastScenePaths(event.frame.clone());
+        broadcast_network_message(endpoint, &message, "BroadcastScenePaths");
     }
 }
 
@@ -106,11 +142,10 @@ fn start_server(mut server: ResMut<QuinnetServer>, config: Res<NetworkingConfigu
         defaultables: Default::default(),
     }) {
         Ok(_) => {
-            info!("Server started on {}:{}", SERVER_HOST, SERVER_PORT);
+            info!("Server started on {}:{}", config.ip, config.port);
         }
         Err(e) => {
             error!("Failed to start server: {}", e);
-            return;
         }
     }
 }
@@ -157,7 +192,6 @@ fn handle_config_messages(
     scene_setup: Res<SceneSetup>,
     instance_id: Res<ServerInstanceId>,
     current_state: Res<State<ServerState>>,
-    _current_session_state: Res<State<SessionState>>,
     current_calibration_state: Res<State<CalibrationState>>,
     mut next_calibration_state: ResMut<NextState<CalibrationState>>,
     mut next_server_state: ResMut<NextState<ServerState>>,
@@ -165,7 +199,7 @@ fn handle_config_messages(
     let Some(endpoint) = server.get_endpoint_mut() else {
         return;
     };
-    
+
     for msg in messages.read() {
         match &msg.message {
             NetworkMessage::SetReceiverMode { active, source_name } => {
@@ -175,50 +209,40 @@ fn handle_config_messages(
                     info!("Server state changed to {:?} (Receiver Mode: {}) by client {}", target_state, active, msg.client_id);
                 }
                 let reply = NetworkMessage::ReceiverModeUpdate { active: *active, source_name: source_name.clone() };
-                if let Ok(payload) = reply.to_bytes() {
-                    let _ = endpoint.broadcast_payload(payload);
-                }
+                broadcast_network_message(endpoint, &reply, "ReceiverModeUpdate");
             }
             NetworkMessage::Pong { timestamp } => {
                 info!("Received pong from client {} at timestamp {}", msg.client_id, timestamp);
             }
             NetworkMessage::QueryProjectorConfig => {
                 let message = NetworkMessage::ProjectorConfigUpdate(projector_config.clone());
-                let payload = message.to_bytes().expect("Serialize ProjectorConfigResponse");
-                send_payload_and_log_error(endpoint, msg.client_id, payload, "ProjectorConfigResponse");
+                send_network_message(endpoint, msg.client_id, &message, "ProjectorConfigResponse");
             }
             NetworkMessage::QueryCameraConfig => {
                 let message = NetworkMessage::CameraConfigUpdate(camera_config.clone());
-                let payload = message.to_bytes().expect("Serialize CameraConfigUpdate");
-                send_payload_and_log_error(endpoint, msg.client_id, payload, "CameraConfigUpdate");
+                send_network_message(endpoint, msg.client_id, &message, "CameraConfigUpdate");
             }
             NetworkMessage::QuerySceneConfig => {
                 let message = NetworkMessage::SceneConfigUpdate(scene_config.clone());
-                let payload = message.to_bytes().expect("Serialize SceneConfigUpdate");
-                send_payload_and_log_error(endpoint, msg.client_id, payload, "SceneConfigUpdate");
+                send_network_message(endpoint, msg.client_id, &message, "SceneConfigUpdate");
             }
             NetworkMessage::QuerySceneSetup => {
                 let message = NetworkMessage::SceneSetupUpdate(scene_setup.clone());
-                let payload = message.to_bytes().expect("Serialize SceneSetupResponse");
-                send_payload_and_log_error(endpoint, msg.client_id, payload, "SceneSetupResponse");
+                send_network_message(endpoint, msg.client_id, &message, "SceneSetupResponse");
             }
             NetworkMessage::QueryServerState => {
-                // Send both ServerState and InstanceInfo
                 if let Some(uuid) = instance_id.0 {
                     let info_msg = NetworkMessage::ServerInfo { instance_id: uuid };
-                    let info_payload = info_msg.to_bytes().expect("Serialize ServerInfo");
-                    send_payload_and_log_error(endpoint, msg.client_id, info_payload, "ServerInfoResponse");
+                    send_network_message(endpoint, msg.client_id, &info_msg, "ServerInfoResponse");
                 }
 
                 let message = NetworkMessage::ServerStateUpdate(current_state.get().clone());
-                let payload = message.to_bytes().expect("Serialize ServerStateResponse");
-                send_payload_and_log_error(endpoint, msg.client_id, payload, "ServerStateResponse");
+                send_network_message(endpoint, msg.client_id, &message, "ServerStateResponse");
             }
 
             NetworkMessage::QueryCalibrationState => {
                 let message = NetworkMessage::CalibrationStateUpdate(current_calibration_state.get().clone());
-                let payload = message.to_bytes().expect("Serialize CalibrationStateResponse");
-                send_payload_and_log_error(endpoint, msg.client_id, payload, "CalibrationStateResponse");
+                send_network_message(endpoint, msg.client_id, &message, "CalibrationStateResponse");
             }
             NetworkMessage::UpdateProjectorConfig(new_config) => {
                 *projector_config = new_config.clone();
@@ -236,13 +260,7 @@ fn handle_config_messages(
                 if !matches!(*next_calibration_state, NextState::Pending(_)) && current_calibration_state.get() != new_state {
                     next_calibration_state.set(new_state.clone());
                     info!("Calibration state updated by client {}: {:?}", msg.client_id, new_state);
-
-                    let message = NetworkMessage::CalibrationStateUpdate(new_state.clone());
-                    if let Ok(payload) = message.to_bytes() {
-                        if let Err(e) = endpoint.broadcast_payload(payload) {
-                            error!("Failed to broadcast CalibrationStateUpdate: {:?}", e);
-                        }
-                    }
+                    // Authoritative state change is broadcast by broadcast_state_on_change
                 } else {
                     debug!("Ignoring UpdateCalibrationState({:?}) from client {}: transition already pending or unchanged", new_state, msg.client_id);
                 }
@@ -253,31 +271,36 @@ fn handle_config_messages(
 }
 
 /// Handle session channel messages (OpenSession / CloseSession)
-fn handle_game_session_messages(
+fn handle_session_messages(
     mut messages: MessageReader<FromClientMessage>,
-    mut init_game_session_events: MessageWriter<InitGameSessionEvent>,
-    mut exit_game_events: MessageWriter<ExitGameEvent>,
+    mut init_session_events: MessageWriter<InitSessionEvent>,
+    mut close_session_events: MessageWriter<CloseSessionEvent>,
+    channel_registry: Option<Res<ChannelRegistry>>,
 ) {
-
     for msg in messages.read() {
         match &msg.message {
             NetworkMessage::OpenSession { session_id, channel_name } => {
                 info!("Received OpenSession for channel '{}' (session: {})", channel_name, session_id);
-                let game_id = match channel_name.to_lowercase().as_str() {
-                    "hunter" => 101,
-                    "snake" => 102,
-                    _ => 101,
-                };
-                init_game_session_events.write(InitGameSessionEvent {
+                let game_id = channel_registry
+                    .as_ref()
+                    .and_then(|reg| reg.get_app_by_name(channel_name))
+                    .map(|app| app.id)
+                    .unwrap_or_else(|| {
+                        match channel_name.to_lowercase().as_str() {
+                            "snake" => 102,
+                            _ => 101,
+                        }
+                    });
+                init_session_events.write(InitSessionEvent {
                     game_id,
-                    game_session_uuid: *session_id,
+                    session_id: *session_id,
                     initial_state: common::state::SessionState::Paused,
                 });
             }
             NetworkMessage::CloseSession { session_id } => {
                 info!("Received CloseSession for session: {}", session_id);
-                exit_game_events.write(ExitGameEvent {
-                    game_session_uuid: *session_id,
+                close_session_events.write(CloseSessionEvent {
+                    session_id: *session_id,
                 });
             }
             _ => {}
@@ -320,56 +343,19 @@ fn handle_input_messages(
     }
 }
 
-
-
 /// Send periodic ping messages to all connected clients
-fn send_ping_periodically(
-    mut server: ResMut<QuinnetServer>,
-    time: Res<Time>,
-    mut timer: Local<Option<Timer>>,
-) {
-    // Initialize timer on first run
-    if timer.is_none() {
-        *timer = Some(Timer::from_seconds(10.0, TimerMode::Repeating));
-    }
-
-    let timer = timer.as_mut().unwrap();
-    timer.tick(time.delta());
-
-    if !timer.just_finished() {
-        return;
-    }
-
+fn send_ping_periodically(mut server: ResMut<QuinnetServer>) {
     let Some(endpoint) = server.get_endpoint_mut() else {
         return;
     };
 
-    // Get current timestamp
     let timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_millis() as u64;
 
     let message = NetworkMessage::Ping { timestamp };
-
-    // Serialize the message to bytes using bincode
-    let payload = match message.to_bytes() {
-        Ok(bytes) => bytes,
-        Err(e) => {
-            error!("Failed to serialize ping message: {}", e);
-            return;
-        }
-    };
-
-    // Broadcast ping to all connected clients
-    match endpoint.broadcast_payload(payload) {
-        Ok(_) => {
-            debug!("Sent ping to all clients at timestamp {}", timestamp);
-        }
-        Err(e) => {
-            error!("Failed to broadcast ping: {}", e);
-        }
-    }
+    broadcast_network_message(endpoint, &message, "Ping");
 }
 
 /// Broadcasts SceneSetup and individual configurations to all connected clients when they change.
@@ -380,97 +366,53 @@ fn broadcast_scene_setup_on_change(
     projector_config: Res<ProjectorConfiguration>,
     scene_configuration: Res<SceneConfiguration>,
 ) {
+    let Some(endpoint) = server.get_endpoint_mut() else {
+        return;
+    };
+
     let mut changed = false;
 
     // Check and broadcast CameraConfiguration changes
     if camera_config.is_changed() {
-        if let Some(endpoint) = server.get_endpoint_mut() {
-            let message = NetworkMessage::CameraConfigUpdate(camera_config.clone());
-            if let Ok(payload) = message.to_bytes() {
-                let _ = endpoint.broadcast_payload(payload);
-            }
-        }
+        let message = NetworkMessage::CameraConfigUpdate(camera_config.clone());
+        broadcast_network_message(endpoint, &message, "CameraConfigUpdate");
         changed = true;
     }
 
     // Check and broadcast ProjectorConfiguration changes
     if projector_config.is_changed() {
-        if let Some(endpoint) = server.get_endpoint_mut() {
-            let message = NetworkMessage::ProjectorConfigUpdate(projector_config.clone());
-            if let Ok(payload) = message.to_bytes() {
-                let _ = endpoint.broadcast_payload(payload);
-            }
-        }
+        let message = NetworkMessage::ProjectorConfigUpdate(projector_config.clone());
+        broadcast_network_message(endpoint, &message, "ProjectorConfigUpdate");
         changed = true;
     }
 
     // Check and broadcast SceneConfiguration changes
     if scene_configuration.is_changed() {
-        if let Some(endpoint) = server.get_endpoint_mut() {
-            let message = NetworkMessage::SceneConfigUpdate(scene_configuration.clone());
-            if let Ok(payload) = message.to_bytes() {
-                let _ = endpoint.broadcast_payload(payload);
-            }
-        }
+        let message = NetworkMessage::SceneConfigUpdate(scene_configuration.clone());
+        broadcast_network_message(endpoint, &message, "SceneConfigUpdate");
         changed = true;
     }
 
     // Check and broadcast SceneSetup changes
     if scene_setup.is_changed() || changed {
-        if let Some(endpoint) = server.get_endpoint_mut() {
-            let message = NetworkMessage::SceneSetupUpdate(scene_setup.clone());
-            if let Ok(payload) = message.to_bytes() {
-                let _ = endpoint.broadcast_payload(payload);
-            }
-        }
+        let message = NetworkMessage::SceneSetupUpdate(scene_setup.clone());
+        broadcast_network_message(endpoint, &message, "SceneSetupUpdate");
     }
 }
 
-/// Helper function to send a payload and log an error if it fails.
-fn send_payload_and_log_error(
-    endpoint: &mut Endpoint,
-    client_id: ClientId,
-    payload: Vec<u8>,
-    error_context: &str,
-) {
-    let msg_name = match NetworkMessage::from_bytes(&payload) {
-        Ok(msg) => format!("{:?}", msg),
-        Err(_) => "<unknown message>".to_string(),
-    };
-    info!("Sending message '{}' to client {} ({})", msg_name, client_id, error_context);
-    if let Err(e) = endpoint.send_payload(client_id, payload) {
-        error!(
-            "Failed to send {} to client {}: {}",
-            error_context, client_id, e
-        );
-    }
-}
-
-/// Helper function to broadcast a payload and log an error if it fails.
-fn broadcast_payload_and_log_error(endpoint: &mut Endpoint, payload: Vec<u8>, error_context: &str) {
-    let msg_name = match NetworkMessage::from_bytes(&payload) {
-        Ok(msg) => format!("{:?}", msg),
-        Err(_) => "<unknown message>".to_string(),
-    };
-    info!("Broadcasting message '{}' to all clients ({})", msg_name, error_context);
-    if let Err(e) = endpoint.broadcast_payload(payload) {
-        error!("Failed to broadcast {}: {}", error_context, e);
-    }
-}
-
-fn send_game_session_updates(
+fn send_session_updates(
     mut server: ResMut<QuinnetServer>,
-    game_sessions: Query<(&GameSession, Option<&Children>), Changed<GameSession>>,
+    sessions: Query<(&Session, Option<&Children>), Changed<Session>>,
     actor_links: Query<&ActorLink>,
 ) {
     let Some(endpoint) = server.get_endpoint_mut() else {
         return;
     };
 
-    for (game_session, maybe_children) in game_sessions.iter() {
-        info!("GameSession changed: {:?}", game_session);
+    for (session, maybe_children) in sessions.iter() {
+        info!("Session changed: {:?}", session);
 
-        // Collect clients that own actors parented to this game session
+        // Collect clients that own actors parented to this session
         let mut recipients: HashSet<ClientId> = HashSet::new();
         if let Some(children) = maybe_children {
             recipients.reserve(children.len());
@@ -481,134 +423,56 @@ fn send_game_session_updates(
             }
         }
 
+        let message = NetworkMessage::SessionUpdate(session.clone().into());
+
         // If no actors are registered yet, broadcast to all clients
         if recipients.is_empty() {
-            let message = NetworkMessage::SessionUpdate(game_session.clone().into());
-            let payload = message.to_bytes().expect("Serialize GameSessionResponse");
-            broadcast_payload_and_log_error(
-                endpoint,
-                payload,
-                "GameSessionResponse update (broadcast)",
-            );
-            continue;
-        }
-
-        let message = NetworkMessage::SessionUpdate(game_session.clone().into());
-        let payload = message.to_bytes().expect("Serialize GameSessionResponse");
-
-        // Send only to clients that have actors in this session
-        for client_id in recipients {
-            send_payload_and_log_error(
-                endpoint,
-                client_id,
-                payload.clone(),
-                "GameSessionResponse update",
-            );
+            broadcast_network_message(endpoint, &message, "SessionUpdate (broadcast)");
+        } else {
+            // Send only to clients that have actors in this session
+            for client_id in recipients {
+                send_network_message(endpoint, client_id, &message, "SessionUpdate");
+            }
         }
     }
 }
 
-fn handle_game_actor_update_event(
+/// Broadcast the final SessionUpdate of sessions that were despawned this frame.
+/// Live sessions are covered by `send_session_updates` via `Changed<Session>`; a closed
+/// session's entity is gone before that can fire, so its update is forwarded from the message.
+fn send_closed_session_updates(
     mut server: ResMut<QuinnetServer>,
-    mut updates: MessageReader<GameActorUpdateEvent>,
+    mut updates: MessageReader<SessionUpdate>,
+    sessions: Query<&Session>,
 ) {
     let Some(endpoint) = server.get_endpoint_mut() else {
         return;
     };
 
     for update in updates.read() {
-        let mut per_client: HashMap<ClientId, Vec<Actor>> = HashMap::new();
-        for link in &update.actors {
-            per_client
-                .entry(link.client_id)
-                .or_default()
-                .push(link.actor.clone());
+        let id = update.session.session_id;
+        if sessions.iter().any(|s| s.session_id == id) {
+            continue;
         }
-
-        for (client_id, actors) in per_client {
-            let env = common::curator_core::CuratorEventEnvelope::new(
-                "actor_response",
-                serde_json::to_value(&common::actor::ActorMetaData {
-                    game_session_uuid: update.game_uuid,
-                    actors,
-                }).unwrap_or_default(),
-            ).with_session(update.game_uuid);
-            if let Ok(payload) = NetworkMessage::CuratorEnvelope(env).to_bytes() {
-                send_payload_and_log_error(endpoint, client_id, payload, "CuratorEnvelope(actor_response)");
-            }
-        }
+        let message = NetworkMessage::SessionUpdate(update.session.clone());
+        broadcast_network_message(endpoint, &message, "SessionUpdate (closed)");
     }
 }
 
-fn handle_game_session_created(
+fn handle_session_created(
     mut server: ResMut<QuinnetServer>,
-    mut game_sessions: MessageReader<GameSessionCreated>,
+    mut sessions: MessageReader<SessionCreated>,
 ) {
     let Some(endpoint) = server.get_endpoint_mut() else {
         return;
     };
 
-    for created in game_sessions.read() {
-        info!("[Network] Received GameSessionCreated: {:?}", created.game_session);
-        let message = NetworkMessage::SessionCreated(created.game_session.clone().into());
-        let payload = message
-            .to_bytes()
-            .expect("Serialize GameSessionResponse (created)");
-
-        // Log all connected clients before broadcasting
+    for created in sessions.read() {
+        info!("[Network] Received SessionCreated: {:?}", created.session);
+        let message = NetworkMessage::SessionCreated(created.session.clone().into());
         let clients = endpoint.clients();
-        info!("[Network] Broadcasting GameSessionCreated to clients: {:?}", clients);
-        let result = endpoint.broadcast_payload(payload);
-        match result {
-            Ok(_) => info!("[Network] Broadcast GameSessionCreated succeeded"),
-            Err(e) => error!("[Network] Broadcast GameSessionCreated failed: {}", e),
-        }
-    }
-}
-
-fn handle_actor_result_events(
-    mut server: ResMut<QuinnetServer>,
-    mut reg_results: MessageReader<ActorRegistrationResultEvent>,
-    mut unreg_results: MessageReader<ActorUnregistrationResultEvent>,
-) {
-    let Some(endpoint) = server.get_endpoint_mut() else {
-        return;
-    };
-
-    // Registration results
-    for result in reg_results.read() {
-        let (tag, val) = match &result.result {
-            Ok(actor) => (
-                "actor_response",
-                serde_json::to_value(&common::actor::ActorMetaData {
-                    game_session_uuid: result.game_uuid,
-                    actors: vec![actor.clone()],
-                }).unwrap_or_default(),
-            ),
-            Err(msg) => ("actor_error", serde_json::Value::String(msg.clone())),
-        };
-        let env = common::curator_core::CuratorEventEnvelope::new(tag, val).with_session(result.game_uuid);
-        if let Ok(payload) = NetworkMessage::CuratorEnvelope(env).to_bytes() {
-            send_payload_and_log_error(endpoint, result.client_id, payload, tag);
-        }
-    }
-
-    // Unregistration results
-    for result in unreg_results.read() {
-        let (tag, val) = match &result.result {
-            Ok(actor) => (
-                "actor_response",
-                serde_json::to_value(&common::actor::ActorMetaData {
-                    game_session_uuid: result.game_uuid,
-                    actors: vec![actor.clone()],
-                }).unwrap_or_default(),
-            ),
-            Err(msg) => ("actor_error", serde_json::Value::String(msg.clone())),
-        };
-        let env = common::curator_core::CuratorEventEnvelope::new(tag, val).with_session(result.game_uuid);
-        if let Ok(payload) = NetworkMessage::CuratorEnvelope(env).to_bytes() {
-            send_payload_and_log_error(endpoint, result.client_id, payload, tag);
-        }
+        info!("[Network] Broadcasting SessionCreated to clients: {:?}", clients);
+        broadcast_network_message(endpoint, &message, "SessionCreated");
     }
 }
 
@@ -616,7 +480,6 @@ fn handle_actor_result_events(
 fn broadcast_state_on_change(
     mut server: ResMut<QuinnetServer>,
     server_state: Res<State<ServerState>>,
-    _session_state: Res<State<SessionState>>,
     calibration_state: Res<State<CalibrationState>>,
 ) {
     let Some(endpoint) = server.get_endpoint_mut() else {
@@ -624,25 +487,23 @@ fn broadcast_state_on_change(
     };
 
     if server_state.is_changed() {
-        info!("[broadcast_state_on_change] ServerState changed, broadcasting ServerStateUpdate: {:?}", server_state.get());
+        info!(
+            "[broadcast_state_on_change] ServerState changed, broadcasting ServerStateUpdate: {:?}",
+            server_state.get()
+        );
         let msg = NetworkMessage::ServerStateUpdate(server_state.get().clone());
-        if let Ok(payload) = msg.to_bytes() {
-            let _ = endpoint.broadcast_payload(payload);
-        }
+        broadcast_network_message(endpoint, &msg, "ServerStateUpdate");
     }
-
-
 
     if calibration_state.is_changed() {
-        info!("[broadcast_state_on_change] CalibrationState changed, broadcasting CalibrationStateUpdate: {:?}", calibration_state.get());
+        info!(
+            "[broadcast_state_on_change] CalibrationState changed, broadcasting CalibrationStateUpdate: {:?}",
+            calibration_state.get()
+        );
         let msg = NetworkMessage::CalibrationStateUpdate(calibration_state.get().clone());
-        if let Ok(payload) = msg.to_bytes() {
-            let _ = endpoint.broadcast_payload(payload);
-        }
+        broadcast_network_message(endpoint, &msg, "CalibrationStateUpdate");
     }
 }
-
-
 
 /// Handle server lifecycle messages (Shutdown)
 fn handle_lifecycle_messages(
@@ -666,13 +527,11 @@ fn broadcast_curator_prompts(
     };
     for event in prompt_requests.read() {
         let msg = NetworkMessage::CuratorPrompt(event.prompt.clone());
-        if let Ok(payload) = msg.to_bytes() {
-            info!(
-                "[NetworkingPlugin] Broadcasting CuratorPrompt '{}' (id: {})",
-                event.prompt.title, event.prompt.prompt_id
-            );
-            let _ = endpoint.broadcast_payload(payload);
-        }
+        info!(
+            "[NetworkingPlugin] Broadcasting CuratorPrompt '{}' (id: {})",
+            event.prompt.title, event.prompt.prompt_id
+        );
+        broadcast_network_message(endpoint, &msg, "CuratorPrompt");
     }
 }
 
@@ -685,9 +544,7 @@ fn broadcast_curator_envelopes(
     };
     for env in envelopes.read() {
         let msg = NetworkMessage::CuratorEnvelope(env.clone());
-        if let Ok(payload) = msg.to_bytes() {
-            let _ = endpoint.broadcast_payload(payload);
-        }
+        broadcast_network_message(endpoint, &msg, "CuratorEnvelope");
     }
 }
 

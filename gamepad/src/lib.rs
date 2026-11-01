@@ -47,7 +47,7 @@ pub struct PrevGamepadState {
     pub right_thumb: bool,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Btn {
     DPadUp, DPadDown, DPadLeft, DPadRight,
     South, East, West, North,
@@ -57,27 +57,74 @@ pub enum Btn {
     LeftThumb, RightThumb,
 }
 
+pub const ALL_BTNS: [Btn; 16] = [
+    Btn::DPadUp, Btn::DPadDown, Btn::DPadLeft, Btn::DPadRight,
+    Btn::South, Btn::East, Btn::West, Btn::North,
+    Btn::LeftBumper, Btn::RightBumper,
+    Btn::LeftTrigger, Btn::RightTrigger,
+    Btn::Start, Btn::Select,
+    Btn::LeftThumb, Btn::RightThumb,
+];
+
+/// Event emitted when a gamepad button is pressed or released.
+#[derive(bevy::prelude::Message, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct GamepadButtonEvent {
+    pub client_id: u64,
+    pub button: Btn,
+    pub pressed: bool,
+}
+
 impl GamepadState {
+    pub fn is_pressed(&self, button: Btn) -> bool {
+        match button {
+            Btn::DPadUp => self.dpad_up,
+            Btn::DPadDown => self.dpad_down,
+            Btn::DPadLeft => self.dpad_left,
+            Btn::DPadRight => self.dpad_right,
+            Btn::South => self.south,
+            Btn::East => self.east,
+            Btn::West => self.west,
+            Btn::North => self.north,
+            Btn::LeftBumper => self.left_bumper,
+            Btn::RightBumper => self.right_bumper,
+            Btn::LeftTrigger => self.left_trigger,
+            Btn::RightTrigger => self.right_trigger,
+            Btn::Start => self.start,
+            Btn::Select => self.select,
+            Btn::LeftThumb => self.left_thumb,
+            Btn::RightThumb => self.right_thumb,
+        }
+    }
+
     pub fn just_pressed(&self, prev: &PrevGamepadState, button: Btn) -> bool {
-        let (cur, old) = match button {
-            Btn::DPadUp => (self.dpad_up, prev.dpad_up),
-            Btn::DPadDown => (self.dpad_down, prev.dpad_down),
-            Btn::DPadLeft => (self.dpad_left, prev.dpad_left),
-            Btn::DPadRight => (self.dpad_right, prev.dpad_right),
-            Btn::South => (self.south, prev.south),
-            Btn::East => (self.east, prev.east),
-            Btn::West => (self.west, prev.west),
-            Btn::North => (self.north, prev.north),
-            Btn::LeftBumper => (self.left_bumper, prev.left_bumper),
-            Btn::RightBumper => (self.right_bumper, prev.right_bumper),
-            Btn::LeftTrigger => (self.left_trigger, prev.left_trigger),
-            Btn::RightTrigger => (self.right_trigger, prev.right_trigger),
-            Btn::Start => (self.start, prev.start),
-            Btn::Select => (self.select, prev.select),
-            Btn::LeftThumb => (self.left_thumb, prev.left_thumb),
-            Btn::RightThumb => (self.right_thumb, prev.right_thumb),
-        };
-        cur && !old
+        self.is_pressed(button) && !prev.is_pressed(button)
+    }
+
+    pub fn just_released(&self, prev: &PrevGamepadState, button: Btn) -> bool {
+        !self.is_pressed(button) && prev.is_pressed(button)
+    }
+}
+
+impl PrevGamepadState {
+    pub fn is_pressed(&self, button: Btn) -> bool {
+        match button {
+            Btn::DPadUp => self.dpad_up,
+            Btn::DPadDown => self.dpad_down,
+            Btn::DPadLeft => self.dpad_left,
+            Btn::DPadRight => self.dpad_right,
+            Btn::South => self.south,
+            Btn::East => self.east,
+            Btn::West => self.west,
+            Btn::North => self.north,
+            Btn::LeftBumper => self.left_bumper,
+            Btn::RightBumper => self.right_bumper,
+            Btn::LeftTrigger => self.left_trigger,
+            Btn::RightTrigger => self.right_trigger,
+            Btn::Start => self.start,
+            Btn::Select => self.select,
+            Btn::LeftThumb => self.left_thumb,
+            Btn::RightThumb => self.right_thumb,
+        }
     }
 }
 
@@ -246,13 +293,14 @@ impl Plugin for GamepadBasePlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<GamepadState>()
             .init_resource::<PrevGamepadState>()
-            .init_resource::<ServerGamepadCursor>();
+            .init_resource::<ServerGamepadCursor>()
+            .add_message::<GamepadButtonEvent>();
 
         #[cfg(target_os = "windows")]
         {
             if let Some(backend) = xinput_backend::XInputBackend::new() {
                 app.insert_resource(backend);
-                app.add_systems(PreUpdate, poll_xinput);
+                app.add_systems(PreUpdate, (poll_xinput, emit_gamepad_button_events).chain());
             } else {
                 warn!("Failed to load XInput — gamepad will not work on Windows");
             }
@@ -260,7 +308,26 @@ impl Plugin for GamepadBasePlugin {
 
         #[cfg(not(target_os = "windows"))]
         {
-            app.add_systems(PreUpdate, poll_bevy_gamepad);
+            app.add_systems(PreUpdate, (poll_bevy_gamepad, emit_gamepad_button_events).chain());
+        }
+    }
+}
+
+fn emit_gamepad_button_events(
+    state: Res<GamepadState>,
+    prev: Res<PrevGamepadState>,
+    mut events: MessageWriter<GamepadButtonEvent>,
+) {
+    if !state.connected { return; }
+    for button in ALL_BTNS {
+        let cur = state.is_pressed(button);
+        let old = prev.is_pressed(button);
+        if cur != old {
+            events.write(GamepadButtonEvent {
+                client_id: SERVER_GAMEPAD_CLIENT_ID,
+                button,
+                pressed: cur,
+            });
         }
     }
 }

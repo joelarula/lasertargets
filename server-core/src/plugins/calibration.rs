@@ -1,10 +1,39 @@
 use bevy::prelude::*;
 use bevy_quinnet::server::ConnectionLostEvent;
-use common::path::{UniversalPath, PathSegment};
+use common::config::{CameraConfiguration, ProjectorConfiguration, SceneConfiguration};
+use common::network::MousePositionEvent;
+use common::path::{PathSegment, UniversalPath};
 use common::scene::SceneEntity;
 use common::scene::{SceneSetup, SceneSystemSet};
 use common::state::CalibrationState;
-use common::network::MousePositionEvent;
+use gamepad::{Btn, GamepadButtonEvent, GamepadState, PrevGamepadState, GAMEPAD_STICK_DEADZONE};
+
+/// Target entity currently being calibrated by the gamepad in calibration mode.
+#[derive(Resource, Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CalibrationTargetMode {
+    /// Mode A: Physical Rig Pose (Laser Projector & Camera at Point A looking at Billboard)
+    #[default]
+    RigPointA,
+    /// Mode B: Physical Billboard Plane (Laser reflection canvas on the wall at Point B)
+    BillboardPointB,
+}
+
+#[derive(Resource)]
+pub struct CalibrationGamepadCooldowns {
+    pub calibration_toggle: Timer,
+    pub calibration_step: Timer,
+    pub target_mode_toggle: Timer,
+}
+
+impl Default for CalibrationGamepadCooldowns {
+    fn default() -> Self {
+        Self {
+            calibration_toggle: Timer::from_seconds(0.5, TimerMode::Once),
+            calibration_step: Timer::from_seconds(0.15, TimerMode::Once),
+            target_mode_toggle: Timer::from_seconds(0.3, TimerMode::Once),
+        }
+    }
+}
 
 pub struct CalibrationPlugin;
 
@@ -44,15 +73,18 @@ impl Plugin for CalibrationPlugin {
     fn build(&self, app: &mut App) {
         app
             .init_resource::<CalibrationData>()
+            .init_resource::<CalibrationGamepadCooldowns>()
+            .init_resource::<CalibrationTargetMode>()
             .add_systems(OnExit(CalibrationState::On), despawn_calibration_overlays.after(SceneSystemSet))
             .add_systems(Update, handle_mouse_position_updates)
+            .add_systems(Update, cleanup_disconnected_clients)
             .add_systems(Update, (
                 spawn_calibration_overlays,
                 update_and_maintain_crosshair_positions,
-                cleanup_disconnected_clients,
-            ).after(SceneSystemSet))
-            .add_systems(Update, update_projection_area_rectangle)
-            .add_systems(Update, update_center_crosshair);
+            ).after(SceneSystemSet).run_if(in_state(CalibrationState::On)))
+            .add_systems(Update, update_projection_area_rectangle.run_if(in_state(CalibrationState::On)))
+            .add_systems(Update, gamepad_toggle_calibration)
+            .add_systems(Update, gamepad_calibration_controls.run_if(in_state(CalibrationState::On)));
     }
 }
 
@@ -91,49 +123,41 @@ fn build_calibration_crosshair_path() -> UniversalPath {
     UniversalPath::crosshair(Vec2::ZERO, crosshair_size, cyan)
 }
 
+#[inline]
+fn world_to_local(world_pos: Vec3, scene_inv_matrix: Option<&Mat4>) -> Vec3 {
+    if let Some(inv_mat) = scene_inv_matrix {
+        inv_mat.transform_point3(world_pos)
+    } else {
+        world_pos
+    }
+}
+
 fn update_and_maintain_crosshair_positions(
     mut commands: Commands,
     calibration_data: Res<CalibrationData>,
-    calibration_state: Res<State<CalibrationState>>,
     scene_query: Query<(Entity, &Transform), (With<SceneEntity>, Without<CalibrationCrosshair>)>,
-    mut crosshair_query: Query<(Entity, &mut Transform, &mut GlobalTransform, Option<&ChildOf>, &CalibrationCrosshair)>,
+    mut crosshair_query: Query<(Entity, &mut Transform, &CalibrationCrosshair)>,
 ) {
-    if *calibration_state.get() != CalibrationState::On {
-        for (entity, _, _, _, _) in crosshair_query.iter() {
-            commands.entity(entity).despawn();
-        }
-        return;
-    }
+    let (scene_entity, scene_inv_matrix): (Option<Entity>, Option<Mat4>) = match scene_query.single() {
+        Ok((entity, transform)) => (Some(entity), Some(transform.to_matrix().inverse())),
+        Err(_) => (None, None),
+    };
 
-    let scene_transform = scene_query.single().ok().map(|(_, t)| t);
     let mut existing_clients: std::collections::HashMap<u64, Entity> = std::collections::HashMap::new();
 
-    for (entity, mut transform, mut global_transform, parent, crosshair) in crosshair_query.iter_mut() {
+    for (entity, mut transform, crosshair) in crosshair_query.iter_mut() {
         if let Some(&world_pos) = calibration_data.mouse_positions.get(&crosshair.client_id) {
-            let local_pos = if parent.is_some() {
-                if let Some(scene_t) = scene_transform {
-                    let scene_matrix = Mat4::from_scale_rotation_translation(scene_t.scale, scene_t.rotation, scene_t.translation);
-                    scene_matrix.inverse().transform_point3(world_pos)
-                } else {
-                    world_pos
-                }
-            } else {
-                world_pos
-            };
-            transform.translation = local_pos;
-            *global_transform = GlobalTransform::from(Transform::from_translation(world_pos));
-
+            transform.translation = world_to_local(world_pos, scene_inv_matrix.as_ref());
             existing_clients.insert(crosshair.client_id, entity);
         } else {
             commands.entity(entity).despawn();
         }
     }
 
-    // Auto-respawn crosshair if entity was despawned during scene/state transition
-    let scene_entity = scene_query.single().ok().map(|(e, _)| e);
+    // Auto-respawn crosshair if client is actively tracking but entity was despawned
     for (&client_id, &world_pos) in calibration_data.mouse_positions.iter() {
         if !existing_clients.contains_key(&client_id) {
-            spawn_crosshair_at_position(&mut commands, client_id, world_pos, scene_entity, scene_transform);
+            spawn_crosshair_at_position(&mut commands, client_id, world_pos, scene_entity, scene_inv_matrix.as_ref());
             info!("✓ Auto-restored active crosshair for client {} at {:?}", client_id, world_pos);
         }
     }
@@ -142,22 +166,11 @@ fn update_and_maintain_crosshair_positions(
 fn cleanup_disconnected_clients(
     mut connection_lost_events: MessageReader<ConnectionLostEvent>,
     mut calibration_data: ResMut<CalibrationData>,
-    mut commands: Commands,
-    crosshair_query: Query<(Entity, &CalibrationCrosshair)>,
 ) {
     for connection_lost in connection_lost_events.read() {
         let client_id = connection_lost.id;
-        
-        // Remove from mouse positions tracking
         calibration_data.mouse_positions.remove(&client_id);
-        
-        for (entity, crosshair) in crosshair_query.iter() {
-            if crosshair.client_id == client_id {
-                commands.entity(entity).despawn();
-            }
-        }
-
-        info!("Cleaned up mouse tracking and crosshair for disconnected client {}", client_id);
+        info!("Cleaned up mouse tracking for disconnected client {}", client_id);
     }
 }
 
@@ -167,23 +180,15 @@ fn spawn_crosshair_at_position(
     client_id: u64,
     world_position: Vec3,
     scene_entity: Option<Entity>,
-    scene_transform: Option<&Transform>,
+    scene_inv_matrix: Option<&Mat4>,
 ) {
     let crosshair_universal_path = build_calibration_crosshair_path();
-    
-    let local_pos = if let Some(scene_t) = scene_transform {
-        let scene_matrix = Mat4::from_scale_rotation_translation(scene_t.scale, scene_t.rotation, scene_t.translation);
-        scene_matrix.inverse().transform_point3(world_position)
-    } else {
-        world_position
-    };
+    let local_pos = world_to_local(world_position, scene_inv_matrix);
 
-    let transform = Transform::from_translation(local_pos);
-    
     let child_entity = commands.spawn((
-        transform,
-        GlobalTransform::from(Transform::from_translation(world_position)),
+        Transform::from_translation(local_pos),
         Visibility::default(),
+        CalibrationPath,
         CalibrationCrosshair { client_id },
         crosshair_universal_path,
         common::path::PathRenderable::default(),
@@ -238,7 +243,6 @@ fn build_calibration_rectangle_path(scene_dimensions: Vec2) -> UniversalPath {
 /// Spawn a green crosshair at the scene center matching the corner L-brackets
 fn spawn_center_crosshair(
     commands: &mut Commands,
-    _scene_setup: &SceneSetup,
     scene_entity: Entity,
 ) {
     let crosshair_size = 0.5;
@@ -246,7 +250,6 @@ fn spawn_center_crosshair(
     let crosshair_path = UniversalPath::crosshair(Vec2::ZERO, crosshair_size, green);
     let child_entity = commands.spawn((
         Transform::IDENTITY,
-        GlobalTransform::default(),
         Visibility::default(),
         CalibrationPath,
         CalibrationCenterCrosshair,
@@ -266,7 +269,6 @@ fn spawn_projection_area_rectangle(
     let rectangle_path = build_calibration_rectangle_path(scene_setup.scene.scene_dimension);
     let child_entity = commands.spawn((
         Transform::IDENTITY,
-        GlobalTransform::default(),
         Visibility::default(),
         CalibrationPath,
         ProjectionAreaRectangle,
@@ -281,15 +283,10 @@ fn spawn_projection_area_rectangle(
 fn spawn_calibration_overlays(
     mut commands: Commands,
     scene_setup: Res<SceneSetup>,
-    calibration_state: Res<State<CalibrationState>>,
     rectangle_query: Query<Entity, With<ProjectionAreaRectangle>>,
     center_query: Query<Entity, With<CalibrationCenterCrosshair>>,
     scene_entity_query: Query<Entity, With<SceneEntity>>,
 ) {
-    if *calibration_state.get() != CalibrationState::On {
-        return;
-    }
-
     let needs_rectangle = rectangle_query.iter().next().is_none();
     let needs_center = center_query.iter().next().is_none();
 
@@ -306,37 +303,219 @@ fn spawn_calibration_overlays(
         spawn_projection_area_rectangle(&mut commands, &scene_setup, scene_entity);
     }
     if needs_center {
-        spawn_center_crosshair(&mut commands, &scene_setup, scene_entity);
+        spawn_center_crosshair(&mut commands, scene_entity);
     }
 }
 
 // --- Calibration overlay update systems ---
 fn update_projection_area_rectangle(
     scene_setup: Res<SceneSetup>,
-    mut query: Query<(&mut Transform, &mut UniversalPath), With<ProjectionAreaRectangle>>,
+    mut query: Query<&mut UniversalPath, With<ProjectionAreaRectangle>>,
 ) {
     if !scene_setup.is_changed() {
         return;
     }
     let rectangle_path = build_calibration_rectangle_path(scene_setup.scene.scene_dimension);
-    for (mut transform, mut path) in query.iter_mut() {
-        transform.translation = Vec3::ZERO;
-        transform.rotation = Quat::IDENTITY;
-        transform.scale = Vec3::ONE;
+    for mut path in query.iter_mut() {
         *path = rectangle_path.clone();
     }
 }
 
-fn update_center_crosshair(
-    scene_setup: Res<SceneSetup>,
-    mut query: Query<&mut Transform, With<CalibrationCenterCrosshair>>,
+fn gamepad_toggle_calibration(
+    time: Res<Time>,
+    mut cooldowns: ResMut<CalibrationGamepadCooldowns>,
+    mut button_events: MessageReader<GamepadButtonEvent>,
+    calibration_state: Res<State<CalibrationState>>,
+    mut next_calibration_state: ResMut<NextState<CalibrationState>>,
 ) {
-    if !scene_setup.is_changed() {
+    cooldowns.calibration_toggle.tick(time.delta());
+    if matches!(*next_calibration_state, NextState::Pending(_)) {
         return;
     }
-    for mut transform in query.iter_mut() {
-        transform.translation = Vec3::ZERO;
-        transform.rotation = Quat::IDENTITY;
-        transform.scale = Vec3::ONE;
+
+    for event in button_events.read() {
+        if event.button == Btn::North && event.pressed && cooldowns.calibration_toggle.is_finished() {
+            cooldowns.calibration_toggle.reset();
+            let next = match calibration_state.get() {
+                CalibrationState::On => CalibrationState::Off,
+                CalibrationState::Off => CalibrationState::On,
+            };
+            info!("Gamepad: Calibration mode toggled to {:?}", next);
+            next_calibration_state.set(next);
+        }
+    }
+}
+
+fn gamepad_calibration_controls(
+    time: Res<Time>,
+    mut cooldowns: ResMut<CalibrationGamepadCooldowns>,
+    state: Res<GamepadState>,
+    prev: Res<PrevGamepadState>,
+    mut target_mode: ResMut<CalibrationTargetMode>,
+    mut scene_config: ResMut<SceneConfiguration>,
+    mut projector_config: ResMut<ProjectorConfiguration>,
+    mut camera_config: ResMut<CameraConfiguration>,
+) {
+    if !state.connected { return; }
+    let dt = time.delta_secs();
+
+    // ── 0. Target Mode Toggle (Select / Back Button) ──────────────────────────
+    cooldowns.target_mode_toggle.tick(time.delta());
+    if state.just_pressed(&prev, Btn::Select) && cooldowns.target_mode_toggle.is_finished() {
+        cooldowns.target_mode_toggle.reset();
+        *target_mode = match *target_mode {
+            CalibrationTargetMode::RigPointA => CalibrationTargetMode::BillboardPointB,
+            CalibrationTargetMode::BillboardPointB => CalibrationTargetMode::RigPointA,
+        };
+        match *target_mode {
+            CalibrationTargetMode::RigPointA => {
+                info!("🎯 [Gamepad Calibration] -> POINT A: PROJECTOR & CAMERA RIG (Pose & Optical FOV)");
+            }
+            CalibrationTargetMode::BillboardPointB => {
+                info!("🎯 [Gamepad Calibration] -> POINT B: BILLBOARD SCENE (Size, Distance & Middle Position)");
+            }
+        }
+    }
+
+    // ── Speed Multipliers (Hover vs Boost vs Precision) ──────────────────────
+    let speed_mult = if state.left_thumb {
+        0.25 // Precision mode (0.25x)
+    } else if state.south {
+        2.5  // Boost / Fast Drag mode (2.5x)
+    } else {
+        1.0  // Normal mode (1.0x)
+    };
+
+    let move_speed = 1.8 * speed_mult;   // meters per second
+    let scale_speed = 1.5 * speed_mult;  // meters per second
+    let dist_speed = 2.0 * speed_mult;   // meters per second
+    let angle_speed = 15.0 * speed_mult; // degrees per second
+
+    cooldowns.calibration_step.tick(time.delta());
+
+    // Modifier: Right Bumper / Right Trigger / Right Thumb pressed down for Scene Middle Position
+    let is_middle_pos_held = state.right_bumper || state.right_trigger || state.right_thumb;
+
+    match *target_mode {
+        CalibrationTargetMode::BillboardPointB => {
+            let distance = projector_config.origin.translation.distance(scene_config.origin.translation);
+            let half_angle_rad = projector_config.angle.to_radians() / 2.0;
+            let max_dim = 2.0 * distance * half_angle_rad.tan();
+
+            if is_middle_pos_held {
+                if state.left_stick_x.abs() > GAMEPAD_STICK_DEADZONE {
+                    scene_config.origin.translation.x += state.left_stick_x * move_speed * dt;
+                }
+                if state.left_stick_y.abs() > GAMEPAD_STICK_DEADZONE {
+                    scene_config.origin.translation.y += state.left_stick_y * move_speed * dt;
+                }
+            } else {
+                if state.left_stick_x.abs() > GAMEPAD_STICK_DEADZONE {
+                    scene_config.scene_dimension.x = (scene_config.scene_dimension.x + state.left_stick_x * scale_speed * dt)
+                        .clamp(0.2, max_dim);
+                }
+                if state.left_stick_y.abs() > GAMEPAD_STICK_DEADZONE {
+                    scene_config.scene_dimension.y = (scene_config.scene_dimension.y + state.left_stick_y * scale_speed * dt)
+                        .clamp(0.2, max_dim);
+                }
+            }
+
+            if state.right_stick_y.abs() > GAMEPAD_STICK_DEADZONE {
+                scene_config.origin.translation.z -= state.right_stick_y * dist_speed * dt;
+            }
+            if state.right_stick_x.abs() > GAMEPAD_STICK_DEADZONE {
+                scene_config.origin.translation.x += state.right_stick_x * move_speed * dt;
+            }
+
+            if cooldowns.calibration_step.is_finished() {
+                let step = 0.1;
+                let mut changed = false;
+
+                if state.just_pressed(&prev, Btn::DPadUp) {
+                    scene_config.scene_dimension.y = (scene_config.scene_dimension.y + step).min(max_dim);
+                    info!("Gamepad Scene: Height -> {:.2}m", scene_config.scene_dimension.y);
+                    changed = true;
+                }
+                if state.just_pressed(&prev, Btn::DPadDown) {
+                    scene_config.scene_dimension.y = (scene_config.scene_dimension.y - step).max(step);
+                    info!("Gamepad Scene: Height -> {:.2}m", scene_config.scene_dimension.y);
+                    changed = true;
+                }
+                if state.just_pressed(&prev, Btn::DPadRight) {
+                    scene_config.scene_dimension.x = (scene_config.scene_dimension.x + step).min(max_dim);
+                    info!("Gamepad Scene: Width -> {:.2}m", scene_config.scene_dimension.x);
+                    changed = true;
+                }
+                if state.just_pressed(&prev, Btn::DPadLeft) {
+                    scene_config.scene_dimension.x = (scene_config.scene_dimension.x - step).max(step);
+                    info!("Gamepad Scene: Width -> {:.2}m", scene_config.scene_dimension.x);
+                    changed = true;
+                }
+
+                if changed {
+                    cooldowns.calibration_step.reset();
+                }
+            }
+        }
+
+        CalibrationTargetMode::RigPointA => {
+            let mut rig_delta = Vec3::ZERO;
+
+            if state.left_stick_x.abs() > GAMEPAD_STICK_DEADZONE {
+                rig_delta.x += state.left_stick_x * move_speed * dt;
+            }
+            if state.left_stick_y.abs() > GAMEPAD_STICK_DEADZONE {
+                rig_delta.y += state.left_stick_y * move_speed * dt;
+            }
+            if state.right_stick_y.abs() > GAMEPAD_STICK_DEADZONE {
+                rig_delta.z -= state.right_stick_y * dist_speed * dt;
+            }
+
+            if state.right_stick_x.abs() > GAMEPAD_STICK_DEADZONE {
+                projector_config.angle = (projector_config.angle + state.right_stick_x * angle_speed * dt)
+                    .clamp(15.0, 90.0);
+            }
+
+            if cooldowns.calibration_step.is_finished() {
+                let step = 0.1;
+                let mut changed = false;
+
+                if state.just_pressed(&prev, Btn::DPadUp) {
+                    rig_delta.y += step;
+                    info!("Gamepad Rig: Height -> {:.2}m", projector_config.origin.translation.y + step);
+                    changed = true;
+                }
+                if state.just_pressed(&prev, Btn::DPadDown) {
+                    rig_delta.y -= step;
+                    info!("Gamepad Rig: Height -> {:.2}m", projector_config.origin.translation.y - step);
+                    changed = true;
+                }
+                if state.just_pressed(&prev, Btn::DPadRight) {
+                    rig_delta.x += step;
+                    info!("Gamepad Rig: Lateral X -> {:.2}m", projector_config.origin.translation.x + step);
+                    changed = true;
+                }
+                if state.just_pressed(&prev, Btn::DPadLeft) {
+                    rig_delta.x -= step;
+                    info!("Gamepad Rig: Lateral X -> {:.2}m", projector_config.origin.translation.x - step);
+                    changed = true;
+                }
+
+                if changed {
+                    cooldowns.calibration_step.reset();
+                }
+            }
+
+            if rig_delta != Vec3::ZERO {
+                projector_config.origin.translation += rig_delta;
+                camera_config.origin.translation += rig_delta;
+            }
+
+            let billboard_center = scene_config.origin.translation;
+            projector_config.origin.rotation = Transform::from_translation(projector_config.origin.translation)
+                .looking_at(billboard_center, Vec3::Y).rotation;
+            camera_config.origin.rotation = Transform::from_translation(camera_config.origin.translation)
+                .looking_at(billboard_center, Vec3::Y).rotation;
+        }
     }
 }

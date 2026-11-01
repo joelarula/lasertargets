@@ -1,9 +1,9 @@
 pub use curator_core;
 
-use crate::plugins::actor::ActorPlugin;
+
 use crate::plugins::calibration::CalibrationPlugin;
 use crate::plugins::camera::CameraPlugin;
-use crate::plugins::game::GamePlugin;
+use crate::plugins::session::SessionLifecyclePlugin;
 use crate::plugins::gamepad::GamepadInputPlugin;
 use crate::plugins::menu::ServerMenuWorkflowPlugin;
 use crate::plugins::network::NetworkingPlugin;
@@ -16,7 +16,7 @@ use bevy::input::InputPlugin;
 use bevy::prelude::*;
 use bevy::state::app::StatesPlugin;
 use bevy_quinnet::server::QuinnetServerPlugin;
-use common::game::GameRegistryPlugin;
+use common::session::SessionPlugin;
 use common::scene::SceneSetupPlugin;
 use common::state::{CalibrationState, SessionState, ServerInstanceId, ServerState};
 use curator_core::CuratorCorePlugin;
@@ -50,12 +50,12 @@ pub fn add_common_server_plugins(app: &mut App) {
         .add_plugins(CalibrationPlugin)
         .add_plugins(ProjectorPlugin)
         .add_plugins(CameraPlugin)
-        .add_plugins(ActorPlugin)
-        .add_plugins(GameRegistryPlugin)
+
+        .add_plugins(SessionPlugin)
         .add_plugins(QuinnetServerPlugin::default())
         .add_plugins(NetworkingPlugin)
         .add_plugins(PathNetworkPlugin)
-        .add_plugins(GamePlugin)
+        .add_plugins(SessionLifecyclePlugin)
         .add_plugins(CuratorCorePlugin)
         .add_plugins(ServerMenuWorkflowPlugin)
         .add_plugins(GamepadInputPlugin)

@@ -31,6 +31,14 @@ impl ChannelRegistry {
         self.apps.get(&id)
     }
 
+    pub fn get_app_by_name(&self, name: &str) -> Option<&ChannelApp> {
+        self.apps.values().find(|a| a.name.eq_ignore_ascii_case(name))
+    }
+
+    pub fn get_game_by_name(&self, name: &str) -> Option<&ChannelApp> {
+        self.get_app_by_name(name)
+    }
+
     pub fn get_game_by_id(&self, id: u16) -> Option<&ChannelApp> {
         self.get_app_by_id(id)
     }
@@ -71,6 +79,13 @@ impl Actor {
     pub fn has_role(&self, role: &str) -> bool {
         self.roles.iter().any(|r| r == role)
     }
+}
+
+/// Component linking an Actor to a specific network Client ID.
+#[derive(Component, Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ActorLink {
+    pub client_id: u64,
+    pub actor: Actor,
 }
 
 /// Snapshot of actors currently attached to a session

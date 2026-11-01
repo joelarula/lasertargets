@@ -1,67 +1,25 @@
 use bevy::prelude::*;
-use common::config::{CameraConfiguration, ProjectorConfiguration, SceneConfiguration};
-use common::game::{ExitGameEvent, GameSession, InitGameSessionEvent};
-use common::state::{CalibrationState, SessionState, ServerState};
-use gamepad::{Btn, GamepadBasePlugin, GamepadState, PrevGamepadState, ServerGamepadCursor, GAMEPAD_STICK_DEADZONE, SERVER_GAMEPAD_CLIENT_ID};
-use crate::plugins::actor::ActorLink;
+use common::config::SceneConfiguration;
+use gamepad::{GamepadBasePlugin, GamepadButtonEvent, GamepadState, ServerGamepadCursor, GAMEPAD_STICK_DEADZONE, SERVER_GAMEPAD_CLIENT_ID};
+use common::actor::ActorLink;
 use crate::plugins::network::MousePositionEvent;
-use crate::plugins::status::LogStatusReportEvent;
-
-/// Target entity currently being calibrated by the gamepad in calibration mode.
-#[derive(Resource, Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum CalibrationTargetMode {
-    /// Mode A: Physical Rig Pose (Laser Projector & Camera at Point A looking at Billboard)
-    #[default]
-    RigPointA,
-    /// Mode B: Physical Billboard Plane (Laser reflection canvas on the wall at Point B)
-    BillboardPointB,
-}
 
 /// App-specific plugin registering gamepad event handlers for LaserTargets server.
 pub struct GamepadInputPlugin;
-
-#[derive(Resource)]
-pub struct GamepadInputCooldowns {
-    pub calibration_toggle: Timer,
-    pub menu_switch: Timer,
-    pub laser_toggle: Timer,
-    pub calibration_step: Timer,
-    pub target_mode_toggle: Timer,
-}
-
-impl Default for GamepadInputCooldowns {
-    fn default() -> Self {
-        Self {
-            calibration_toggle: Timer::from_seconds(0.5, TimerMode::Once),
-            menu_switch: Timer::from_seconds(0.6, TimerMode::Once),
-            laser_toggle: Timer::from_seconds(0.5, TimerMode::Once),
-            calibration_step: Timer::from_seconds(0.15, TimerMode::Once),
-            target_mode_toggle: Timer::from_seconds(0.3, TimerMode::Once),
-        }
-    }
-}
 
 impl Plugin for GamepadInputPlugin {
     fn build(&self, app: &mut App) {
         // Add core hardware gamepad polling plugin from gamepad utility crate
         app.add_plugins(GamepadBasePlugin);
 
-        app.init_resource::<GamepadInputCooldowns>()
-            .init_resource::<CalibrationTargetMode>();
-
         // Register Server Gamepad as direct Actor on startup
         app.add_systems(Startup, register_server_gamepad_actor);
 
-        // Register application-specific gamepad event handlers & virtual cursor navigation
+        // Register virtual cursor navigation and debug button logging
         app.add_systems(Update, (
-            log_gamepad_buttons,
-            gamepad_trigger_status_report,
-            gamepad_toggle_calibration,
             gamepad_cursor_movement,
-        ))
-        .add_systems(Update, gamepad_calibration_controls.run_if(in_state(CalibrationState::On)))
-        .add_systems(Update, gamepad_laser_toggle)
-        .add_systems(Update, gamepad_menu_game_switcher);
+            log_gamepad_buttons,
+        ));
     }
 }
 
@@ -87,42 +45,33 @@ fn gamepad_cursor_movement(
     scene_config: Res<SceneConfiguration>,
     mut cursor: ResMut<ServerGamepadCursor>,
     mut mouse_events: MessageWriter<MousePositionEvent>,
-    calibration_state: Option<Res<State<CalibrationState>>>,
 ) {
     if !state.connected { return; }
 
     let dt = time.delta_secs();
     let move_speed = cursor.sensitivity;
-    let is_calibration = calibration_state
-        .map(|s| *s.get() == CalibrationState::On)
-        .unwrap_or(false);
 
-    // In calibration mode, cursor stays locked to the 3D scene center being calibrated
-    if is_calibration {
+    // Initialize cursor position to scene origin center if uninitialized
+    if cursor.position == Vec3::ZERO {
         cursor.position = scene_config.origin.translation;
-    } else {
-        // Initialize cursor position to scene origin center if uninitialized
-        if cursor.position == Vec3::ZERO {
-            cursor.position = scene_config.origin.translation;
-        }
-
-        if state.left_stick_x.abs() > GAMEPAD_STICK_DEADZONE || state.left_stick_y.abs() > GAMEPAD_STICK_DEADZONE {
-            cursor.position.x += state.left_stick_x * move_speed * dt;
-            cursor.position.y += state.left_stick_y * move_speed * dt;
-        }
-
-        let half_w = (scene_config.scene_dimension.x as f32 / 2.0).max(0.5);
-        let half_h = (scene_config.scene_dimension.y as f32 / 2.0).max(0.5);
-
-        let min_x = scene_config.origin.translation.x - half_w;
-        let max_x = scene_config.origin.translation.x + half_w;
-        let min_y = scene_config.origin.translation.y - half_h;
-        let max_y = scene_config.origin.translation.y + half_h;
-
-        cursor.position.x = cursor.position.x.clamp(min_x, max_x);
-        cursor.position.y = cursor.position.y.clamp(min_y, max_y);
-        cursor.position.z = scene_config.origin.translation.z;
     }
+
+    if state.left_stick_x.abs() > GAMEPAD_STICK_DEADZONE || state.left_stick_y.abs() > GAMEPAD_STICK_DEADZONE {
+        cursor.position.x += state.left_stick_x * move_speed * dt;
+        cursor.position.y += state.left_stick_y * move_speed * dt;
+    }
+
+    let half_w = (scene_config.scene_dimension.x as f32 / 2.0).max(0.5);
+    let half_h = (scene_config.scene_dimension.y as f32 / 2.0).max(0.5);
+
+    let min_x = scene_config.origin.translation.x - half_w;
+    let max_x = scene_config.origin.translation.x + half_w;
+    let min_y = scene_config.origin.translation.y - half_h;
+    let max_y = scene_config.origin.translation.y + half_h;
+
+    cursor.position.x = cursor.position.x.clamp(min_x, max_x);
+    cursor.position.y = cursor.position.y.clamp(min_y, max_y);
+    cursor.position.z = scene_config.origin.translation.z;
 
     // Always emit current cursor position for calibration crosshairs and game aim
     mouse_events.write(MousePositionEvent {
@@ -131,41 +80,17 @@ fn gamepad_cursor_movement(
     });
 }
 
-
-
 // --- Debug logging ---
 
 fn log_gamepad_buttons(
+    mut button_events: MessageReader<GamepadButtonEvent>,
     state: Res<GamepadState>,
-    prev: Res<PrevGamepadState>,
-    calibration_state: Res<State<CalibrationState>>,
-    server_state: Res<State<ServerState>>,
 ) {
-    let buttons = [
-        ("South/A", Btn::South),
-        ("East/B", Btn::East),
-        ("North/Y", Btn::North),
-        ("West/X", Btn::West),
-        ("DPadUp", Btn::DPadUp),
-        ("DPadDown", Btn::DPadDown),
-        ("DPadLeft", Btn::DPadLeft),
-        ("DPadRight", Btn::DPadRight),
-        ("LB", Btn::LeftBumper),
-        ("RB", Btn::RightBumper),
-        ("LT", Btn::LeftTrigger),
-        ("RT", Btn::RightTrigger),
-        ("Start", Btn::Start),
-        ("Select", Btn::Select),
-        ("LeftThumb", Btn::LeftThumb),
-        ("RightThumb", Btn::RightThumb),
-    ];
-
-    for (name, button) in &buttons {
-        if state.just_pressed(&prev, *button) {
-            info!(
-                "Gamepad button PRESSED: {} | CalibrationState: {:?}, ServerState: {:?}",
-                name, *calibration_state.get(), *server_state.get()
-            );
+    for event in button_events.read() {
+        if event.pressed {
+            info!("Gamepad button PRESSED: {:?}", event.button);
+        } else {
+            debug!("Gamepad button RELEASED: {:?}", event.button);
         }
     }
 
@@ -176,341 +101,3 @@ fn log_gamepad_buttons(
         debug!("Gamepad Right stick: ({:.2}, {:.2})", state.right_stick_x, state.right_stick_y);
     }
 }
-
-// --- Game & Calibration Control Handlers ---
-
-fn gamepad_calibration_controls(
-    time: Res<Time>,
-    mut cooldowns: ResMut<GamepadInputCooldowns>,
-    state: Res<GamepadState>,
-    prev: Res<PrevGamepadState>,
-    mut target_mode: ResMut<CalibrationTargetMode>,
-    mut scene_config: ResMut<SceneConfiguration>,
-    mut projector_config: ResMut<ProjectorConfiguration>,
-    mut camera_config: ResMut<CameraConfiguration>,
-) {
-    if !state.connected { return; }
-    let dt = time.delta_secs();
-
-    // ── 0. Target Mode Toggle (Select / Back Button) ──────────────────────────
-    cooldowns.target_mode_toggle.tick(time.delta());
-    if state.just_pressed(&prev, Btn::Select) && cooldowns.target_mode_toggle.is_finished() {
-        cooldowns.target_mode_toggle.reset();
-        *target_mode = match *target_mode {
-            CalibrationTargetMode::RigPointA => CalibrationTargetMode::BillboardPointB,
-            CalibrationTargetMode::BillboardPointB => CalibrationTargetMode::RigPointA,
-        };
-        match *target_mode {
-            CalibrationTargetMode::RigPointA => {
-                info!("🎯 [Gamepad Calibration] -> POINT A: PROJECTOR & CAMERA RIG (Pose & Optical FOV)");
-            }
-            CalibrationTargetMode::BillboardPointB => {
-                info!("🎯 [Gamepad Calibration] -> POINT B: BILLBOARD SCENE (Size, Distance & Middle Position)");
-            }
-        }
-    }
-
-    let distance = projector_config.origin.translation.distance(scene_config.origin.translation);
-    let half_angle_rad = projector_config.angle.to_radians() / 2.0;
-    let max_dim = 2.0 * distance * half_angle_rad.tan();
-
-    // ── Speed Multipliers (Hover vs Boost vs Precision) ──────────────────────
-    let speed_mult = if state.left_thumb {
-        0.25 // Precision mode (0.25x)
-    } else if state.south {
-        2.5  // Boost / Fast Drag mode (2.5x)
-    } else {
-        1.0  // Normal mode (1.0x)
-    };
-
-    let move_speed = 1.8 * speed_mult;   // meters per second
-    let scale_speed = 1.5 * speed_mult;  // meters per second
-    let dist_speed = 2.0 * speed_mult;   // meters per second
-    let angle_speed = 15.0 * speed_mult; // degrees per second
-
-    // Modifier: Right Bumper / Right Trigger / Right Thumb pressed down for Scene Middle Position
-    let is_middle_pos_held = state.right_bumper || state.right_trigger || state.right_thumb;
-
-    match *target_mode {
-        CalibrationTargetMode::BillboardPointB => {
-            // ─────────────────────────────────────────────────────────────────
-            // ── POINT B: BILLBOARD SCENE (SIZE, DISTANCE & MIDDLE POSITION) ──
-            // ─────────────────────────────────────────────────────────────────
-
-            if is_middle_pos_held {
-                // ── 1. RIGHT BUTTON HELD: SCENE MIDDLE POSITION (CENTER X, Y) ──
-                if state.left_stick_x.abs() > GAMEPAD_STICK_DEADZONE {
-                    scene_config.origin.translation.x += state.left_stick_x * move_speed * dt;
-                }
-                if state.left_stick_y.abs() > GAMEPAD_STICK_DEADZONE {
-                    scene_config.origin.translation.y += state.left_stick_y * move_speed * dt;
-                }
-            } else {
-                // ── 2. LEFT STICK: EXPAND / INPAND SCENE SIZE (WIDTH & HEIGHT) ─
-                // Left Stick X = Expand / Inpand Width (W)
-                if state.left_stick_x.abs() > GAMEPAD_STICK_DEADZONE {
-                    scene_config.scene_dimension.x = (scene_config.scene_dimension.x + state.left_stick_x * scale_speed * dt)
-                        .clamp(0.2, max_dim);
-                }
-                // Left Stick Y = Expand / Inpand Height (H)
-                if state.left_stick_y.abs() > GAMEPAD_STICK_DEADZONE {
-                    scene_config.scene_dimension.y = (scene_config.scene_dimension.y + state.left_stick_y * scale_speed * dt)
-                        .clamp(0.2, max_dim);
-                }
-            }
-
-            // ── 3. RIGHT STICK: FORWARD / BACK (DISTANCE) & UP / DOWN (HEIGHT) ───
-            // Right Stick Y = Forward / Back Distance (Push up = forward/deeper -Z, Pull down = back/closer +Z)
-            if state.right_stick_y.abs() > GAMEPAD_STICK_DEADZONE {
-                scene_config.origin.translation.z -= state.right_stick_y * dist_speed * dt;
-            }
-            // Right Stick X = Up / Down Height Adjustment
-            if state.right_stick_x.abs() > GAMEPAD_STICK_DEADZONE {
-                scene_config.origin.translation.y += state.right_stick_x * move_speed * dt;
-            }
-
-            // ── 4. DISCRETE D-PAD STEP ADJUSTMENTS ───────────────────────────
-            cooldowns.calibration_step.tick(time.delta());
-            if cooldowns.calibration_step.is_finished() {
-                let step = 0.1; // 10cm step
-                let mut changed = false;
-
-                if state.just_pressed(&prev, Btn::DPadUp) {
-                    scene_config.scene_dimension.y = (scene_config.scene_dimension.y + step).min(max_dim);
-                    info!("Gamepad Scene: Height -> {:.2}m", scene_config.scene_dimension.y);
-                    changed = true;
-                }
-                if state.just_pressed(&prev, Btn::DPadDown) {
-                    scene_config.scene_dimension.y = (scene_config.scene_dimension.y - step).max(step);
-                    info!("Gamepad Scene: Height -> {:.2}m", scene_config.scene_dimension.y);
-                    changed = true;
-                }
-                if state.just_pressed(&prev, Btn::DPadRight) {
-                    scene_config.scene_dimension.x = (scene_config.scene_dimension.x + step).min(max_dim);
-                    info!("Gamepad Scene: Width -> {:.2}m", scene_config.scene_dimension.x);
-                    changed = true;
-                }
-                if state.just_pressed(&prev, Btn::DPadLeft) {
-                    scene_config.scene_dimension.x = (scene_config.scene_dimension.x - step).max(step);
-                    info!("Gamepad Scene: Width -> {:.2}m", scene_config.scene_dimension.x);
-                    changed = true;
-                }
-
-                if changed {
-                    cooldowns.calibration_step.reset();
-                }
-            }
-        }
-
-        CalibrationTargetMode::RigPointA => {
-            // ─────────────────────────────────────────────────────────────────
-            // ── POINT A: PROJECTOR & CAMERA RIG CALIBRATION ──────────────────
-            // ─────────────────────────────────────────────────────────────────
-
-            // Left Stick X = Lateral Position of Projector & Camera (X)
-            if state.left_stick_x.abs() > GAMEPAD_STICK_DEADZONE {
-                let dx = state.left_stick_x * move_speed * dt;
-                projector_config.origin.translation.x += dx;
-                camera_config.origin.translation.x += dx;
-            }
-
-            // Left Stick Y = Height / Altitude of Projector & Camera (Y)
-            if state.left_stick_y.abs() > GAMEPAD_STICK_DEADZONE {
-                let dy = state.left_stick_y * move_speed * dt;
-                projector_config.origin.translation.y += dy;
-                camera_config.origin.translation.y += dy;
-            }
-
-            // Right Stick Y = Rig Distance to Billboard (Z)
-            if state.right_stick_y.abs() > GAMEPAD_STICK_DEADZONE {
-                let dz = state.right_stick_y * dist_speed * dt;
-                projector_config.origin.translation.z -= dz;
-                camera_config.origin.translation.z -= dz;
-            }
-
-            // Right Stick X = Projector Optical Throw Angle (FOV θ)
-            if state.right_stick_x.abs() > GAMEPAD_STICK_DEADZONE {
-                projector_config.angle = (projector_config.angle + state.right_stick_x * angle_speed * dt)
-                    .clamp(15.0, 90.0);
-            }
-
-            // Automatic Gaze Alignment: Projector & Camera look at Billboard Center
-            let billboard_center = scene_config.origin.translation;
-            let proj_rot = Transform::from_translation(projector_config.origin.translation)
-                .looking_at(billboard_center, Vec3::Y).rotation;
-            projector_config.origin.rotation = proj_rot;
-
-            let cam_rot = Transform::from_translation(camera_config.origin.translation)
-                .looking_at(billboard_center, Vec3::Y).rotation;
-            camera_config.origin.rotation = cam_rot;
-
-            // Discrete D-Pad steps for Point A
-            cooldowns.calibration_step.tick(time.delta());
-            if cooldowns.calibration_step.is_finished() {
-                let step = 0.1;
-                let mut changed = false;
-
-                if state.just_pressed(&prev, Btn::DPadUp) {
-                    projector_config.origin.translation.y += step;
-                    camera_config.origin.translation.y += step;
-                    info!("Gamepad Rig: Height -> {:.2}m", projector_config.origin.translation.y);
-                    changed = true;
-                }
-                if state.just_pressed(&prev, Btn::DPadDown) {
-                    projector_config.origin.translation.y -= step;
-                    camera_config.origin.translation.y -= step;
-                    info!("Gamepad Rig: Height -> {:.2}m", projector_config.origin.translation.y);
-                    changed = true;
-                }
-                if state.just_pressed(&prev, Btn::DPadRight) {
-                    projector_config.origin.translation.x += step;
-                    camera_config.origin.translation.x += step;
-                    info!("Gamepad Rig: Lateral X -> {:.2}m", projector_config.origin.translation.x);
-                    changed = true;
-                }
-                if state.just_pressed(&prev, Btn::DPadLeft) {
-                    projector_config.origin.translation.x -= step;
-                    camera_config.origin.translation.x -= step;
-                    info!("Gamepad Rig: Lateral X -> {:.2}m", projector_config.origin.translation.x);
-                    changed = true;
-                }
-
-                if changed {
-                    cooldowns.calibration_step.reset();
-                }
-            }
-        }
-    }
-}
-
-fn gamepad_laser_toggle(
-    time: Res<Time>,
-    mut cooldowns: ResMut<GamepadInputCooldowns>,
-    state: Res<GamepadState>,
-    prev: Res<PrevGamepadState>,
-    mut projector_config: ResMut<ProjectorConfiguration>,
-) {
-    cooldowns.laser_toggle.tick(time.delta());
-    if state.just_pressed(&prev, Btn::Start) && cooldowns.laser_toggle.is_finished() {
-        cooldowns.laser_toggle.reset();
-        projector_config.switched_on = !projector_config.switched_on;
-        info!("Gamepad: Laser {}", if projector_config.switched_on { "ON" } else { "OFF" });
-    }
-}
-
-fn gamepad_toggle_calibration(
-    time: Res<Time>,
-    mut cooldowns: ResMut<GamepadInputCooldowns>,
-    state: Res<GamepadState>,
-    prev: Res<PrevGamepadState>,
-    calibration_state: Res<State<CalibrationState>>,
-    mut next_calibration_state: ResMut<NextState<CalibrationState>>,
-) {
-    cooldowns.calibration_toggle.tick(time.delta());
-    if matches!(*next_calibration_state, NextState::Pending(_)) {
-        return; // Ignore button press while a state transition is queued/pending
-    }
-
-    if state.just_pressed(&prev, Btn::North) && cooldowns.calibration_toggle.is_finished() {
-        cooldowns.calibration_toggle.reset();
-        let next = match calibration_state.get() {
-            CalibrationState::On => CalibrationState::Off,
-            CalibrationState::Off => CalibrationState::On,
-        };
-        info!("Gamepad: Calibration mode toggled to {:?}", next);
-        next_calibration_state.set(next);
-    }
-}
-
-/// Handles cycling between Calibration/Menu -> Game A (Hunter) -> Game B (Snake) -> Calibration/Menu.
-/// Triggers on X button (Btn::West).
-fn gamepad_menu_game_switcher(
-    time: Res<Time>,
-    mut cooldowns: ResMut<GamepadInputCooldowns>,
-    state: Res<GamepadState>,
-    prev: Res<PrevGamepadState>,
-    game_sessions: Query<&GameSession>,
-    next_game_state: Res<NextState<SessionState>>,
-    next_server_state: Res<NextState<ServerState>>,
-    game_registry: Option<Res<common::game::GameRegistry>>,
-    mut init_events: MessageWriter<InitGameSessionEvent>,
-    mut exit_events: MessageWriter<ExitGameEvent>,
-) {
-    if !state.connected { return; }
-    cooldowns.menu_switch.tick(time.delta());
-
-    if matches!(*next_game_state, NextState::Pending(_)) || matches!(*next_server_state, NextState::Pending(_)) {
-        return; // Ignore button press while a game or server state transition is queued/pending
-    }
-
-    // Button X (Btn::West): Cycle Calibration/Menu -> Game 1 -> Game 2 ... -> Calibration/Menu
-    let trigger_pressed = state.just_pressed(&prev, Btn::West) && cooldowns.menu_switch.is_finished();
-
-    if trigger_pressed {
-        cooldowns.menu_switch.reset();
-
-        let available_games = game_registry
-            .as_ref()
-            .map(|r| r.all_games())
-            .unwrap_or_default();
-
-        if available_games.is_empty() {
-            info!("★ Gamepad Menu Switcher: No registered minigames available");
-            return;
-        }
-
-        let active_session = game_sessions.iter().find(|s| s.state == SessionState::Active);
-        if let Some(current_session) = active_session {
-            let current_game_id = current_session.game_id;
-            let current_uuid = current_session.session_id;
-
-            // Exit current active game
-            info!("★ Gamepad Menu Switcher: Exiting current game ID {} (session {})", current_game_id, current_uuid);
-            exit_events.write(ExitGameEvent {
-                game_session_uuid: current_uuid,
-            });
-
-            // Find index of current game in registered games list
-            if let Some(curr_idx) = available_games.iter().position(|g| g.id == current_game_id) {
-                if curr_idx + 1 < available_games.len() {
-                    let next_game = available_games[curr_idx + 1];
-                    let new_uuid = bevy::asset::uuid::Uuid::new_v4();
-                    info!("🎮 GAME STARTED: {} (Game ID {}) [session {}]", next_game.name, next_game.id, new_uuid);
-                    init_events.write(InitGameSessionEvent {
-                        game_id: next_game.id,
-                        game_session_uuid: new_uuid,
-                        initial_state: SessionState::Active,
-                    });
-                } else {
-                    info!("★ Gamepad Menu Switcher: Switched back to Calibration / Main Menu");
-                }
-            } else {
-                info!("★ Gamepad Menu Switcher: Switched back to Calibration / Main Menu");
-            }
-        } else {
-            // No active Session -> Launch first registered game
-            let first_game = available_games[0];
-            let new_uuid = bevy::asset::uuid::Uuid::new_v4();
-            info!("🎮 GAME STARTED: {} (Game ID {}) [session {}]", first_game.name, first_game.id, new_uuid);
-            init_events.write(InitGameSessionEvent {
-                game_id: first_game.id,
-                game_session_uuid: new_uuid,
-                initial_state: SessionState::Active,
-            });
-        }
-    }
-}
-
-/// Triggers a LogStatusReportEvent when the Select button (Btn::Select) is pressed.
-fn gamepad_trigger_status_report(
-    state: Res<GamepadState>,
-    prev: Res<PrevGamepadState>,
-    mut status_events: MessageWriter<LogStatusReportEvent>,
-) {
-    if state.just_pressed(&prev, Btn::Select) {
-        status_events.write(LogStatusReportEvent);
-    }
-}
-
-
-

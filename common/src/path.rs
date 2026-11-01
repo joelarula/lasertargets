@@ -46,6 +46,20 @@ impl PathPoint {
             dwell,
         }
     }
+
+    /// Linearly interpolate between two PathPoints with factor t clamped to [0.0, 1.0].
+    #[inline(always)]
+    pub fn lerp(&self, other: &Self, t: f32) -> Self {
+        let t = t.clamp(0.0, 1.0);
+        let inv_t = 1.0 - t;
+        let x = self.x * inv_t + other.x * t;
+        let y = self.y * inv_t + other.y * t;
+        let r = (self.r as f32 * inv_t + other.r as f32 * t) as u8;
+        let g = (self.g as f32 * inv_t + other.g as f32 * t) as u8;
+        let b = (self.b as f32 * inv_t + other.b as f32 * t) as u8;
+        let dwell = if t < 0.5 { self.dwell } else { other.dwell };
+        Self { x, y, r, g, b, dwell }
+    }
 }
 
 /// Line style pattern for UniversalPath segments
@@ -332,6 +346,14 @@ impl UniversalPath {
         }
     }
 
+    pub fn empty() -> Self {
+        Self::new()
+    }
+
+    pub fn from_segments(segments: Vec<PathSegment>) -> Self {
+        Self { segments }
+    }
+
     pub fn from_segment(segment: PathSegment) -> Self {
         Self {
             segments: vec![segment],
@@ -414,8 +436,57 @@ impl Default for PathRenderable {
     }
 }
 
-// Re-export generic vector transport primitives from dedicated transport module
-pub use crate::transport::{AbstractPathData, BroadcastScenePaths, VectorFrame};
+// =========================================================================
+// Vector Transport Primitives
+// =========================================================================
+
+/// Abstract visual path data for client terminal rendering and network streaming
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct AbstractPathData {
+    pub path: UniversalPath,
+    pub position: Vec3,
+}
+
+impl AbstractPathData {
+    pub fn new(path: UniversalPath, position: Vec3) -> Self {
+        Self { path, position }
+    }
+}
+
+/// A temporal snapshot frame containing all active scene vector polylines at a single tick.
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+pub struct VectorFrame {
+    /// Frame sequence index / timestamp counter
+    pub frame_id: u64,
+    /// Collection of all active polylines and their world positions in the frame
+    pub paths: Vec<AbstractPathData>,
+}
+
+impl VectorFrame {
+    pub fn new(frame_id: u64, paths: Vec<AbstractPathData>) -> Self {
+        Self { frame_id, paths }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.paths.is_empty()
+    }
+
+    pub fn len(&self) -> usize {
+        self.paths.len()
+    }
+}
+
+/// Single aggregated message broadcasting all active abstract scene paths every tick
+#[derive(Message, Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct BroadcastScenePaths {
+    pub frame: VectorFrame,
+}
+
+impl BroadcastScenePaths {
+    pub fn new(frame: VectorFrame) -> Self {
+        Self { frame }
+    }
+}
 
 /// Easing functions for keyframe vector interpolation
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -454,33 +525,15 @@ pub enum LoopMode {
     Repeat,
 }
 
-/// Component for animating a UniversalPath between two keyframes over time
-#[derive(Component, Debug, Clone, Serialize, Deserialize)]
-pub struct PathAnimation {
-    pub keyframe_a: UniversalPath,
-    pub keyframe_b: UniversalPath,
-    pub duration_secs: f32,
-    pub elapsed_secs: f32,
-    pub easing: EasingFunction,
-    pub loop_mode: LoopMode,
-}
-
-impl PathAnimation {
-    pub fn new(keyframe_a: UniversalPath, keyframe_b: UniversalPath, duration_secs: f32) -> Self {
-        Self {
-            keyframe_a,
-            keyframe_b,
-            duration_secs: duration_secs.max(0.001),
-            elapsed_secs: 0.0,
-            easing: EasingFunction::Linear,
-            loop_mode: LoopMode::Once,
-        }
-    }
-}
-
 /// Signal sources that drive path parameter modulation
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum ModulatorSource {
+    /// Timeline keyframe animation driven by elapsed delta time with looping
+    Timeline {
+        duration_secs: f32,
+        elapsed_secs: f32,
+        loop_mode: LoopMode,
+    },
     /// Time-based Sine Wave Low-Frequency Oscillator (LFO)
     LfoSine { frequency_hz: f32 },
     /// Time-based Triangle Wave LFO
@@ -500,8 +553,59 @@ impl Default for ModulatorSource {
 }
 
 impl ModulatorSource {
+    /// Advance state (for stateful sources like Timeline) and return current normalized sample [0.0, 1.0]
+    pub fn advance_and_sample(&mut self, delta_secs: f32, total_elapsed_secs: f32) -> f32 {
+        match self {
+            Self::Timeline {
+                duration_secs,
+                elapsed_secs,
+                loop_mode,
+            } => {
+                *elapsed_secs += delta_secs;
+                let dur = duration_secs.max(0.0001);
+                let raw_t = (*elapsed_secs / dur).max(0.0);
+                match loop_mode {
+                    LoopMode::Once => raw_t.min(1.0),
+                    LoopMode::Repeat => raw_t.fract(),
+                    LoopMode::PingPong => {
+                        let cycle = (raw_t as u32) % 2;
+                        let rem = raw_t.fract();
+                        if cycle == 0 {
+                            rem
+                        } else {
+                            1.0 - rem
+                        }
+                    }
+                }
+            }
+            other => other.sample(total_elapsed_secs),
+        }
+    }
+
+    /// Sample source at given timestamp [0.0, 1.0]
     pub fn sample(&self, elapsed_secs: f32) -> f32 {
         match self {
+            Self::Timeline {
+                duration_secs,
+                elapsed_secs: local_elapsed,
+                loop_mode,
+            } => {
+                let dur = duration_secs.max(0.0001);
+                let raw_t = (*local_elapsed / dur).max(0.0);
+                match loop_mode {
+                    LoopMode::Once => raw_t.min(1.0),
+                    LoopMode::Repeat => raw_t.fract(),
+                    LoopMode::PingPong => {
+                        let cycle = (raw_t as u32) % 2;
+                        let rem = raw_t.fract();
+                        if cycle == 0 {
+                            rem
+                        } else {
+                            1.0 - rem
+                        }
+                    }
+                }
+            }
             Self::LfoSine { frequency_hz } => {
                 let radians = elapsed_secs * frequency_hz * std::f32::consts::TAU;
                 (radians.sin() + 1.0) * 0.5
@@ -509,7 +613,11 @@ impl ModulatorSource {
             Self::LfoTriangle { frequency_hz } => {
                 let cycle = elapsed_secs * frequency_hz;
                 let rem = cycle.fract();
-                if rem < 0.5 { rem * 2.0 } else { (1.0 - rem) * 2.0 }
+                if rem < 0.5 {
+                    rem * 2.0
+                } else {
+                    (1.0 - rem) * 2.0
+                }
             }
             Self::GamepadTrigger { value } => value.clamp(0.0, 1.0),
             Self::Ratio { value } => value.clamp(0.0, 1.0),
@@ -518,24 +626,408 @@ impl ModulatorSource {
     }
 }
 
-/// Modulator component connecting a signal source through an EasingFunction to drive UniversalPath morphing
-#[derive(Component, Debug, Clone, Serialize, Deserialize, Default)]
+/// Pluggable morphing strategy trait.
+/// Enables contributors to define custom geometric morphing algorithms across keyframes.
+pub trait MorphStrategy: Send + Sync + 'static {
+    /// Human-readable strategy name
+    fn name(&self) -> &'static str;
+
+    /// Unique type identifier for serialization and registry lookup
+    fn type_id(&self) -> &'static str;
+
+    /// Morphs keyframe_a into keyframe_b at parameter t in [0.0, 1.0] in-place into output.
+    /// MUST be zero-allocation during steady-state processing.
+    fn morph(
+        &mut self,
+        keyframe_a: &UniversalPath,
+        keyframe_b: &UniversalPath,
+        t: f32,
+        output: &mut UniversalPath,
+    );
+
+    /// Deep clone support for dynamic boxed strategies
+    fn clone_box(&self) -> Box<dyn MorphStrategy>;
+}
+
+impl Clone for Box<dyn MorphStrategy> {
+    fn clone(&self) -> Self {
+        self.clone_box()
+    }
+}
+
+/// Baseline fast cycle-modulo morphing strategy with zero allocation and multi-segment safety.
+#[derive(Debug, Clone, Default)]
+pub struct CycleModuloMorphStrategy;
+
+impl MorphStrategy for CycleModuloMorphStrategy {
+    fn name(&self) -> &'static str {
+        "CycleModulo"
+    }
+
+    fn type_id(&self) -> &'static str {
+        "cycle_modulo"
+    }
+
+    fn morph(
+        &mut self,
+        keyframe_a: &UniversalPath,
+        keyframe_b: &UniversalPath,
+        t: f32,
+        output: &mut UniversalPath,
+    ) {
+        if keyframe_a.segments.is_empty() || keyframe_b.segments.is_empty() {
+            return;
+        }
+
+        let num_segments = keyframe_a.segments.len().max(keyframe_b.segments.len());
+        if output.segments.len() < num_segments {
+            output.segments.resize_with(num_segments, PathSegment::empty);
+        }
+
+        for s in 0..num_segments {
+            let seg_a = &keyframe_a.segments[s % keyframe_a.segments.len()];
+            let seg_b = &keyframe_b.segments[s % keyframe_b.segments.len()];
+
+            if seg_a.points.is_empty() && seg_b.points.is_empty() {
+                output.segments[s].points.clear();
+                continue;
+            }
+
+            let max_points = seg_a.points.len().max(seg_b.points.len());
+            let out_points = &mut output.segments[s].points;
+            out_points.clear();
+            out_points.reserve(max_points);
+
+            if seg_a.points.is_empty() {
+                out_points.extend_from_slice(&seg_b.points);
+            } else if seg_b.points.is_empty() {
+                out_points.extend_from_slice(&seg_a.points);
+            } else {
+                for i in 0..max_points {
+                    let pa = &seg_a.points[i % seg_a.points.len()];
+                    let pb = &seg_b.points[i % seg_b.points.len()];
+                    out_points.push(pa.lerp(pb, t));
+                }
+            }
+        }
+    }
+
+    fn clone_box(&self) -> Box<dyn MorphStrategy> {
+        Box::new(self.clone())
+    }
+}
+
+/// Pluggable registry of available morphing strategies.
+#[derive(Resource, Default)]
+pub struct MorphStrategyRegistry {
+    factories: std::collections::HashMap<String, Box<dyn Fn() -> Box<dyn MorphStrategy> + Send + Sync>>,
+}
+
+impl MorphStrategyRegistry {
+    pub fn new() -> Self {
+        let mut registry = Self {
+            factories: std::collections::HashMap::new(),
+        };
+        registry.register::<CycleModuloMorphStrategy>();
+        registry
+    }
+
+    pub fn register<T: MorphStrategy + Default + Clone>(&mut self) {
+        let key = T::default().type_id().to_string();
+        self.factories.insert(key, Box::new(|| Box::new(T::default())));
+    }
+
+    pub fn create(&self, type_id: &str) -> Option<Box<dyn MorphStrategy>> {
+        self.factories.get(type_id).map(|f| f())
+    }
+}
+
+/// Evaluation context supplied to PathModifiers during in-place processing
+pub struct ModifierContext<'a> {
+    pub delta_secs: f32,
+    pub elapsed_secs: f32,
+    pub modulation_t: f32,
+    pub audio_spectral: Option<&'a [f32]>,
+}
+
+/// Pluggable vector modifier trait.
+/// Allows contributors to implement transformers, oscillators, wave shaders, and spatial effects.
+pub trait PathModifier: Send + Sync + 'static {
+    fn name(&self) -> &'static str;
+    fn type_id(&self) -> &'static str;
+
+    /// Execute the modification in-place on the path's segments and points.
+    /// MUST be zero-allocation during steady-state processing.
+    fn apply(&mut self, path: &mut UniversalPath, ctx: &ModifierContext);
+
+    fn clone_box(&self) -> Box<dyn PathModifier>;
+}
+
+impl Clone for Box<dyn PathModifier> {
+    fn clone(&self) -> Self {
+        self.clone_box()
+    }
+}
+
+/// Component holding an ordered pipeline of pluggable modifiers applied sequentially in-place.
+#[derive(Component)]
+pub struct PathModifierPipeline {
+    pub modifiers: Vec<Box<dyn PathModifier>>,
+    pub enabled: bool,
+}
+
+impl Default for PathModifierPipeline {
+    fn default() -> Self {
+        Self {
+            modifiers: Vec::new(),
+            enabled: true,
+        }
+    }
+}
+
+impl PathModifierPipeline {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn with_modifier(mut self, modifier: impl PathModifier) -> Self {
+        self.modifiers.push(Box::new(modifier));
+        self
+    }
+
+    pub fn add(&mut self, modifier: impl PathModifier) {
+        self.modifiers.push(Box::new(modifier));
+    }
+
+    pub fn apply(&mut self, path: &mut UniversalPath, ctx: &ModifierContext) {
+        if !self.enabled {
+            return;
+        }
+        for modifier in &mut self.modifiers {
+            modifier.apply(path, ctx);
+        }
+    }
+}
+
+/// Pluggable registry of available path modifiers.
+#[derive(Resource, Default)]
+pub struct PathModifierRegistry {
+    factories: std::collections::HashMap<String, Box<dyn Fn() -> Box<dyn PathModifier> + Send + Sync>>,
+}
+
+impl PathModifierRegistry {
+    pub fn new() -> Self {
+        Self {
+            factories: std::collections::HashMap::new(),
+        }
+    }
+
+    pub fn register<T: PathModifier + Default + Clone>(&mut self) {
+        let key = T::default().type_id().to_string();
+        self.factories.insert(key, Box::new(|| Box::new(T::default())));
+    }
+
+    pub fn create(&self, type_id: &str) -> Option<Box<dyn PathModifier>> {
+        self.factories.get(type_id).map(|f| f())
+    }
+}
+
+/// Unified modulator component connecting a signal source through an EasingFunction
+/// and a pluggable MorphStrategy to drive UniversalPath morphing.
+#[derive(Component)]
 pub struct PathModulator {
     pub source: ModulatorSource,
     pub easing: EasingFunction,
     pub keyframe_a: UniversalPath,
     pub keyframe_b: UniversalPath,
+    pub strategy: Box<dyn MorphStrategy>,
     pub current_t: f32,
 }
 
+impl Default for PathModulator {
+    fn default() -> Self {
+        Self {
+            source: ModulatorSource::default(),
+            easing: EasingFunction::Linear,
+            keyframe_a: UniversalPath::default(),
+            keyframe_b: UniversalPath::default(),
+            strategy: Box::new(CycleModuloMorphStrategy),
+            current_t: 0.0,
+        }
+    }
+}
+
 impl PathModulator {
-    pub fn new(keyframe_a: UniversalPath, keyframe_b: UniversalPath, source: ModulatorSource, easing: EasingFunction) -> Self {
+    pub fn new(
+        keyframe_a: UniversalPath,
+        keyframe_b: UniversalPath,
+        source: ModulatorSource,
+        easing: EasingFunction,
+    ) -> Self {
         Self {
             source,
             easing,
             keyframe_a,
             keyframe_b,
+            strategy: Box::new(CycleModuloMorphStrategy),
             current_t: 0.0,
         }
+    }
+
+    pub fn with_strategy(mut self, strategy: impl MorphStrategy) -> Self {
+        self.strategy = Box::new(strategy);
+        self
+    }
+
+    /// Convenience constructor creating a timeline keyframe animation
+    pub fn from_animation(
+        keyframe_a: UniversalPath,
+        keyframe_b: UniversalPath,
+        duration_secs: f32,
+        loop_mode: LoopMode,
+    ) -> Self {
+        Self {
+            source: ModulatorSource::Timeline {
+                duration_secs: duration_secs.max(0.001),
+                elapsed_secs: 0.0,
+                loop_mode,
+            },
+            easing: EasingFunction::Linear,
+            keyframe_a,
+            keyframe_b,
+            strategy: Box::new(CycleModuloMorphStrategy),
+            current_t: 0.0,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_path_point_lerp() {
+        let p1 = PathPoint::new(0.0, 10.0, 0, 100, 200, 3);
+        let p2 = PathPoint::new(10.0, 30.0, 100, 200, 0, 7);
+
+        let mid = p1.lerp(&p2, 0.5);
+        assert!((mid.x - 5.0).abs() < 1e-4);
+        assert!((mid.y - 20.0).abs() < 1e-4);
+        assert_eq!(mid.r, 50);
+        assert_eq!(mid.g, 150);
+        assert_eq!(mid.b, 100);
+        assert_eq!(mid.dwell, 7); // t >= 0.5 takes p2 dwell
+    }
+
+    #[test]
+    fn test_cycle_modulo_morph_strategy_multi_segment() {
+        let seg_a1 = PathSegment::new(vec![
+            PathPoint::new(0.0, 0.0, 255, 0, 0, 0),
+            PathPoint::new(10.0, 0.0, 255, 0, 0, 0),
+        ]);
+        let seg_a2 = PathSegment::new(vec![
+            PathPoint::new(0.0, 10.0, 0, 255, 0, 0),
+        ]);
+        let path_a = UniversalPath::from_segments(vec![seg_a1, seg_a2]);
+
+        let seg_b1 = PathSegment::new(vec![
+            PathPoint::new(100.0, 100.0, 0, 0, 255, 0),
+        ]);
+        let seg_b2 = PathSegment::new(vec![
+            PathPoint::new(50.0, 50.0, 0, 0, 255, 0),
+            PathPoint::new(60.0, 60.0, 0, 0, 255, 0),
+        ]);
+        let path_b = UniversalPath::from_segments(vec![seg_b1, seg_b2]);
+
+        let mut output = UniversalPath::empty();
+        let mut strategy = CycleModuloMorphStrategy;
+
+        strategy.morph(&path_a, &path_b, 0.5, &mut output);
+
+        assert_eq!(output.segments.len(), 2);
+        assert_eq!(output.segments[0].points.len(), 2);
+        assert_eq!(output.segments[1].points.len(), 2);
+
+        // Segment 0, Point 0 lerp between (0,0) and (100,100)
+        assert!((output.segments[0].points[0].x - 50.0).abs() < 1e-4);
+        // Segment 0, Point 1 lerp between (10,0) and modulo (100,100)
+        assert!((output.segments[0].points[1].x - 55.0).abs() < 1e-4);
+    }
+
+    #[test]
+    fn test_modulator_timeline_loop_modes() {
+        let mut source = ModulatorSource::Timeline {
+            duration_secs: 1.0,
+            elapsed_secs: 0.0,
+            loop_mode: LoopMode::Repeat,
+        };
+
+        let t1 = source.advance_and_sample(0.25, 0.25);
+        assert!((t1 - 0.25).abs() < 1e-4);
+
+        let t2 = source.advance_and_sample(1.0, 1.25);
+        assert!((t2 - 0.25).abs() < 1e-4); // wrapped around
+
+        let mut ping_pong = ModulatorSource::Timeline {
+            duration_secs: 1.0,
+            elapsed_secs: 0.0,
+            loop_mode: LoopMode::PingPong,
+        };
+
+        ping_pong.advance_and_sample(1.25, 1.25);
+        let sample = ping_pong.sample(1.25);
+        assert!((sample - 0.75).abs() < 1e-4); // 1.0 - 0.25 in reverse cycle
+    }
+
+    #[test]
+    fn test_pluggable_path_modifier_pipeline() {
+        #[derive(Clone, Default)]
+        struct TestOffsetModifier {
+            dx: f32,
+            dy: f32,
+        }
+
+        impl PathModifier for TestOffsetModifier {
+            fn name(&self) -> &'static str { "TestOffset" }
+            fn type_id(&self) -> &'static str { "test_offset" }
+            fn apply(&mut self, path: &mut UniversalPath, _ctx: &ModifierContext) {
+                for seg in &mut path.segments {
+                    for pt in &mut seg.points {
+                        pt.x += self.dx;
+                        pt.y += self.dy;
+                    }
+                }
+            }
+            fn clone_box(&self) -> Box<dyn PathModifier> {
+                Box::new(self.clone())
+            }
+        }
+
+        let mut path = UniversalPath::from_segment(PathSegment::new(vec![
+            PathPoint::new(1.0, 2.0, 255, 255, 255, 0),
+        ]));
+
+        let mut pipeline = PathModifierPipeline::new()
+            .with_modifier(TestOffsetModifier { dx: 10.0, dy: 20.0 });
+
+        let ctx = ModifierContext {
+            delta_secs: 0.016,
+            elapsed_secs: 1.0,
+            modulation_t: 1.0,
+            audio_spectral: None,
+        };
+
+        pipeline.apply(&mut path, &ctx);
+
+        assert!((path.segments[0].points[0].x - 11.0).abs() < 1e-4);
+        assert!((path.segments[0].points[0].y - 22.0).abs() < 1e-4);
+    }
+
+    #[test]
+    fn test_strategy_registry() {
+        let registry = MorphStrategyRegistry::new();
+        let strategy = registry.create("cycle_modulo");
+        assert!(strategy.is_some());
+        assert_eq!(strategy.unwrap().name(), "CycleModulo");
     }
 }

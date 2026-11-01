@@ -14,7 +14,7 @@ pub mod transport;
 
 pub use camera::{CameraStreamType, PhysicalCameraSettings};
 pub use curator_core;
-pub use session::{Actor, ActorMetaData, Session, SessionActors, SessionCreated, SessionState, SessionUpdate};
+pub use session::{Actor, ActorLink, ActorMetaData, Session, SessionActors, SessionCreated, SessionState, SessionUpdate};
 
 #[cfg(test)]
 #[path = "../test/scenetest.rs"]

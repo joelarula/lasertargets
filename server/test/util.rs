@@ -5,6 +5,7 @@ use bevy_quinnet::client::connection::*;
 use bevy_quinnet::client::*;
 use common::network::NetworkMessage;
 use server::plugins::network::{FromClientMessage, NetworkingConfiguration};
+use server::plugins::projector::ProjectorDacController;
 use std::net::{IpAddr, Ipv4Addr};
 
 pub const TEST_PORT_BASE: u16 = 7100; // Different from default to avoid conflicts
@@ -42,14 +43,35 @@ pub fn handle_server_messages_system(
 
 /// Helper to create a test server app
 pub fn create_test_server(port: u16) -> App {
+    create_test_server_with(port, |_| {})
+}
+
+/// Helper to create a test server app with the Hunter and Snake channels registered
+pub fn create_test_game_server(port: u16) -> App {
+    create_test_server_with(port, |app| {
+        app.add_plugins(hunter::common::HunterGamePlugin)
+            .add_plugins(snake::common::SnakeGamePlugin);
+    })
+}
+
+/// Keep the Helios DAC library and its output thread out of test processes.
+/// Its thread outlives the app, and several of them in one process corrupt the heap.
+pub fn disable_dac(app: &mut App) {
+    app.insert_resource(ProjectorDacController { enabled: false, ..Default::default() });
+}
+
+/// Helper to create a test server app; `extend` runs before the startup update
+pub fn create_test_server_with(port: u16, extend: impl FnOnce(&mut App)) -> App {
     let mut app = App::new();
-    
+
     // Add minimal plugins
     app.add_plugins(MinimalPlugins.set(ScheduleRunnerPlugin::run_once()));
-    
+
     // Add common server plugins (includes StatesPlugin)
     server::add_common_server_plugins(&mut app);
-    
+    disable_dac(&mut app);
+    extend(&mut app);
+
     app.insert_resource(NetworkingConfiguration {
         ip: IpAddr::V4(Ipv4Addr::LOCALHOST),
         port,
@@ -82,6 +104,15 @@ pub fn create_test_client() -> App {
         .insert_resource(ReceivedMessages::default())
         .add_systems(Update, handle_client_messages_system);
     app
+}
+
+/// Helper to send a message from a connected client to the server
+pub fn client_send(client_app: &mut App, message: NetworkMessage) {
+    let mut client = client_app.world_mut().resource_mut::<QuinnetClient>();
+    let connection = client.get_connection_mut().expect("Client should be connected");
+    connection
+        .send_payload(message.to_bytes().expect("Serialize"))
+        .expect("Send");
 }
 
 /// Helper to connect a client to a server on a specific port

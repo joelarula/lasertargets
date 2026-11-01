@@ -73,7 +73,7 @@ pub enum NetworkMessage {
     },
 
     // Abstract Minimal Path Scene Stream
-    BroadcastScenePaths(Vec<crate::path::AbstractPathData>),
+    BroadcastScenePaths(crate::path::VectorFrame),
 
 
 

@@ -1,8 +1,7 @@
 pub mod network;
 pub mod projector;
 pub mod camera;
-pub mod actor;
-pub mod game;
+pub mod session;
 pub mod gamepad;
 pub mod scene;
 pub mod path;

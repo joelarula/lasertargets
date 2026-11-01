@@ -1,9 +1,9 @@
 use bevy::prelude::*;
 use common::config::{CameraConfiguration, ProjectorConfiguration, SceneConfiguration};
-use common::game::GameSession;
+use common::session::Session;
 use common::state::{CalibrationState, SessionState, ServerInstanceId, ServerState};
 use gamepad::{GamepadState, ServerGamepadCursor};
-use crate::plugins::actor::ActorLink;
+use common::actor::ActorLink;
 use crate::plugins::projector::{ProjectorDacController, LaserOptimizeConfig, LaserPointBuffer};
 use bevy_quinnet::server::QuinnetServer;
 
@@ -18,12 +18,23 @@ impl Plugin for StatusPlugin {
     fn build(&self, app: &mut App) {
         app.add_message::<LogStatusReportEvent>();
         app.add_systems(Startup, trigger_startup_status_report);
-        app.add_systems(Update, handle_status_report_event);
+        app.add_systems(Update, (handle_status_report_event, handle_gamepad_status_trigger));
     }
 }
 
 fn trigger_startup_status_report(mut events: MessageWriter<LogStatusReportEvent>) {
     events.write(LogStatusReportEvent);
+}
+
+fn handle_gamepad_status_trigger(
+    mut button_events: MessageReader<gamepad::GamepadButtonEvent>,
+    mut status_events: MessageWriter<LogStatusReportEvent>,
+) {
+    for event in button_events.read() {
+        if event.button == gamepad::Btn::Select && event.pressed {
+            status_events.write(LogStatusReportEvent);
+        }
+    }
 }
 
 /// System that handles `LogStatusReportEvent` and logs a formatted diagnostic report.
@@ -35,7 +46,7 @@ fn handle_status_report_event(
     calibration_state: Option<Res<State<CalibrationState>>>,
     session_state: Option<Res<State<SessionState>>>,
     server_instance_id: Option<Res<ServerInstanceId>>,
-    game_sessions: Query<(Entity, &GameSession, Option<&Children>)>,
+    sessions: Query<(Entity, &Session, Option<&Children>)>,
     projector_config: Option<Res<ProjectorConfiguration>>,
     dac_controller: Option<Res<ProjectorDacController>>,
     laser_opt: Option<Res<LaserOptimizeConfig>>,
@@ -79,12 +90,12 @@ fn handle_status_report_event(
         }
     }
 
-    let active_sessions_count = game_sessions.iter().count();
+    let active_sessions_count = sessions.iter().count();
     info!("  • Active Sessions:    {}", active_sessions_count);
     if active_sessions_count == 0 {
-        info!("    (No active game sessions running)");
+        info!("    (No active sessions running)");
     } else {
-        for (_entity, session, children) in game_sessions.iter() {
+        for (_entity, session, children) in sessions.iter() {
             let child_count = children.map_or(0, |c| c.len());
             info!("    ┌ Session ID:   {}", session.session_id);
             info!("    ├ Game Name:    {} (ID {})", session.name, session.game_id);

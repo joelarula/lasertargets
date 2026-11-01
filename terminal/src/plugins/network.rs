@@ -308,9 +308,9 @@ fn receive_server_messages(
                                     }
                                 }
                             }
-                            NetworkMessage::BroadcastScenePaths(paths) => {
+                            NetworkMessage::BroadcastScenePaths(frame) => {
                                 broadcast_scene_paths_writer.write(BroadcastScenePaths {
-                                    frame: common::path::VectorFrame::new(0, paths),
+                                    frame,
                                 });
                             }
                             NetworkMessage::CuratorPrompt(prompt) => {
