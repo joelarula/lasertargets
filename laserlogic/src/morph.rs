@@ -67,3 +67,96 @@ pub fn lerp_segments(seg1: &LaserSegment, seg2: &LaserSegment, t: f32) -> LaserS
 
     LaserSegment::new(result_pts)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn pt(x: u16, y: u16) -> LaserPoint {
+        LaserPoint::new(x, y, 255, 255, 255, 255)
+    }
+
+    fn xs(seg: &LaserSegment) -> Vec<u16> {
+        seg.points.iter().map(|p| p.x).collect()
+    }
+
+    #[test]
+    fn lerp_point_endpoints_and_midpoint() {
+        let a = LaserPoint::new(0, 100, 0, 0, 0, 0);
+        let b = LaserPoint::new(1000, 300, 200, 100, 50, 255);
+        assert_eq!(lerp_point(&a, &b, 0.0), a);
+        assert_eq!(lerp_point(&a, &b, 1.0), b);
+        let mid = lerp_point(&a, &b, 0.5);
+        assert_eq!((mid.x, mid.y, mid.r, mid.g, mid.b, mid.i), (500, 200, 100, 50, 25, 127));
+    }
+
+    #[test]
+    fn lerp_point_clamps_t() {
+        let a = pt(0, 0);
+        let b = pt(1000, 1000);
+        assert_eq!(lerp_point(&a, &b, -1.0), a);
+        assert_eq!(lerp_point(&a, &b, 2.0), b);
+    }
+
+    #[test]
+    fn resample_degenerate_counts() {
+        let seg = LaserSegment::new(vec![pt(0, 0), pt(100, 0)]);
+        assert!(resample_segment(&seg, 0).points.is_empty());
+        assert!(resample_segment(&LaserSegment::new(vec![]), 5).points.is_empty());
+        assert_eq!(resample_segment(&seg, 1).points, vec![pt(0, 0)]);
+        let single = LaserSegment::new(vec![pt(7, 7)]);
+        assert_eq!(resample_segment(&single, 3).points, vec![pt(7, 7); 3]);
+    }
+
+    #[test]
+    fn resample_upsamples_and_keeps_endpoints() {
+        let seg = LaserSegment::new(vec![pt(0, 0), pt(100, 0), pt(200, 0)]);
+        assert_eq!(xs(&resample_segment(&seg, 5)), vec![0, 50, 100, 150, 200]);
+    }
+
+    #[test]
+    fn resample_downsamples_and_keeps_endpoints() {
+        let seg = LaserSegment::new((0..5u16).map(|i| pt(i * 100, 0)).collect());
+        assert_eq!(xs(&resample_segment(&seg, 3)), vec![0, 200, 400]);
+    }
+
+    #[test]
+    fn resample_is_index_based_not_arc_length() {
+        // Documents current behaviour: samples are spread over point indices, not path distance
+        let seg = LaserSegment::new(vec![pt(0, 0), pt(10, 0), pt(1000, 0)]);
+        assert_eq!(xs(&resample_segment(&seg, 3)), vec![0, 10, 1000]);
+    }
+
+    #[test]
+    fn lerp_segments_equal_counts() {
+        let a = LaserSegment::new(vec![pt(0, 0), pt(100, 0)]);
+        let b = LaserSegment::new(vec![pt(1000, 0), pt(1100, 0)]);
+        assert_eq!(xs(&lerp_segments(&a, &b, 0.5)), vec![500, 600]);
+    }
+
+    #[test]
+    fn lerp_segments_resamples_shorter_side() {
+        let a = LaserSegment::new(vec![pt(0, 0), pt(400, 0)]);
+        let b = LaserSegment::new((0..5u16).map(|i| pt(i * 100, 1000)).collect());
+        let out = lerp_segments(&a, &b, 0.0);
+        assert_eq!(xs(&out), vec![0, 100, 200, 300, 400]);
+        let out = lerp_segments(&a, &b, 1.0);
+        assert!(out.points.iter().all(|p| p.y == 1000));
+    }
+
+    #[test]
+    fn lerp_segments_both_empty() {
+        let empty = LaserSegment::new(vec![]);
+        assert!(lerp_segments(&empty, &empty, 0.5).points.is_empty());
+    }
+
+    #[test]
+    #[ignore = "BUG: lerp_segments panics (index out of bounds) when exactly one side is empty, \
+                because resample_segment of an empty segment returns no points"]
+    fn lerp_segments_one_side_empty() {
+        let empty = LaserSegment::new(vec![]);
+        let b = LaserSegment::new(vec![pt(0, 0), pt(100, 0)]);
+        assert_eq!(lerp_segments(&empty, &b, 0.5).points.len(), 2);
+        assert_eq!(lerp_segments(&b, &empty, 0.5).points.len(), 2);
+    }
+}

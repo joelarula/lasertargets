@@ -2,7 +2,7 @@
 // Tests device connection, frame streaming, and sweeps PPS x point-count combinations
 // to discover optimal, stable performance profiles for Raspberry Pi.
 
-use server_core::dac::helios::{
+use laserlogic::helios::{
     HeliosDacController, HeliosPoint, HELIOS_CENTER_COORD, HELIOS_FLAGS_DEFAULT,
 };
 use log::{error, info, warn};

@@ -5,6 +5,8 @@ use bevy::{
 };
 use serde::{Deserialize, Serialize};
 
+use crate::settings::ConfigSection;
+
 #[derive(Resource, Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ConfigTransform {
     pub translation: Vec3,
@@ -115,4 +117,16 @@ impl Default for CameraConfiguration {
             locked_to_scene: true,
         }
     }
+}
+
+impl ConfigSection for SceneConfiguration {
+    const KEY: &'static str = "scene";
+}
+
+impl ConfigSection for ProjectorConfiguration {
+    const KEY: &'static str = "projector";
+}
+
+impl ConfigSection for CameraConfiguration {
+    const KEY: &'static str = "camera";
 }

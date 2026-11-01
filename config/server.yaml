@@ -1,0 +1,58 @@
+# Server configuration.
+#
+# Top-level keys are profiles. `default` always applies; select another profile on top of it
+# with `--profile <name>` or LASER_PROFILE=<name>. Every key is optional: anything left out keeps
+# its built-in default. Environment variables override everything, e.g.
+#   LASER_NETWORK__PORT=6001  LASER_PROJECTOR__DAC__ENABLED=false
+#
+# Sections are read by the plugins that own them:
+#   runtime             RuntimeSettings          (server-core)
+#   network             NetworkingConfiguration  (server-core network plugin)
+#   projector           ProjectorConfiguration   (common)
+#   projector.optimize  LaserOptimizeConfig      (server-core projector plugin)
+#   projector.dac       DacSettings              (server-core projector plugin)
+#   camera              CameraConfiguration      (common)
+#   scene               SceneConfiguration       (common)
+
+default:
+  runtime:
+    tick_hz: 29.296875        # 30000 PPS / 1024 points
+    fixed_hz: 50
+    log_level: info
+
+  network:
+    ip: 0.0.0.0
+    port: 6000
+
+  projector:
+    switched_on: true
+    dac_pps: 30000
+    dac_min_points: 1024
+    angle: 60.0
+    dac:
+      enabled: true
+      reconnect_secs: 5.0
+    optimize:
+      start_dwell_points: 6
+      end_dwell_points: 6
+      blank_end_dwell: 20
+      blank_start_dwell: 20
+      blank_jump_steps: 24
+      interp_distance_threshold: 250.0
+      interp_spacing: 350.0
+      corner_dwell_points: 6
+      corner_angle_threshold: 135.0
+
+  scene:
+    scene_dimension: [10.0, 6.0]
+
+# Raspberry Pi rig
+rpi:
+  runtime:
+    log_level: info
+
+# Development machine without a projector attached
+dev:
+  projector:
+    dac:
+      enabled: false

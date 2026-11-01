@@ -1,12 +1,13 @@
 use bevy::prelude::*;
 use common::config::CameraConfiguration;
 use common::scene::SceneSetup;
+use common::settings::ConfigAppExt;
 
 pub struct CameraPlugin;
 
 impl Plugin for CameraPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(CameraConfiguration::default());
+        app.init_config::<CameraConfiguration>();
         app.add_systems(Update, update_server_camera);
     }
 }

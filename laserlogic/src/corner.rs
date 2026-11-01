@@ -2,7 +2,7 @@ use crate::LaserPoint;
 
 /// Calculate the angle (in degrees) at point B formed by vectors BA and BC.
 /// Returns 180.0 for collinear points, 0.0 for points folding back on themselves.
-fn angle_at_point(a: &LaserPoint, b: &LaserPoint, c: &LaserPoint) -> f32 {
+pub fn angle_at_point(a: &LaserPoint, b: &LaserPoint, c: &LaserPoint) -> f32 {
     let ba_x = a.x as f64 - b.x as f64;
     let ba_y = a.y as f64 - b.y as f64;
     let bc_x = c.x as f64 - b.x as f64;
@@ -49,6 +49,15 @@ pub fn detect_corners(points: &[LaserPoint], angle_threshold: f32) -> Vec<bool> 
 /// - 90 deg turn angle (sharp right angle corner): returns `base_corner_dwell`
 /// - 180 deg turn angle (hairpin foldback): returns `base_corner_dwell * 2`
 /// - 0 deg turn angle (collinear line): returns 0
+/// Check if a slice of points forms a closed loop polygon (start and end within 40 DAC units)
+pub fn is_closed_points(points: &[LaserPoint]) -> bool {
+    points.len() > 2 && {
+        let dx = points[0].x as i32 - points[points.len() - 1].x as i32;
+        let dy = points[0].y as i32 - points[points.len() - 1].y as i32;
+        dx * dx + dy * dy <= 40 * 40
+    }
+}
+
 pub fn calculate_corner_dwells(
     points: &[LaserPoint],
     angle_threshold: f32,
@@ -65,11 +74,12 @@ pub fn calculate_corner_dwells(
     }
 
     // Check if segment is a closed loop polygon (first and last point within 40 DAC units)
-    let is_closed = len > 2 && {
-        let dx = points[0].x as i32 - points[len - 1].x as i32;
-        let dy = points[0].y as i32 - points[len - 1].y as i32;
-        (dx * dx + dy * dy) <= 1600
-    };
+    let is_closed = is_closed_points(points);
+
+
+
+
+
 
     if is_closed {
         // Calculate seam interior angle between last-1 point -> seam point -> 1st point
@@ -149,5 +159,77 @@ mod tests {
     fn empty_input() {
         let corners = detect_corners(&[], 135.0);
         assert!(corners.is_empty());
+    }
+
+    #[test]
+    fn angle_at_point_known_values() {
+        assert!((angle_at_point(&pt(0, 0), &pt(100, 0), &pt(200, 0)) - 180.0).abs() < 1e-3);
+        assert!((angle_at_point(&pt(0, 0), &pt(100, 0), &pt(100, 100)) - 90.0).abs() < 1e-3);
+        assert!(angle_at_point(&pt(0, 0), &pt(100, 0), &pt(50, 0)).abs() < 1e-3);
+    }
+
+    #[test]
+    fn angle_at_point_degenerate_is_collinear() {
+        // Duplicate neighbour has no direction — treated as straight, never a corner
+        assert_eq!(angle_at_point(&pt(100, 0), &pt(100, 0), &pt(200, 50)), 180.0);
+        assert_eq!(angle_at_point(&pt(0, 0), &pt(100, 0), &pt(100, 0)), 180.0);
+    }
+
+    #[test]
+    fn corner_dwells_empty_and_disabled() {
+        assert!(calculate_corner_dwells(&[], 135.0, 3).is_empty());
+        let points = vec![pt(0, 0), pt(1000, 0), pt(1000, 1000)];
+        assert_eq!(calculate_corner_dwells(&points, 135.0, 0), vec![0, 0, 0]);
+    }
+
+    #[test]
+    fn corner_dwells_open_segment_endpoints_get_base() {
+        let points = vec![pt(0, 0), pt(500, 0), pt(1000, 0)];
+        assert_eq!(calculate_corner_dwells(&points, 135.0, 3), vec![3, 0, 3]);
+    }
+
+    #[test]
+    fn corner_dwells_scale_with_turn_angle() {
+        // 90 deg turn -> base
+        let right = vec![pt(0, 0), pt(1000, 0), pt(1000, 1000)];
+        assert_eq!(calculate_corner_dwells(&right, 135.0, 3)[1], 3);
+
+        // 180 deg hairpin -> 2 * base
+        let hairpin = vec![pt(0, 0), pt(1000, 0), pt(100, 0)];
+        assert_eq!(calculate_corner_dwells(&hairpin, 135.0, 3)[1], 6);
+    }
+
+    #[test]
+    fn corner_dwells_below_threshold_get_at_least_one() {
+        // ~20 deg turn under a 170 deg threshold: 20/90 * 1 rounds to 0 but is floored to 1
+        let points = vec![pt(0, 0), pt(1000, 0), pt(1940, 342)];
+        let angle = angle_at_point(&points[0], &points[1], &points[2]);
+        assert!(angle < 170.0 && angle > 155.0, "angle was {}", angle);
+        assert_eq!(calculate_corner_dwells(&points, 170.0, 1)[1], 1);
+    }
+
+    #[test]
+    fn corner_dwells_closed_square_dwells_once_at_seam() {
+        let square = vec![pt(0, 0), pt(1000, 0), pt(1000, 1000), pt(0, 1000), pt(0, 0)];
+        let dwells = calculate_corner_dwells(&square, 135.0, 3);
+        // Seam corner dwell lives on the first point only, so it is not emitted twice
+        assert_eq!(dwells, vec![3, 3, 3, 3, 0]);
+    }
+
+    #[test]
+    fn corner_dwells_closed_straight_seam_has_no_dwell() {
+        // Seam placed mid-edge: the loop passes straight through it
+        let loop_pts = vec![pt(500, 0), pt(1000, 0), pt(1000, 1000), pt(0, 1000), pt(0, 0), pt(500, 0)];
+        let dwells = calculate_corner_dwells(&loop_pts, 135.0, 3);
+        assert_eq!(dwells[0], 0);
+        assert_eq!(dwells[loop_pts.len() - 1], 0);
+        assert_eq!(&dwells[1..5], &[3, 3, 3, 3]);
+    }
+
+    #[test]
+    fn is_closed_points_threshold() {
+        assert!(is_closed_points(&[pt(0, 0), pt(100, 0), pt(24, 32)])); // distance 40
+        assert!(!is_closed_points(&[pt(0, 0), pt(100, 0), pt(25, 32)]));
+        assert!(!is_closed_points(&[pt(0, 0), pt(0, 0)]));
     }
 }

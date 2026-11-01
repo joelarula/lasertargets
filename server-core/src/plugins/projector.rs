@@ -3,13 +3,39 @@ use common::config::ProjectorConfiguration;
 use common::scene::SceneEntity;
 use common::scene::SceneSetup;
 use common::path::UniversalPath;
+use common::settings::{ConfigAppExt, ConfigSection};
 use common::state::CalibrationState;
 use crate::plugins::calibration::CalibrationPath;
-use crate::dac::helios::{HeliosDacController, HeliosPoint, HELIOS_MAX_COORD, HELIOS_FLAGS_DEFAULT};
+use laserlogic::helios::{HeliosDacController, HeliosPoint, HELIOS_MAX_COORD, HELIOS_FLAGS_DEFAULT};
 use laserlogic::{LaserPoint, LaserSegment, OptimizeConfig};
+use serde::{Deserialize, Serialize};
 
-#[derive(Resource, Clone)]
+#[derive(Resource, Clone, Serialize, Deserialize)]
+#[serde(transparent)]
 pub struct LaserOptimizeConfig(pub OptimizeConfig);
+
+impl ConfigSection for LaserOptimizeConfig {
+    const KEY: &'static str = "projector.optimize";
+}
+
+/// Helios DAC hardware settings.
+#[derive(Resource, Debug, Clone, Serialize, Deserialize)]
+pub struct DacSettings {
+    /// When false the DAC library is never loaded (machines without a projector attached).
+    pub enabled: bool,
+    /// Seconds between reconnect attempts after the DAC drops out.
+    pub reconnect_secs: f32,
+}
+
+impl Default for DacSettings {
+    fn default() -> Self {
+        Self { enabled: true, reconnect_secs: 5.0 }
+    }
+}
+
+impl ConfigSection for DacSettings {
+    const KEY: &'static str = "projector.dac";
+}
 
 impl Default for LaserOptimizeConfig {
     fn default() -> Self {
@@ -89,22 +115,18 @@ pub struct ProjectorPlugin;
 #[derive(Resource)]
 struct DacReconnectTimer(Timer);
 
-impl Default for DacReconnectTimer {
-    fn default() -> Self {
-        Self(Timer::from_seconds(5.0, TimerMode::Repeating))
-    }
-}
-
 impl Plugin for ProjectorPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(ProjectorConfiguration {
+        app.init_config_or(ProjectorConfiguration {
             switched_on: true, // Enable by default for testing
             ..Default::default()
         })
-            .insert_resource(ProjectorDacController::default())
+            .init_config::<LaserOptimizeConfig>()
+            .init_config::<DacSettings>();
+        let dac = app.world().resource::<DacSettings>().clone();
+        app.insert_resource(ProjectorDacController { enabled: dac.enabled, ..Default::default() })
             .insert_resource(LaserPointBuffer::default())
-            .insert_resource(LaserOptimizeConfig::default())
-            .init_resource::<DacReconnectTimer>()
+            .insert_resource(DacReconnectTimer(Timer::from_seconds(dac.reconnect_secs, TimerMode::Repeating)))
             .add_systems(Startup, initialize_projector_dac)
             .add_systems(Update, update_projector)
             .add_systems(Update, update_point_buffer)
@@ -727,40 +749,11 @@ fn update_point_buffer(
         }
     }
 
-    let optimized_text = laserlogic::text_optimize::optimize_text(
+    let optimized = laserlogic::compose_frame(
+        &general_segments,
         &text_segments,
         &optimize_config.0,
-        None,
     );
-    let optimized_general = laserlogic::optimize::optimize(&general_segments, &optimize_config.0);
-
-    // Merge: general game shapes first (with laser-off blanking jumps), text on top
-    let mut optimized = optimized_general;
-    if !optimized_text.is_empty() {
-        if !optimized.is_empty() {
-            let from = *optimized.last().unwrap();
-            let to = optimized_text[0];
-            let cfg = &optimize_config.0;
-            for _ in 0..cfg.blank_end_dwell {
-                optimized.push(LaserPoint::blanked(from.x, from.y));
-            }
-            let dx = to.x as f32 - from.x as f32;
-            let dy = to.y as f32 - from.y as f32;
-            let dist = (dx * dx + dy * dy).sqrt();
-            let steps = ((dist / 250.0).ceil() as u16).clamp(4, cfg.blank_jump_steps.max(4));
-            for step in 1..steps {
-                let t = step as f32 / steps as f32;
-                optimized.push(LaserPoint::blanked(
-                    (from.x as f32 + dx * t) as u16,
-                    (from.y as f32 + dy * t) as u16,
-                ));
-            }
-            for _ in 0..cfg.blank_start_dwell {
-                optimized.push(LaserPoint::blanked(to.x, to.y));
-            }
-        }
-        optimized.extend(optimized_text);
-    }
 
     debug!("Total points after optimization: {}", optimized.len());
 
@@ -814,8 +807,118 @@ fn world_to_projector_coordinates(
     // -1 maps to 0, 0 maps to 2048 (center), +1 maps to 4095
     let x = ((projected_x + 1.0) * (HELIOS_MAX_COORD as f32 / 2.0)) as u16;
     let y = ((projected_y + 1.0) * (HELIOS_MAX_COORD as f32 / 2.0)) as u16;
-    
+
     Some((x, y))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use common::config::ConfigTransform;
+
+    /// Projector at the origin looking down -Z with a 60 deg field of view.
+    fn projector_at(translation: Vec3, angle: f32) -> ProjectorConfiguration {
+        ProjectorConfiguration {
+            angle,
+            origin: ConfigTransform { translation, rotation: Quat::IDENTITY, scale: Vec3::ONE },
+            ..Default::default()
+        }
+    }
+
+    fn project(p: Vec3) -> Option<(u16, u16)> {
+        world_to_projector_coordinates(p, &projector_at(Vec3::ZERO, 60.0))
+    }
+
+    #[test]
+    fn point_on_axis_maps_to_center() {
+        assert_eq!(project(Vec3::new(0.0, 0.0, -10.0)), Some((2047, 2047)));
+        assert_eq!(project(Vec3::new(0.0, 0.0, -1.0)), Some((2047, 2047)));
+    }
+
+    #[test]
+    fn points_behind_or_level_with_projector_are_rejected() {
+        assert_eq!(project(Vec3::new(0.0, 0.0, 10.0)), None);
+        assert_eq!(project(Vec3::new(1.0, 1.0, 0.0)), None);
+    }
+
+    #[test]
+    fn points_outside_fov_are_rejected() {
+        // Half FOV of 30 deg: the edge at 10 m is 10 * tan(30) = 5.77 m off axis
+        let edge = 10.0 * 30f32.to_radians().tan();
+        let (x, _) = project(Vec3::new(edge - 0.01, 0.0, -10.0)).unwrap();
+        assert!(x > 4080, "x = {}", x);
+        assert_eq!(project(Vec3::new(edge + 0.01, 0.0, -10.0)), None);
+        assert_eq!(project(Vec3::new(0.0, -(edge + 0.01), -10.0)), None);
+    }
+
+    #[test]
+    fn axes_orientation() {
+        let (x_right, y_right) = project(Vec3::new(1.0, 0.0, -10.0)).unwrap();
+        assert!(x_right > 2047);
+        assert_eq!(y_right, 2047);
+
+        // DAC y grows downward: world up maps to smaller y
+        let (x_up, y_up) = project(Vec3::new(0.0, 1.0, -10.0)).unwrap();
+        assert_eq!(x_up, 2047);
+        assert!(y_up < 2047);
+    }
+
+    #[test]
+    fn projection_is_perspective() {
+        // The same lateral offset appears smaller twice as far away
+        let (near, _) = project(Vec3::new(1.0, 0.0, -5.0)).unwrap();
+        let (far, _) = project(Vec3::new(1.0, 0.0, -10.0)).unwrap();
+        let near_off = near as i32 - 2047;
+        let far_off = far as i32 - 2047;
+        assert!((near_off - 2 * far_off).abs() <= 1, "near {} far {}", near_off, far_off);
+    }
+
+    #[test]
+    fn narrower_fov_magnifies() {
+        let p = Vec3::new(1.0, 0.0, -10.0);
+        let (wide, _) = world_to_projector_coordinates(p, &projector_at(Vec3::ZERO, 60.0)).unwrap();
+        let (narrow, _) = world_to_projector_coordinates(p, &projector_at(Vec3::ZERO, 30.0)).unwrap();
+        assert!(narrow > wide);
+    }
+
+    #[test]
+    fn projector_translation_and_rotation_are_respected() {
+        let shifted = projector_at(Vec3::new(5.0, 2.0, 0.0), 60.0);
+        assert_eq!(world_to_projector_coordinates(Vec3::new(5.0, 2.0, -10.0), &shifted), Some((2047, 2047)));
+
+        // Rotated to look down +X: a point on +X is centred, a point on -Z is now out of view
+        let mut turned = projector_at(Vec3::ZERO, 60.0);
+        turned.origin.rotation = Transform::IDENTITY.looking_at(Vec3::X, Vec3::Y).rotation;
+        assert_eq!(world_to_projector_coordinates(Vec3::new(10.0, 0.0, 0.0), &turned), Some((2047, 2047)));
+        assert_eq!(world_to_projector_coordinates(Vec3::new(0.0, 0.0, -10.0), &turned), None);
+    }
+
+    #[test]
+    fn default_projector_sees_default_scene() {
+        // Default projector locked onto the default scene centre: all four scene corners are in view
+        let mut config = ProjectorConfiguration::default();
+        let scene = common::config::SceneConfiguration::default();
+        let center = scene.origin.translation;
+        config.origin.rotation = Transform::from_translation(config.origin.translation)
+            .looking_at(center, Vec3::Y)
+            .rotation;
+        assert_eq!(world_to_projector_coordinates(center, &config), Some((2047, 2047)));
+
+        let half = scene.scene_dimension / 2.0;
+        for (sx, sy) in [(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)] {
+            let corner = center + Vec3::new(sx * half.x, sy * half.y, 0.0);
+            assert!(world_to_projector_coordinates(corner, &config).is_some(), "corner {:?} out of view", corner);
+        }
+    }
+
+    #[test]
+    fn laser_optimize_defaults_are_sane() {
+        let config = LaserOptimizeConfig::default().0;
+        assert!(!config.dynamic_dwell);
+        assert_eq!(config.simplify_min_distance, 0.0);
+        assert!(config.interp_spacing > 0.0);
+        assert!(config.blank_jump_steps >= 4);
+    }
 }
 
 

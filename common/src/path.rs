@@ -1030,4 +1030,425 @@ mod tests {
         assert!(strategy.is_some());
         assert_eq!(strategy.unwrap().name(), "CycleModulo");
     }
+
+    fn white(x: f32, y: f32) -> PathPoint {
+        PathPoint::new(x, y, 255, 255, 255, 0)
+    }
+
+    fn is_dark(p: &PathPoint) -> bool {
+        p.r == 0 && p.g == 0 && p.b == 0
+    }
+
+    fn ctx(modulation_t: f32) -> ModifierContext<'static> {
+        ModifierContext { delta_secs: 0.02, elapsed_secs: 1.0, modulation_t, audio_spectral: None }
+    }
+
+    #[derive(Clone, Default)]
+    struct Offset(f32);
+
+    impl PathModifier for Offset {
+        fn name(&self) -> &'static str { "Offset" }
+        fn type_id(&self) -> &'static str { "offset" }
+        fn apply(&mut self, path: &mut UniversalPath, _ctx: &ModifierContext) {
+            path.segments.iter_mut().flat_map(|s| s.points.iter_mut()).for_each(|p| p.x += self.0);
+        }
+        fn clone_box(&self) -> Box<dyn PathModifier> { Box::new(self.clone()) }
+    }
+
+    #[derive(Clone, Default)]
+    struct Scale(f32);
+
+    impl PathModifier for Scale {
+        fn name(&self) -> &'static str { "Scale" }
+        fn type_id(&self) -> &'static str { "scale" }
+        fn apply(&mut self, path: &mut UniversalPath, _ctx: &ModifierContext) {
+            path.segments.iter_mut().flat_map(|s| s.points.iter_mut()).for_each(|p| p.x *= self.0);
+        }
+        fn clone_box(&self) -> Box<dyn PathModifier> { Box::new(self.clone()) }
+    }
+
+    // --- PathPoint ------------------------------------------------------------
+
+    #[test]
+    fn path_point_lerp_clamps_and_switches_dwell() {
+        let a = PathPoint::new(0.0, 0.0, 0, 0, 0, 1);
+        let b = PathPoint::new(10.0, 10.0, 200, 200, 200, 5);
+        assert_eq!(a.lerp(&b, -1.0), a);
+        assert_eq!(a.lerp(&b, 2.0), b);
+        assert_eq!(a.lerp(&b, 0.49).dwell, 1);
+        assert_eq!(a.lerp(&b, 0.5).dwell, 5);
+    }
+
+    #[test]
+    fn path_point_color_conversion() {
+        assert_eq!(PathPoint::color_to_rgb(Color::srgb(1.0, 0.0, 0.0)), (255, 0, 0));
+        assert_eq!(PathPoint::color_to_rgb(Color::BLACK), (0, 0, 0));
+        let p = PathPoint::from_vec2_color(Vec2::new(1.0, 2.0), Color::srgb(0.0, 1.0, 0.0), 4);
+        assert_eq!(p, PathPoint::new(1.0, 2.0, 0, 255, 0, 4));
+    }
+
+    #[test]
+    #[ignore = "BUG: color_to_rgb truncates instead of rounding; Color::WHITE (linear) converts to \
+                0.99999994 sRGB and becomes 254, and mid-tones are biased down by one step"]
+    fn color_to_rgb_rounds() {
+        assert_eq!(PathPoint::color_to_rgb(Color::WHITE), (255, 255, 255));
+        assert_eq!(PathPoint::color_to_rgb(Color::srgb(0.5, 0.5, 0.5)), (128, 128, 128));
+    }
+
+    #[test]
+    fn path_point_serde_defaults() {
+        let p: PathPoint = serde_json::from_str(r#"{"x":1.0,"y":2.0}"#).unwrap();
+        assert_eq!(p, PathPoint::new(1.0, 2.0, 255, 255, 255, 0));
+    }
+
+    #[test]
+    fn path_segment_serde_defaults() {
+        let s: PathSegment = serde_json::from_str(r#"{"points":[{"x":0.0,"y":0.0}]}"#).unwrap();
+        assert_eq!(s.line_style, LineStyle::Continuous);
+        assert_eq!(s.hint, PathHint::General);
+        assert_eq!(PathSegment::empty_text().hint, PathHint::Text);
+    }
+
+    #[test]
+    fn universal_path_bincode_roundtrip() {
+        let mut seg = PathSegment::polygon(&[Vec2::ZERO, Vec2::X, Vec2::ONE], Color::WHITE, 2);
+        seg.line_style = LineStyle::Dashed;
+        seg.hint = PathHint::Text;
+        let path = UniversalPath::from_segment(seg);
+        let bytes = bincode::serialize(&path).unwrap();
+        let back: UniversalPath = bincode::deserialize(&bytes).unwrap();
+        assert_eq!(back, path);
+    }
+
+    // --- PathSegment constructors -----------------------------------------------
+
+    #[test]
+    fn segment_constructors() {
+        let red = Color::srgb(1.0, 0.0, 0.0);
+        let line = PathSegment::line(Vec2::ZERO, Vec2::new(3.0, 4.0), red, 2);
+        assert_eq!(line.points, vec![PathPoint::new(0.0, 0.0, 255, 0, 0, 2), PathPoint::new(3.0, 4.0, 255, 0, 0, 2)]);
+
+        let poly = PathSegment::polyline(&[Vec2::ZERO, Vec2::X, Vec2::ONE], Color::WHITE, 0);
+        assert_eq!(poly.points.len(), 3);
+
+        let gon = PathSegment::polygon(&[Vec2::ZERO, Vec2::X, Vec2::ONE], Color::WHITE, 0);
+        assert_eq!(gon.points.len(), 4);
+        assert_eq!(gon.points[0], gon.points[3]);
+
+        assert!(PathSegment::polygon(&[], Color::WHITE, 0).points.is_empty());
+    }
+
+    #[test]
+    fn segment_builder_and_push() {
+        let built = PathSegment::builder()
+            .point(0.0, 0.0, 1, 2, 3, 4)
+            .add(1.0, 0.0, Color::WHITE, 0)
+            .add_vec2(Vec2::ONE, Color::BLACK, 1)
+            .build();
+        assert_eq!(built.points.len(), 3);
+        assert_eq!(built.points[0], PathPoint::new(0.0, 0.0, 1, 2, 3, 4));
+        assert_eq!(built.points[2], PathPoint::new(1.0, 1.0, 0, 0, 0, 1));
+
+        let mut seg = PathSegment::empty();
+        seg.push(1.0, 2.0, Color::WHITE, 0);
+        seg.push_vec2(Vec2::ONE, Color::WHITE, 0);
+        seg.push_point(white(5.0, 5.0));
+        assert_eq!(seg.points.len(), 3);
+    }
+
+    #[test]
+    fn segment_from_lyon_path() {
+        use lyon_path::math::point;
+        let mut builder = Path::builder();
+        builder.begin(point(0.0, 0.0));
+        builder.line_to(point(1.0, 0.0));
+        builder.quadratic_bezier_to(point(2.0, 1.0), point(3.0, 0.0));
+        builder.cubic_bezier_to(point(4.0, 1.0), point(5.0, 1.0), point(6.0, 0.0));
+        builder.end(false);
+        let seg = PathSegment::from_lyon_path(&builder.build(), Color::WHITE, 1.0);
+
+        // begin + line + (ctrl, to) + (ctrl1, ctrl2, to)
+        let xs: Vec<f32> = seg.points.iter().map(|p| p.x).collect();
+        assert_eq!(xs, vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
+    }
+
+    #[test]
+    fn universal_path_flatten_spans_segments() {
+        let path = UniversalPath::from_segments(vec![
+            PathSegment::line(Vec2::ZERO, Vec2::X, Color::WHITE, 0),
+            PathSegment::line(Vec2::Y, Vec2::ONE, Color::WHITE, 0),
+        ]);
+        assert_eq!(path.flatten(), vec![Vec2::ZERO, Vec2::X, Vec2::Y, Vec2::ONE]);
+        assert!(UniversalPath::empty().flatten().is_empty());
+    }
+
+    // --- expand_line_style --------------------------------------------------------
+
+    #[test]
+    fn continuous_and_independent_are_unchanged() {
+        let mut seg = PathSegment::polyline(&[Vec2::ZERO, Vec2::new(10.0, 0.0)], Color::WHITE, 0);
+        assert_eq!(seg.expand_line_style(), seg.points);
+        seg.line_style = LineStyle::Independent;
+        assert_eq!(seg.expand_line_style(), seg.points);
+    }
+
+    #[test]
+    fn short_segments_are_unchanged() {
+        let mut seg = PathSegment::new(vec![white(0.0, 0.0)]);
+        seg.line_style = LineStyle::Dashed;
+        assert_eq!(seg.expand_line_style(), seg.points);
+    }
+
+    #[test]
+    fn dashed_line_alternates_lit_and_dark() {
+        let mut seg = PathSegment::new(vec![PathPoint::new(0.0, 0.0, 255, 255, 255, 2), PathPoint::new(10.0, 0.0, 255, 255, 255, 2)]);
+        seg.line_style = LineStyle::Dashed;
+        let pts = seg.expand_line_style();
+
+        // 10m / 0.25m steps + closing point
+        assert_eq!(pts.len(), 41);
+        for p in &pts {
+            let lit = (p.x % 2.0) < 1.2 - 1e-4;
+            let dark = (p.x % 2.0) > 1.2 + 1e-4;
+            if lit { assert!(!is_dark(p), "x = {} should be lit", p.x); }
+            if dark { assert!(is_dark(p), "x = {} should be dark", p.x); }
+        }
+        assert!(pts.iter().all(|p| p.dwell == 2));
+        assert!(pts.iter().all(|p| p.y == 0.0));
+    }
+
+    #[test]
+    fn dotted_line_is_mostly_dark() {
+        let mut seg = PathSegment::new(vec![white(0.0, 0.0), white(15.0, 0.0)]);
+        seg.line_style = LineStyle::Dotted;
+        let pts = seg.expand_line_style();
+        let lit = pts.iter().filter(|p| !is_dark(p)).count();
+        assert!(lit > 0 && lit * 4 < pts.len(), "lit {} of {}", lit, pts.len());
+    }
+
+    #[test]
+    fn dashed_closed_loop_keeps_seam() {
+        let mut seg = PathSegment::polygon(
+            &[Vec2::ZERO, Vec2::new(3.0, 0.0), Vec2::new(3.0, 3.0), Vec2::new(0.0, 3.0)],
+            Color::WHITE,
+            0,
+        );
+        seg.line_style = LineStyle::Dashed;
+        let pts = seg.expand_line_style();
+        let (first, last) = (&pts[0], pts.last().unwrap());
+        assert_eq!((first.x, first.y, first.r, first.g, first.b), (last.x, last.y, last.r, last.g, last.b));
+    }
+
+    #[test]
+    fn dashed_handles_zero_length_edges() {
+        let mut seg = PathSegment::new(vec![white(0.0, 0.0), white(0.0, 0.0), white(5.0, 0.0)]);
+        seg.line_style = LineStyle::Dashed;
+        let pts = seg.expand_line_style();
+        // 1 point for the degenerate edge + 20 steps + closing point
+        assert_eq!(pts.len(), 22);
+        assert!(pts.iter().all(|p| p.x.is_finite()));
+    }
+
+    // --- EasingFunction / ModulatorSource -----------------------------------------
+
+    #[test]
+    fn easing_endpoints_and_midpoints() {
+        for easing in [EasingFunction::Linear, EasingFunction::EaseInQuad, EasingFunction::EaseOutQuad, EasingFunction::EaseInOutQuad] {
+            assert_eq!(easing.apply(0.0), 0.0, "{:?}", easing);
+            assert!((easing.apply(1.0) - 1.0).abs() < 1e-6, "{:?}", easing);
+            assert_eq!(easing.apply(-5.0), easing.apply(0.0));
+            assert_eq!(easing.apply(5.0), easing.apply(1.0));
+        }
+        assert!((EasingFunction::EaseInQuad.apply(0.5) - 0.25).abs() < 1e-6);
+        assert!((EasingFunction::EaseOutQuad.apply(0.5) - 0.75).abs() < 1e-6);
+    }
+
+    #[test]
+    fn timeline_once_holds_at_end() {
+        let mut source = ModulatorSource::Timeline { duration_secs: 2.0, elapsed_secs: 0.0, loop_mode: LoopMode::Once };
+        assert!((source.advance_and_sample(1.0, 1.0) - 0.5).abs() < 1e-6);
+        assert_eq!(source.advance_and_sample(5.0, 6.0), 1.0);
+        assert_eq!(source.sample(100.0), 1.0);
+    }
+
+    #[test]
+    fn timeline_ping_pong_turns_at_ends() {
+        let mut source = ModulatorSource::Timeline { duration_secs: 1.0, elapsed_secs: 0.0, loop_mode: LoopMode::PingPong };
+        assert!((source.advance_and_sample(1.0, 0.0) - 1.0).abs() < 1e-6);
+        assert!((source.advance_and_sample(0.5, 0.0) - 0.5).abs() < 1e-6);
+        assert!(source.advance_and_sample(0.5, 0.0).abs() < 1e-6);
+        assert!((source.advance_and_sample(0.25, 0.0) - 0.25).abs() < 1e-6);
+    }
+
+    #[test]
+    fn timeline_zero_duration_is_finite() {
+        let mut source = ModulatorSource::Timeline { duration_secs: 0.0, elapsed_secs: 0.0, loop_mode: LoopMode::Repeat };
+        let t = source.advance_and_sample(0.016, 0.016);
+        assert!(t.is_finite() && (0.0..=1.0).contains(&t));
+    }
+
+    #[test]
+    fn lfo_sources() {
+        let sine = ModulatorSource::LfoSine { frequency_hz: 1.0 };
+        assert!((sine.sample(0.0) - 0.5).abs() < 1e-6);
+        assert!((sine.sample(0.25) - 1.0).abs() < 1e-6);
+        assert!(sine.sample(0.75).abs() < 1e-6);
+
+        let tri = ModulatorSource::LfoTriangle { frequency_hz: 2.0 };
+        assert!(tri.sample(0.0).abs() < 1e-6);
+        assert!((tri.sample(0.125) - 0.5).abs() < 1e-6);
+        assert!((tri.sample(0.25) - 1.0).abs() < 1e-6);
+        assert!((tri.sample(0.375) - 0.5).abs() < 1e-6);
+    }
+
+    #[test]
+    fn stateless_sources_ignore_delta_and_clamp() {
+        let mut manual = ModulatorSource::Manual(1.5);
+        assert_eq!(manual.advance_and_sample(10.0, 10.0), 1.0);
+        assert_eq!(ModulatorSource::Ratio { value: -0.5 }.sample(0.0), 0.0);
+        assert_eq!(ModulatorSource::GamepadTrigger { value: 0.3 }.sample(99.0), 0.3);
+
+        // advance_and_sample on an LFO samples at the total elapsed time, not the delta
+        let mut lfo = ModulatorSource::LfoSine { frequency_hz: 1.0 };
+        assert!((lfo.advance_and_sample(0.0, 0.25) - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn modulator_constructors() {
+        let m = PathModulator::from_animation(UniversalPath::empty(), UniversalPath::empty(), 0.0, LoopMode::Once);
+        match m.source {
+            ModulatorSource::Timeline { duration_secs, .. } => assert!(duration_secs >= 0.001),
+            other => panic!("unexpected source {:?}", other),
+        }
+        assert_eq!(m.strategy.name(), "CycleModulo");
+        assert_eq!(PathModulator::default().strategy.name(), "CycleModulo");
+    }
+
+    // --- CycleModuloMorphStrategy -------------------------------------------------
+
+    fn one_seg(points: Vec<PathPoint>) -> UniversalPath {
+        UniversalPath::from_segment(PathSegment::new(points))
+    }
+
+    #[test]
+    fn morph_endpoints_match_keyframes() {
+        let a = one_seg(vec![white(0.0, 0.0), white(10.0, 0.0)]);
+        let b = one_seg(vec![white(0.0, 10.0), white(10.0, 10.0)]);
+        let mut out = UniversalPath::empty();
+        let mut strategy = CycleModuloMorphStrategy;
+        strategy.morph(&a, &b, 0.0, &mut out);
+        assert_eq!(out.segments[0].points, a.segments[0].points);
+        strategy.morph(&a, &b, 1.0, &mut out);
+        assert_eq!(out.segments[0].points, b.segments[0].points);
+    }
+
+    #[test]
+    fn morph_with_empty_keyframe_leaves_output_untouched() {
+        let a = one_seg(vec![white(0.0, 0.0)]);
+        let mut out = one_seg(vec![white(42.0, 42.0)]);
+        let before = out.clone();
+        CycleModuloMorphStrategy.morph(&a, &UniversalPath::empty(), 0.5, &mut out);
+        assert_eq!(out, before);
+        CycleModuloMorphStrategy.morph(&UniversalPath::empty(), &a, 0.5, &mut out);
+        assert_eq!(out, before);
+    }
+
+    #[test]
+    fn morph_copies_non_empty_side_when_other_segment_empty() {
+        let a = one_seg(vec![]);
+        let b = one_seg(vec![white(1.0, 1.0), white(2.0, 2.0)]);
+        let mut out = UniversalPath::empty();
+        CycleModuloMorphStrategy.morph(&a, &b, 0.0, &mut out);
+        assert_eq!(out.segments[0].points, b.segments[0].points);
+    }
+
+    #[test]
+    fn morph_reuses_output_without_growing() {
+        let a = one_seg(vec![white(0.0, 0.0), white(10.0, 0.0)]);
+        let b = one_seg(vec![white(0.0, 10.0), white(10.0, 10.0)]);
+        let mut out = UniversalPath::empty();
+        for i in 0..10 {
+            CycleModuloMorphStrategy.morph(&a, &b, i as f32 / 10.0, &mut out);
+        }
+        assert_eq!(out.segments.len(), 1);
+        assert_eq!(out.segments[0].points.len(), 2);
+    }
+
+    #[test]
+    #[ignore = "BUG: CycleModulo only grows output.segments; segments beyond the keyframe count \
+                (e.g. from the entity's initial path) are never removed and keep rendering"]
+    fn morph_trims_stale_output_segments() {
+        let a = one_seg(vec![white(0.0, 0.0)]);
+        let b = one_seg(vec![white(1.0, 1.0)]);
+        let mut out = UniversalPath::from_segments(vec![PathSegment::empty(), PathSegment::empty(), PathSegment::empty()]);
+        CycleModuloMorphStrategy.morph(&a, &b, 0.5, &mut out);
+        assert_eq!(out.segments.len(), 1);
+    }
+
+    #[test]
+    #[ignore = "BUG: CycleModulo creates output segments with PathSegment::empty(), dropping the keyframes' \
+                line_style and hint, so morphed text loses the text pipeline and dashed lines turn solid"]
+    fn morph_preserves_segment_style_and_hint() {
+        let mut seg = PathSegment::new(vec![white(0.0, 0.0), white(1.0, 0.0)]);
+        seg.hint = PathHint::Text;
+        seg.line_style = LineStyle::Dashed;
+        let a = UniversalPath::from_segment(seg.clone());
+        let b = UniversalPath::from_segment(seg);
+        let mut out = UniversalPath::empty();
+        CycleModuloMorphStrategy.morph(&a, &b, 0.5, &mut out);
+        assert_eq!(out.segments[0].hint, PathHint::Text);
+        assert_eq!(out.segments[0].line_style, LineStyle::Dashed);
+    }
+
+    // --- Pipeline / registries ----------------------------------------------------
+
+    #[test]
+    fn pipeline_applies_modifiers_in_order() {
+        let base = one_seg(vec![white(1.0, 0.0)]);
+
+        let mut path = base.clone();
+        PathModifierPipeline::new().with_modifier(Offset(1.0)).with_modifier(Scale(10.0)).apply(&mut path, &ctx(1.0));
+        assert_eq!(path.segments[0].points[0].x, 20.0);
+
+        let mut path = base;
+        let mut pipeline = PathModifierPipeline::new();
+        pipeline.add(Scale(10.0));
+        pipeline.add(Offset(1.0));
+        pipeline.apply(&mut path, &ctx(1.0));
+        assert_eq!(path.segments[0].points[0].x, 11.0);
+    }
+
+    #[test]
+    fn disabled_pipeline_is_noop() {
+        let mut path = one_seg(vec![white(1.0, 0.0)]);
+        let mut pipeline = PathModifierPipeline::new().with_modifier(Offset(5.0));
+        pipeline.enabled = false;
+        pipeline.apply(&mut path, &ctx(1.0));
+        assert_eq!(path.segments[0].points[0].x, 1.0);
+    }
+
+    #[test]
+    fn modifier_registry_creates_registered_types() {
+        let mut registry = PathModifierRegistry::new();
+        assert!(registry.create("offset").is_none());
+        registry.register::<Offset>();
+        let modifier = registry.create("offset").unwrap();
+        assert_eq!(modifier.name(), "Offset");
+        assert!(registry.create("missing").is_none());
+    }
+
+    #[test]
+    #[ignore = "BUG: MorphStrategyRegistry derives Default, so init_resource (used by PathNetworkPlugin) \
+                yields an empty registry; only ::new() registers cycle_modulo"]
+    fn default_strategy_registry_has_builtin() {
+        assert!(MorphStrategyRegistry::default().create("cycle_modulo").is_some());
+    }
+
+    #[test]
+    fn vector_frame_helpers() {
+        let frame = VectorFrame::new(7, vec![AbstractPathData::new(UniversalPath::empty(), Vec3::ONE)]);
+        assert_eq!(frame.len(), 1);
+        assert!(!frame.is_empty());
+        assert!(VectorFrame::default().is_empty());
+    }
 }

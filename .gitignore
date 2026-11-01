@@ -9,6 +9,8 @@ Cargo.lock
 *.dll
 *.so
 *.dylib
+!laserlogic/libs/*.dll
+!laserlogic/libs/*.so
 
 # IDE
 .vscode/

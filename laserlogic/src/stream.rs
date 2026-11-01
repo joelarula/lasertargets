@@ -386,5 +386,220 @@ mod tests {
         assert_eq!(path.segments.len(), 1);
         assert!(path.segments[0].points.len() >= 64);
     }
+
+    fn approx(a: f32, b: f32) -> bool {
+        (a - b).abs() < 1e-4
+    }
+
+    fn approx_vec(a: Vec2, b: Vec2) -> bool {
+        approx(a.x, b.x) && approx(a.y, b.y)
+    }
+
+    #[test]
+    fn window_functions_endpoints_and_peak() {
+        for window in [WindowFunction::Hann, WindowFunction::Sine, WindowFunction::Triangle, WindowFunction::Tukey { alpha: 0.5 }] {
+            assert!(window.evaluate(0.0).abs() < 1e-4, "{:?} at 0", window);
+            assert!(window.evaluate(1.0).abs() < 1e-4, "{:?} at 1", window);
+            assert!(approx(window.evaluate(0.5), 1.0), "{:?} at 0.5", window);
+        }
+        assert_eq!(WindowFunction::None.evaluate(0.0), 1.0);
+        assert_eq!(WindowFunction::None.evaluate(0.7), 1.0);
+    }
+
+    #[test]
+    fn window_functions_clamp_input() {
+        for window in [WindowFunction::Hann, WindowFunction::Sine, WindowFunction::Triangle, WindowFunction::Tukey { alpha: 0.5 }] {
+            assert_eq!(window.evaluate(-1.0), window.evaluate(0.0));
+            assert_eq!(window.evaluate(2.0), window.evaluate(1.0));
+        }
+    }
+
+    #[test]
+    fn tukey_has_flat_top_and_matches_hann_at_alpha_one() {
+        let tukey = WindowFunction::Tukey { alpha: 0.5 };
+        assert_eq!(tukey.evaluate(0.3), 1.0);
+        assert_eq!(tukey.evaluate(0.7), 1.0);
+        assert!(tukey.evaluate(0.1) < 1.0);
+
+        let full = WindowFunction::Tukey { alpha: 1.0 };
+        for s in [0.1, 0.25, 0.4, 0.6, 0.9] {
+            assert!(approx(full.evaluate(s), WindowFunction::Hann.evaluate(s)), "s = {}", s);
+        }
+    }
+
+    #[test]
+    fn triangle_is_linear() {
+        assert!(approx(WindowFunction::Triangle.evaluate(0.25), 0.5));
+        assert!(approx(WindowFunction::Triangle.evaluate(0.75), 0.5));
+    }
+
+    #[test]
+    fn carrier_circle() {
+        let carrier = CarrierGeometry::Circle { center: Vec2::new(1.0, 2.0), radius: 0.5 };
+        assert!(carrier.is_closed());
+        let (pos, normal) = carrier.evaluate_at(0.0);
+        assert!(approx_vec(pos, Vec2::new(1.5, 2.0)));
+        assert!(approx_vec(normal, Vec2::X));
+        let (pos, normal) = carrier.evaluate_at(0.25);
+        assert!(approx_vec(pos, Vec2::new(1.0, 2.5)));
+        assert!(approx_vec(normal, Vec2::Y));
+    }
+
+    #[test]
+    fn carrier_arc() {
+        let carrier = CarrierGeometry::Arc {
+            center: Vec2::ZERO,
+            radius: 2.0,
+            start_angle_rad: 0.0,
+            end_angle_rad: std::f32::consts::PI,
+        };
+        assert!(!carrier.is_closed());
+        assert!(approx_vec(carrier.evaluate_at(0.0).0, Vec2::new(2.0, 0.0)));
+        assert!(approx_vec(carrier.evaluate_at(0.5).0, Vec2::new(0.0, 2.0)));
+        assert!(approx_vec(carrier.evaluate_at(1.0).0, Vec2::new(-2.0, 0.0)));
+    }
+
+    #[test]
+    fn carrier_line_normal_is_left_perpendicular_and_clamped() {
+        let carrier = CarrierGeometry::Line { start: Vec2::ZERO, end: Vec2::new(0.0, 2.0) };
+        let (pos, normal) = carrier.evaluate_at(0.25);
+        assert!(approx_vec(pos, Vec2::new(0.0, 0.5)));
+        assert!(approx_vec(normal, Vec2::new(-1.0, 0.0)));
+        assert!(approx_vec(carrier.evaluate_at(5.0).0, Vec2::new(0.0, 2.0)));
+    }
+
+    #[test]
+    fn carrier_degenerate_line_does_not_nan() {
+        let carrier = CarrierGeometry::Line { start: Vec2::ONE, end: Vec2::ONE };
+        let (pos, normal) = carrier.evaluate_at(0.5);
+        assert!(pos.is_finite() && normal.is_finite());
+    }
+
+    #[test]
+    fn carrier_polyline_open_and_closed() {
+        let points = vec![Vec2::ZERO, Vec2::new(1.0, 0.0), Vec2::new(1.0, 1.0)];
+        let open = CarrierGeometry::Polyline { points: points.clone(), closed: false };
+        assert!(!open.is_closed());
+        assert!(approx_vec(open.evaluate_at(0.25).0, Vec2::new(0.5, 0.0)));
+        assert!(approx_vec(open.evaluate_at(0.75).0, Vec2::new(1.0, 0.5)));
+        assert!(approx_vec(open.evaluate_at(1.0).0, Vec2::new(1.0, 1.0)));
+
+        // Closed adds the edge back to the start: three edges instead of two
+        let closed = CarrierGeometry::Polyline { points, closed: true };
+        assert!(closed.is_closed());
+        let (pos, _) = closed.evaluate_at(5.0 / 6.0);
+        assert!(approx_vec(pos, Vec2::new(0.5, 0.5)));
+    }
+
+    #[test]
+    fn carrier_polyline_degenerate() {
+        let empty = CarrierGeometry::Polyline { points: vec![], closed: false };
+        assert_eq!(empty.evaluate_at(0.5), (Vec2::ZERO, Vec2::Y));
+        let single = CarrierGeometry::Polyline { points: vec![Vec2::new(3.0, 4.0)], closed: true };
+        assert_eq!(single.evaluate_at(0.5), (Vec2::new(3.0, 4.0), Vec2::Y));
+    }
+
+    #[test]
+    fn sample_waveform_interpolates_and_clamps() {
+        let mut stream = AudioStreamData::default();
+        assert_eq!(stream.sample_waveform(0.5), 0.0);
+
+        stream.waveform_buffer = vec![0.0, 1.0, 0.0];
+        assert!(approx(stream.sample_waveform(0.25), 0.5));
+        assert!(approx(stream.sample_waveform(0.5), 1.0));
+        assert_eq!(stream.sample_waveform(-1.0), 0.0);
+        assert_eq!(stream.sample_waveform(2.0), 0.0);
+
+        stream.waveform_buffer = vec![0.7];
+        assert!(approx(stream.sample_waveform(0.9), 0.7));
+    }
+
+    #[test]
+    fn silent_stream_follows_carrier() {
+        let modulator = StreamPolylineModulator::default();
+        let path = modulator.generate_path(&AudioStreamData::default());
+        let points = &path.segments[0].points;
+        assert_eq!(points.len(), modulator.config.point_count);
+        assert!(points.iter().all(|p| approx(p.y, 0.0)));
+        assert!(approx(points[0].x, -0.8));
+        assert!(approx(points.last().unwrap().x, 0.8));
+    }
+
+    #[test]
+    fn open_carrier_endpoints_are_pinned_and_dwell() {
+        // Hann window zeroes displacement at the ends even under heavy modulation
+        let modulator = StreamPolylineModulator::default();
+        let stream = AudioStreamData { low: 1.0, mid: 1.0, high: 1.0, rms: 1.0, waveform_buffer: vec![1.0; 8] };
+        let points = &modulator.generate_path(&stream).segments[0].points;
+        let (first, last) = (&points[0], points.last().unwrap());
+        assert!(approx(first.y, 0.0) && approx(last.y, 0.0));
+        assert_eq!((first.dwell, last.dwell), (3, 3));
+        assert!(points[1..points.len() - 1].iter().all(|p| p.dwell == 0));
+        assert!(points.iter().any(|p| p.y.abs() > 0.01), "stream should displace the middle");
+    }
+
+    #[test]
+    fn closed_carrier_repeats_first_point() {
+        let modulator = StreamPolylineModulator {
+            carrier: CarrierGeometry::Circle { center: Vec2::ZERO, radius: 1.0 },
+            window: WindowFunction::None,
+            ..Default::default()
+        };
+        let stream = AudioStreamData { low: 0.5, ..Default::default() };
+        let points = &modulator.generate_path(&stream).segments[0].points;
+        assert_eq!(points.len(), modulator.config.point_count + 1);
+        let (first, last) = (&points[0], points.last().unwrap());
+        assert_eq!((first.x, first.y), (last.x, last.y));
+        assert!(points.iter().all(|p| p.dwell == 0));
+    }
+
+    #[test]
+    fn point_count_has_floor_of_two() {
+        let mut modulator = StreamPolylineModulator::default();
+        modulator.config.point_count = 0;
+        assert_eq!(modulator.generate_path(&AudioStreamData::default()).segments[0].points.len(), 2);
+    }
+
+    #[test]
+    fn dynamic_color_tints_and_saturates() {
+        let mut modulator = StreamPolylineModulator::default();
+        modulator.config.base_color = Color::srgb(0.5, 0.5, 0.5);
+        let loud = AudioStreamData { low: 1.0, mid: 1.0, high: 1.0, ..Default::default() };
+
+        let p = modulator.generate_path(&loud).segments[0].points[0].clone();
+        assert_eq!((p.r, p.g, p.b), (255, 227, 255));
+
+        modulator.config.dynamic_color = false;
+        let p = modulator.generate_path(&loud).segments[0].points[0].clone();
+        assert_eq!((p.r, p.g, p.b), (127, 127, 127));
+    }
+
+    #[test]
+    fn update_system_advances_and_wraps_phase() {
+        use bevy::time::TimeUpdateStrategy;
+        use std::time::Duration;
+
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins)
+            // 250 ms is Time<Virtual>'s default max delta; larger steps get clamped
+            .insert_resource(TimeUpdateStrategy::ManualDuration(Duration::from_millis(250)))
+            .add_systems(Update, update_streaming_polylines);
+        let mut modulator = StreamPolylineModulator::default();
+        modulator.config.phase_speed = 4.0;
+        let entity = app.world_mut().spawn((modulator, UniversalPath::default())).id();
+
+        app.update(); // first frame has zero delta
+        app.update(); // +0.25 s -> phase 1.0
+        let phase = app.world().get::<StreamPolylineModulator>(entity).unwrap().phase;
+        assert!(approx(phase, 1.0), "phase = {}", phase);
+        assert!(!app.world().get::<UniversalPath>(entity).unwrap().segments.is_empty());
+
+        for _ in 0..6 {
+            app.update(); // phase 7.0 -> wraps to 7.0 - TAU
+        }
+        let phase = app.world().get::<StreamPolylineModulator>(entity).unwrap().phase;
+        assert!(phase < std::f32::consts::TAU);
+        assert!(approx(phase, 7.0 - std::f32::consts::TAU), "phase = {}", phase);
+    }
 }
 

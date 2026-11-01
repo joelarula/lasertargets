@@ -3,6 +3,7 @@ use crate::config::{
 };
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
+use crate::settings::ConfigAppExt;
 pub struct SceneSetupPlugin;
 
 #[derive(SystemSet, Debug, Hash, PartialEq, Eq, Clone)]
@@ -29,7 +30,7 @@ impl Plugin for SceneSetupPlugin {
     fn build(&self, app: &mut App) {
         app.configure_sets(Startup, SceneSystemSet);
         app.configure_sets(Update, SceneSystemSet);
-        app.insert_resource(SceneConfiguration::default());
+        app.init_config::<SceneConfiguration>();
         app.init_resource::<SceneSetup>(); // Initialize SceneSetup as a resource
         app.add_systems(Startup, initialize_scene_setup_resource);
         app.add_systems(Update, update_scene_setup_resource);

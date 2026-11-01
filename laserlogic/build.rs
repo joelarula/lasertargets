@@ -6,7 +6,7 @@ fn main() {
     let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
     let target_triple = env::var("TARGET").unwrap_or_default();
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
-    // Navigate from server/ up to workspace root, then into target/<profile>
+    // Navigate from laserlogic/ up to workspace root, then into target/<profile>
     let workspace_root = manifest_dir.parent().expect("Failed to find workspace root");
     let profile = env::var("PROFILE").unwrap_or_else(|_| "debug".to_string());
     let profile_dir = workspace_root.join("target").join(&profile);
@@ -28,7 +28,7 @@ fn main() {
     }
 }
 
-/// Copy HeliosLaserDAC.dll from server/libs/ to the target output directory (Windows)
+/// Copy HeliosLaserDAC.dll from laserlogic/libs/ to the target output directory (Windows)
 fn copy_windows_dll(profile_dir: &std::path::Path) {
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
     let libs_dir = manifest_dir.join("libs");
@@ -49,8 +49,7 @@ fn copy_windows_dll(profile_dir: &std::path::Path) {
     }
 }
 
-/// Copy libHeliosLaserDAC.so from /opt/ (inside the cross Docker container) to the target output directory.
-/// When not cross-compiling, falls back to server/libs/ if available.
+/// Copy libHeliosLaserDAC.so from /opt/ (inside cross Docker container) or laserlogic/libs/ to target directory.
 fn copy_linux_so(profile_dir: &std::path::Path) {
     let so_name = "libHeliosLaserDAC.so";
 
@@ -81,3 +80,4 @@ fn copy_linux_so(profile_dir: &std::path::Path) {
         Err(e) => println!("cargo:warning=Failed to copy .so: {}", e),
     }
 }
+

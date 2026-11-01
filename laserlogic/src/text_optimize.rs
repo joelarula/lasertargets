@@ -1,5 +1,6 @@
 use crate::corner::calculate_corner_dwells;
 use crate::{LaserPoint, LaserSegment, OptimizeConfig};
+use crate::optimize::{emit_blanking_jump, emit_interpolated_points};
 
 /// Optimize text path segments using a galvo-specific 5-stage pipeline.
 ///
@@ -51,7 +52,7 @@ pub fn optimize_text(
         if !output.is_empty() {
             let last = *output.last().unwrap();
             let first = pts[0];
-            emit_text_blanking_jump(&mut output, &last, &first, config);
+            emit_blanking_jump(&mut output, &last, &first, config);
         }
 
         // Stage 4b: Arrival dwell before laser fires
@@ -65,7 +66,7 @@ pub fn optimize_text(
         // Stage 3: Emit lit points with corner dwells
         for i in 0..pts.len() {
             if i > 0 {
-                emit_text_interpolated(&mut output, &pts[i - 1], &pts[i], config);
+                emit_interpolated_points(&mut output, &pts[i - 1], &pts[i], config);
             }
             let p = pts[i];
             output.push(p);
@@ -88,7 +89,7 @@ pub fn optimize_text(
         let last = *output.last().unwrap();
         let first = output[0];
         if last.x != first.x || last.y != first.y {
-            emit_text_blanking_jump(&mut output, &last, &first, config);
+            emit_blanking_jump(&mut output, &last, &first, config);
         }
     }
 
@@ -200,57 +201,6 @@ fn dp_recursive(pts: &[LaserPoint], start: usize, end: usize, epsilon: f32, keep
     }
 }
 
-// Stage 4 helpers
-
-fn emit_text_blanking_jump(
-    output: &mut Vec<LaserPoint>,
-    from: &LaserPoint,
-    to: &LaserPoint,
-    config: &OptimizeConfig,
-) {
-    for _ in 0..config.blank_end_dwell {
-        output.push(LaserPoint::blanked(from.x, from.y));
-    }
-    let dx = to.x as f32 - from.x as f32;
-    let dy = to.y as f32 - from.y as f32;
-    let dist = (dx * dx + dy * dy).sqrt();
-    let max_steps = config.blank_jump_steps.max(4);
-    let steps = ((dist / 250.0).ceil() as u16).clamp(4, max_steps);
-    for step in 1..steps {
-        let t = step as f32 / steps as f32;
-        output.push(LaserPoint::blanked(
-            (from.x as f32 + dx * t) as u16,
-            (from.y as f32 + dy * t) as u16,
-        ));
-    }
-    for _ in 0..config.blank_start_dwell {
-        output.push(LaserPoint::blanked(to.x, to.y));
-    }
-}
-
-fn emit_text_interpolated(
-    output: &mut Vec<LaserPoint>,
-    from: &LaserPoint,
-    to: &LaserPoint,
-    config: &OptimizeConfig,
-) {
-    let dx = to.x as f32 - from.x as f32;
-    let dy = to.y as f32 - from.y as f32;
-    let dist = (dx * dx + dy * dy).sqrt();
-    if dist <= config.interp_distance_threshold || config.interp_spacing <= 0.0 {
-        return;
-    }
-    let num_interp = (dist / config.interp_spacing).ceil() as usize;
-    for step in 1..num_interp {
-        let t = step as f32 / num_interp as f32;
-        output.push(LaserPoint::new(
-            (from.x as f32 + dx * t) as u16,
-            (from.y as f32 + dy * t) as u16,
-            from.r, from.g, from.b, from.i,
-        ));
-    }
-}
-
 // Stage 5: Dynamic downsampling
 
 fn downsample_to_budget(mut pts: Vec<LaserPoint>, budget: usize) -> Vec<LaserPoint> {
@@ -333,6 +283,85 @@ mod tests {
         let seg = LaserSegment::new((0..200u16).map(|i| pt(i * 20, 0)).collect());
         let result = optimize_text(&[seg], &OptimizeConfig::default(), Some(50));
         assert!(result.len() <= 70, "got {} points", result.len());
+    }
+
+    #[test]
+    fn tsp_starts_nearest_origin() {
+        let far = LaserSegment::new(vec![pt(3000, 3000), pt(3100, 3000)]);
+        let near = LaserSegment::new(vec![pt(50, 50), pt(100, 50)]);
+        let binding = [far, near];
+        let sorted = tsp_nearest_neighbour(&binding);
+        assert_eq!(sorted[0].points[0], pt(50, 50));
+    }
+
+    #[test]
+    fn tsp_keeps_every_segment_once() {
+        let segs: Vec<LaserSegment> = (0..6u16)
+            .map(|i| LaserSegment::new(vec![pt(i * 500, 4000 - i * 500), pt(i * 500 + 10, 4000 - i * 500)]))
+            .collect();
+        let sorted = tsp_nearest_neighbour(&segs);
+        assert_eq!(sorted.len(), segs.len());
+        let mut starts: Vec<u16> = sorted.iter().map(|s| s.points[0].x).collect();
+        starts.sort();
+        assert_eq!(starts, vec![0, 500, 1000, 1500, 2000, 2500]);
+    }
+
+    #[test]
+    fn dp_keeps_sharp_corner() {
+        let seg = LaserSegment::new(vec![
+            pt(0, 0), pt(500, 0), pt(1000, 0), pt(1000, 500), pt(1000, 1000),
+        ]);
+        let result = douglas_peucker_segment(&seg, 0.003);
+        assert_eq!(result.points, vec![pt(0, 0), pt(1000, 0), pt(1000, 1000)]);
+    }
+
+    #[test]
+    fn dp_short_segments_unchanged() {
+        let seg = LaserSegment::new(vec![pt(0, 0), pt(10, 10)]);
+        assert_eq!(douglas_peucker_segment(&seg, 0.003).points, seg.points);
+    }
+
+    #[test]
+    fn dp_closed_loop_keeps_shape() {
+        // start == end makes the baseline degenerate; distance falls back to point distance
+        let seg = LaserSegment::new(vec![pt(0, 0), pt(1000, 0), pt(1000, 1000), pt(0, 1000), pt(0, 0)]);
+        let result = douglas_peucker_segment(&seg, 0.003);
+        assert_eq!(result.points, seg.points);
+    }
+
+    #[test]
+    fn downsample_keeps_blanked_and_endpoints() {
+        let mut pts: Vec<LaserPoint> = (0..100u16).map(|i| pt(i, 0)).collect();
+        pts[10] = LaserPoint::blanked(10, 0);
+        pts[20] = LaserPoint::blanked(20, 0);
+        let result = downsample_to_budget(pts.clone(), 40);
+        assert!(result.len() <= 40, "got {}", result.len());
+        assert_eq!(result[0], pts[0]);
+        assert_eq!(*result.last().unwrap(), pts[99]);
+        assert_eq!(result.iter().filter(|p| p.is_blanked()).count(), 2);
+    }
+
+    #[test]
+    fn downsample_noop_under_budget() {
+        let pts: Vec<LaserPoint> = (0..10u16).map(|i| pt(i, 0)).collect();
+        assert_eq!(downsample_to_budget(pts.clone(), 50), pts);
+    }
+
+    #[test]
+    fn closed_glyph_has_no_dwell_blanking() {
+        let ring = LaserSegment::new(vec![pt(0, 0), pt(1000, 0), pt(1000, 1000), pt(0, 1000), pt(0, 0)]);
+        let result = optimize_text(&[ring], &OptimizeConfig::default(), None);
+        assert!(result.iter().all(|p| !p.is_blanked()));
+    }
+
+    #[test]
+    fn text_frame_wraps_back_to_start() {
+        let a = LaserSegment::new(vec![pt(0, 0), pt(300, 600)]);
+        let b = LaserSegment::new(vec![pt(800, 0), pt(1100, 600)]);
+        let result = optimize_text(&[a, b], &OptimizeConfig::default(), None);
+        let first = result[0];
+        let last = *result.last().unwrap();
+        assert_eq!((first.x, first.y), (last.x, last.y));
     }
 }
 

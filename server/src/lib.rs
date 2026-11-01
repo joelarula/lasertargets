@@ -8,16 +8,24 @@ use snake::common::SnakeGamePlugin;
 use snake::server::SnakeGameServerPlugin;
 
 /// Creates a server app composed with all registered minigames (Hunter, Snake)
-pub fn create_composed_server_app(schedule_runner: ScheduleRunnerPlugin) -> App {
-    let mut app = server_core::create_server_app(schedule_runner);
+pub fn create_server_app(schedule_runner: ScheduleRunnerPlugin) -> App {
+    let mut app = App::new();
+    add_server_plugins(&mut app, schedule_runner);
+    app
+}
+
+/// Adds the core server plugins and all registered minigames (Hunter, Snake).
+/// Insert a [`common::settings::ConfigSource`] beforehand to configure them from YAML.
+pub fn add_server_plugins(app: &mut App, schedule_runner: ScheduleRunnerPlugin) {
+    server_core::add_server_plugins(app, schedule_runner);
     app.add_plugins(HunterGamePlugin)
         .add_plugins(HunterGameServerPlugin)
         .add_plugins(SnakeGamePlugin)
         .add_plugins(SnakeGameServerPlugin);
-    app
 }
 
-/// Helper to create server application with minigames bundled
-pub fn create_server_app(schedule_runner: ScheduleRunnerPlugin) -> App {
-    create_composed_server_app(schedule_runner)
+/// Alias for [`create_server_app`].
+#[inline]
+pub fn create_composed_server_app(schedule_runner: ScheduleRunnerPlugin) -> App {
+    create_server_app(schedule_runner)
 }

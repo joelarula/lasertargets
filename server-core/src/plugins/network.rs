@@ -10,13 +10,15 @@ use common::config::{CameraConfiguration, ProjectorConfiguration, SceneConfigura
 use common::network::{NetworkMessage, SERVER_PORT};
 use common::path::BroadcastScenePaths;
 use common::scene::SceneSetup;
+use common::settings::{ConfigAppExt, ConfigSection};
+use serde::{Deserialize, Serialize};
 use common::session::{ChannelRegistry, CloseSessionEvent, InitSessionEvent, Session, SessionCreated, SessionUpdate};
 use crate::plugins::session::SessionLifecycleSet;
 use common::state::{CalibrationState, ServerInstanceId, ServerState};
 use std::collections::HashSet;
 use std::net::{IpAddr, Ipv4Addr};
 
-#[derive(Resource, Debug, Clone)]
+#[derive(Resource, Debug, Clone, Serialize, Deserialize)]
 pub struct NetworkingConfiguration {
     pub ip: IpAddr,
     pub port: u16,
@@ -29,6 +31,10 @@ impl Default for NetworkingConfiguration {
             port: SERVER_PORT,
         }
     }
+}
+
+impl ConfigSection for NetworkingConfiguration {
+    const KEY: &'static str = "network";
 }
 
 #[derive(Message, Debug, Clone)]
@@ -47,7 +53,7 @@ impl Plugin for NetworkingPlugin {
             .add_message::<MousePositionEvent>()
             .add_message::<MouseButtonInputEvent>()
             .add_message::<KeyboardInputEvent>()
-            .init_resource::<NetworkingConfiguration>()
+            .init_config::<NetworkingConfiguration>()
             .add_systems(Startup, start_server)
             .add_systems(Update, receive_network_messages)
             .add_systems(Update, handle_config_messages)

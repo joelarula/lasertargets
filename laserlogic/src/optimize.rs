@@ -3,6 +3,27 @@ use crate::simplify::simplify_segment;
 use crate::{LaserPoint, LaserSegment, OptimizeConfig};
 
 /// Produce an optimised point buffer from a list of laser segments.
+/// Compose and optimize a full laser frame consisting of general shapes and text shapes.
+pub fn compose_frame(
+    general_segments: &[LaserSegment],
+    text_segments: &[LaserSegment],
+    config: &OptimizeConfig,
+) -> Vec<LaserPoint> {
+    let mut frame = optimize(general_segments, config);
+    let optimized_text = crate::text_optimize::optimize_text(text_segments, config, None);
+
+    if !optimized_text.is_empty() {
+        if !frame.is_empty() {
+            let from = *frame.last().unwrap();
+            let to = optimized_text[0];
+            emit_blanking_jump(&mut frame, &from, &to, config);
+        }
+        frame.extend(optimized_text);
+    }
+
+    frame
+}
+
 pub fn optimize(segments: &[LaserSegment], config: &OptimizeConfig) -> Vec<LaserPoint> {
     let mut output: Vec<LaserPoint> = Vec::new();
 
@@ -131,7 +152,7 @@ fn apply_laser_color_delay(points: &mut [LaserPoint], delay_points: usize) {
 }
 
 /// Emit linearly interpolated lit points between `from` and `to` when they are far apart.
-fn emit_interpolated_points(
+pub fn emit_interpolated_points(
     output: &mut Vec<LaserPoint>,
     from: &LaserPoint,
     to: &LaserPoint,
@@ -155,7 +176,7 @@ fn emit_interpolated_points(
 }
 
 /// Emit a blanking sequence to move the galvos from `from` to `to` with laser off.
-fn emit_blanking_jump(
+pub fn emit_blanking_jump(
     output: &mut Vec<LaserPoint>,
     from: &LaserPoint,
     to: &LaserPoint,
@@ -270,5 +291,205 @@ mod tests {
         // Plus start dwell, end dwell, corner dwells, and the 2 original points
         let lit_count = result.iter().filter(|p| !p.is_blanked()).count();
         assert!(lit_count > 10, "should have interpolated points; got {}", lit_count);
+    }
+
+    fn square() -> LaserSegment {
+        LaserSegment::new(vec![pt(0, 0), pt(1000, 0), pt(1000, 1000), pt(0, 1000), pt(0, 0)])
+    }
+
+    fn same_position(a: &LaserPoint, b: &LaserPoint) -> bool {
+        a.x == b.x && a.y == b.y
+    }
+
+    #[test]
+    fn empty_segments_are_skipped() {
+        let seg = LaserSegment::new(vec![pt(100, 100), pt(900, 900)]);
+        let config = default_config();
+        let with_empty = optimize(&[LaserSegment::new(vec![]), seg.clone()], &config);
+        assert_eq!(with_empty, optimize(&[seg], &config));
+    }
+
+    #[test]
+    fn closed_segment_has_no_blanking() {
+        // A lone closed loop is drawn continuously: no start/end dwell and no wraparound jump
+        let result = optimize(&[square()], &default_config());
+        assert!(result.iter().all(|p| !p.is_blanked()));
+        assert!(same_position(&result[0], result.last().unwrap()));
+    }
+
+    #[test]
+    fn closed_segment_seam_is_snapped() {
+        // Last point is ~7 units off the first: treated as closed and snapped onto the first
+        let seg = LaserSegment::new(vec![pt(0, 0), pt(1000, 0), pt(1000, 1000), pt(0, 1000), pt(5, 5)]);
+        let result = optimize(&[seg], &default_config());
+        assert!(!result.iter().any(|p| p.x == 5 && p.y == 5));
+        assert!(result.iter().all(|p| !p.is_blanked()));
+    }
+
+    #[test]
+    fn closed_segment_seam_overlap_points() {
+        // pts[0] is emitted once + seam dwell (3), then 2 closing overlap points; last point (0,0) has no dwell
+        let result = optimize(&[square()], &default_config());
+        let at_origin = result.iter().filter(|p| p.x == 0 && p.y == 0).count();
+        assert_eq!(at_origin, 1 + 3 + 1 + 2);
+    }
+
+    #[test]
+    fn frame_wraps_back_to_start() {
+        // The DAC loops the buffer, so the last point must sit where the first one is
+        let config = default_config();
+        let segs = [
+            LaserSegment::new(vec![pt(100, 100), pt(500, 100)]),
+            LaserSegment::new(vec![pt(3000, 3000), pt(3500, 3200)]),
+        ];
+        let result = optimize(&segs, &config);
+        let first = result[0];
+        let last = *result.last().unwrap();
+        assert!(same_position(&first, &last));
+        assert!(last.is_blanked());
+    }
+
+    #[test]
+    fn color_delay_shifts_lit_colors_and_skips_blanked() {
+        let mut points = vec![
+            LaserPoint::new(0, 0, 255, 0, 0, 255),       // red
+            LaserPoint::new(1, 0, 0, 255, 0, 255),       // green
+            LaserPoint::new(2, 0, 0, 0, 255, 255),       // blue
+            LaserPoint::blanked(3, 0),
+            LaserPoint::new(4, 0, 255, 255, 255, 255),   // white
+            LaserPoint::new(5, 0, 10, 10, 10, 10),
+        ];
+        apply_laser_color_delay(&mut points, 2);
+
+        // Wraps around: point 0 takes point 4's colour
+        assert_eq!((points[0].r, points[0].g, points[0].b), (255, 255, 255));
+        assert_eq!((points[1].r, points[1].i), (10, 10));
+        assert_eq!((points[2].r, points[2].g, points[2].b), (255, 0, 0));
+        // Blanked travel point is never lit
+        assert!(points[3].is_blanked());
+        assert_eq!((points[4].r, points[4].g, points[4].b), (0, 0, 255));
+        // Source two back is blanked, so it keeps its own colour
+        assert_eq!((points[5].r, points[5].i), (10, 10));
+        // Positions never move
+        assert!(points.iter().enumerate().all(|(i, p)| p.x == i as u16));
+    }
+
+    #[test]
+    fn color_delay_ignores_short_buffers() {
+        let mut points = vec![LaserPoint::new(0, 0, 255, 0, 0, 255), LaserPoint::new(1, 0, 0, 255, 0, 255)];
+        let before = points.clone();
+        apply_laser_color_delay(&mut points, 2);
+        assert_eq!(points, before);
+    }
+
+    #[test]
+    fn blanking_jump_structure() {
+        let config = default_config();
+        let from = pt(0, 0);
+        let to = pt(4000, 0);
+        let mut out = Vec::new();
+        emit_blanking_jump(&mut out, &from, &to, &config);
+
+        // 4000 units / 250 = 16 steps -> 15 travel points between the dwells
+        let expected = config.blank_end_dwell as usize + 15 + config.blank_start_dwell as usize;
+        assert_eq!(out.len(), expected);
+        assert!(out.iter().all(|p| p.is_blanked()));
+        assert!(same_position(&out[0], &from));
+        assert!(same_position(out.last().unwrap(), &to));
+        // Travel is monotonic
+        assert!(out.windows(2).all(|w| w[1].x >= w[0].x));
+    }
+
+    #[test]
+    fn blanking_jump_step_bounds() {
+        let mut config = default_config();
+        config.blank_end_dwell = 0;
+        config.blank_start_dwell = 0;
+
+        // Short jumps still get the minimum 4 steps (3 travel points)
+        let mut out = Vec::new();
+        emit_blanking_jump(&mut out, &pt(0, 0), &pt(10, 0), &config);
+        assert_eq!(out.len(), 3);
+
+        // Long jumps are capped at blank_jump_steps
+        config.blank_jump_steps = 8;
+        let mut out = Vec::new();
+        emit_blanking_jump(&mut out, &pt(0, 0), &pt(4000, 4000), &config);
+        assert_eq!(out.len(), 7);
+
+        // A cap below the minimum is raised to 4
+        config.blank_jump_steps = 1;
+        let mut out = Vec::new();
+        emit_blanking_jump(&mut out, &pt(0, 0), &pt(4000, 4000), &config);
+        assert_eq!(out.len(), 3);
+    }
+
+    #[test]
+    fn interpolation_fills_long_edges() {
+        let config = default_config();
+        let from = LaserPoint::new(0, 0, 10, 20, 30, 40);
+        let to = LaserPoint::new(1000, 0, 255, 255, 255, 255);
+        let mut out = Vec::new();
+        emit_interpolated_points(&mut out, &from, &to, &config);
+
+        // 1000 / 100 spacing = 10 steps -> 9 interior points, excluding both endpoints
+        let xs: Vec<u16> = out.iter().map(|p| p.x).collect();
+        assert_eq!(xs, vec![100, 200, 300, 400, 500, 600, 700, 800, 900]);
+        assert!(out.iter().all(|p| (p.r, p.g, p.b, p.i) == (10, 20, 30, 40)));
+    }
+
+    #[test]
+    fn interpolation_skipped_for_short_edges_or_zero_spacing() {
+        let mut config = default_config();
+        let mut out = Vec::new();
+        emit_interpolated_points(&mut out, &pt(0, 0), &pt(150, 0), &config);
+        assert!(out.is_empty());
+
+        config.interp_spacing = 0.0;
+        emit_interpolated_points(&mut out, &pt(0, 0), &pt(4000, 0), &config);
+        assert!(out.is_empty());
+    }
+
+    #[test]
+    fn compose_frame_empty() {
+        assert!(compose_frame(&[], &[], &default_config()).is_empty());
+    }
+
+    #[test]
+    fn compose_frame_single_kind_matches_pipeline() {
+        let config = default_config();
+        let general = [square()];
+        let text = [LaserSegment::new(vec![pt(100, 3000), pt(300, 3500), pt(500, 3000)])];
+        assert_eq!(compose_frame(&general, &[], &config), optimize(&general, &config));
+        assert_eq!(
+            compose_frame(&[], &text, &config),
+            crate::text_optimize::optimize_text(&text, &config, None)
+        );
+    }
+
+    #[test]
+    fn compose_frame_joins_general_then_text_with_blanking() {
+        let config = default_config();
+        let general = [square()];
+        let text = [LaserSegment::new(vec![pt(100, 3000), pt(300, 3500), pt(500, 3000)])];
+
+        let g = optimize(&general, &config);
+        let t = crate::text_optimize::optimize_text(&text, &config, None);
+        let mut expected = g.clone();
+        emit_blanking_jump(&mut expected, g.last().unwrap(), &t[0], &config);
+        expected.extend(t);
+
+        assert_eq!(compose_frame(&general, &text, &config), expected);
+    }
+
+    #[test]
+    #[ignore = "BUG: compose_frame does not wrap the combined frame back to the general start; \
+                the DAC jumps from the text start to the general start with no blanking travel"]
+    fn compose_frame_wraps_back_to_start() {
+        let config = default_config();
+        let general = [square()];
+        let text = [LaserSegment::new(vec![pt(100, 3000), pt(300, 3500), pt(500, 3000)])];
+        let frame = compose_frame(&general, &text, &config);
+        assert!(same_position(&frame[0], frame.last().unwrap()));
     }
 }

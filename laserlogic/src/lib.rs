@@ -9,6 +9,7 @@ pub mod stream;
 pub mod ttf;
 
 pub use ttf::{from_ttf_text, LaserTextOptions};
+pub use optimize::compose_frame;
 
 use serde::{Deserialize, Serialize};
 
@@ -52,6 +53,14 @@ pub struct LaserSegment {
 }
 
 impl LaserSegment {
+    /// Check if segment forms a closed loop polygon (start and end points within 40 DAC units)
+    pub fn is_closed(&self) -> bool {
+        self.points.len() > 2 && {
+            let dx = self.points[0].x as i32 - self.points.last().unwrap().x as i32;
+            let dy = self.points[0].y as i32 - self.points.last().unwrap().y as i32;
+            (dx * dx + dy * dy) <= 1600
+        }
+    }
     pub fn new(points: Vec<LaserPoint>) -> Self {
         Self { points }
     }
@@ -112,5 +121,69 @@ impl Default for OptimizeConfig {
             max_dwell: 8,
             dwell_distance_threshold: 20.0,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn pt(x: u16, y: u16) -> LaserPoint {
+        LaserPoint::new(x, y, 255, 255, 255, 255)
+    }
+
+    #[test]
+    fn blanked_point_is_blanked() {
+        let p = LaserPoint::blanked(10, 20);
+        assert!(p.is_blanked());
+        assert_eq!((p.x, p.y), (10, 20));
+    }
+
+    #[test]
+    fn any_lit_channel_is_not_blanked() {
+        assert!(!LaserPoint::new(0, 0, 1, 0, 0, 0).is_blanked());
+        assert!(!LaserPoint::new(0, 0, 0, 1, 0, 0).is_blanked());
+        assert!(!LaserPoint::new(0, 0, 0, 0, 1, 0).is_blanked());
+        assert!(!LaserPoint::new(0, 0, 0, 0, 0, 1).is_blanked());
+    }
+
+    #[test]
+    fn segment_closed_within_40_units() {
+        // Exactly 40 units apart is still closed (inclusive threshold)
+        let seg = LaserSegment::new(vec![pt(0, 0), pt(500, 0), pt(500, 500), pt(40, 0)]);
+        assert!(seg.is_closed());
+        let seg = LaserSegment::new(vec![pt(0, 0), pt(500, 0), pt(500, 500), pt(41, 0)]);
+        assert!(!seg.is_closed());
+    }
+
+    #[test]
+    fn two_point_segment_never_closed() {
+        let seg = LaserSegment::new(vec![pt(0, 0), pt(0, 0)]);
+        assert!(!seg.is_closed());
+    }
+
+    #[test]
+    fn segment_and_corner_closed_checks_agree() {
+        let shapes = [
+            vec![pt(0, 0), pt(500, 0), pt(500, 500), pt(0, 0)],
+            vec![pt(0, 0), pt(500, 0), pt(500, 500), pt(100, 100)],
+            vec![pt(0, 0), pt(10, 0)],
+        ];
+        for points in shapes {
+            let seg = LaserSegment::new(points.clone());
+            assert_eq!(seg.is_closed(), corner::is_closed_points(&points));
+        }
+    }
+
+    #[test]
+    fn optimize_config_roundtrips_through_json() {
+        let mut config = OptimizeConfig::default();
+        config.corner_dwell_points = 7;
+        config.simplify_min_distance = 12.5;
+        let json = serde_json::to_string(&config).unwrap();
+        let back: OptimizeConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.corner_dwell_points, 7);
+        assert_eq!(back.simplify_min_distance, 12.5);
+        assert_eq!(back.blank_jump_steps, config.blank_jump_steps);
     }
 }

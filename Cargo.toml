@@ -37,6 +37,8 @@ lyon_path = { version = "1.0.16", features = ["serde"] }
 seldom_state = "=0.15.0"
 rand = "0.9"
 ttf-parser = "0.21"
+figment = { version = "0.10", features = ["yaml", "env"] }
+clap = { version = "4", features = ["derive", "env"] }
 
 [profile.dev]
 opt-level = 1

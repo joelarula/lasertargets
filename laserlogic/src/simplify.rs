@@ -57,25 +57,12 @@ pub fn simplify_segment(segment: &LaserSegment, config: &OptimizeConfig) -> Lase
             if corners[b] {
                 continue; // never remove corners
             }
-            let angle = crate::corner::detect_corners(&[pts[a], pts[b], pts[c]], 180.0);
-            // We actually need the raw angle; recompute via the helper-style logic:
-            let ba_x = pts[a].x as f64 - pts[b].x as f64;
-            let ba_y = pts[a].y as f64 - pts[b].y as f64;
-            let bc_x = pts[c].x as f64 - pts[b].x as f64;
-            let bc_y = pts[c].y as f64 - pts[b].y as f64;
-            let dot = ba_x * bc_x + ba_y * bc_y;
-            let mag_ba = (ba_x * ba_x + ba_y * ba_y).sqrt();
-            let mag_bc = (bc_x * bc_x + bc_y * bc_y).sqrt();
-            if mag_ba < 1e-9 || mag_bc < 1e-9 {
-                continue;
-            }
-            let cos_a = (dot / (mag_ba * mag_bc)).clamp(-1.0, 1.0);
-            let angle_deg = cos_a.acos().to_degrees() as f32;
+            let angle_deg = crate::corner::angle_at_point(&pts[a], &pts[b], &pts[c]);
+
             // If angle is nearly straight (above threshold), remove it
             if angle_deg > collinear_angle {
                 keep[b] = false;
             }
-            let _ = angle; // suppress unused warning
         }
     }
 
@@ -136,5 +123,45 @@ mod tests {
         config.simplify_collinear_angle = 170.0; // angle at middle is 180° > 170° → remove
         let result = simplify_segment(&seg, &config);
         assert_eq!(result.points.len(), 2);
+    }
+
+    #[test]
+    fn collinear_pass_never_removes_corners() {
+        // Collinear threshold below the 90 deg corner would remove it if corners weren't protected
+        let seg = LaserSegment::new(vec![pt(0, 0), pt(1000, 0), pt(1000, 1000)]);
+        let mut config = OptimizeConfig::default();
+        config.simplify_collinear_angle = 45.0;
+        let result = simplify_segment(&seg, &config);
+        assert_eq!(result.points, seg.points);
+    }
+
+    #[test]
+    fn min_distance_pass_never_removes_corners() {
+        // pt(5,0) is a sharp corner 5 units from the start; it must survive a 10 unit filter
+        let seg = LaserSegment::new(vec![pt(0, 0), pt(5, 0), pt(5, 1000), pt(5, 2000)]);
+        let mut config = OptimizeConfig::default();
+        config.simplify_min_distance = 10.0;
+        let result = simplify_segment(&seg, &config);
+        assert!(result.points.contains(&pt(5, 0)));
+    }
+
+    #[test]
+    fn removes_run_of_collinear_points() {
+        let seg = LaserSegment::new((0..=10u16).map(|i| pt(i * 100, 0)).collect());
+        let mut config = OptimizeConfig::default();
+        config.simplify_collinear_angle = 170.0;
+        let result = simplify_segment(&seg, &config);
+        assert_eq!(result.points, vec![pt(0, 0), pt(1000, 0)]);
+    }
+
+    #[test]
+    fn min_distance_measured_from_last_kept_point() {
+        // Each step is 6 units: individually under 10, so every other point is dropped
+        let seg = LaserSegment::new((0..=6u16).map(|i| pt(i * 6, 0)).collect());
+        let mut config = OptimizeConfig::default();
+        config.simplify_min_distance = 10.0;
+        let result = simplify_segment(&seg, &config);
+        let xs: Vec<u16> = result.points.iter().map(|p| p.x).collect();
+        assert_eq!(xs, vec![0, 12, 24, 36]);
     }
 }

@@ -7,17 +7,10 @@ edition = "2024"
 bevy = { workspace = true }
 log = { workspace = true }
 common = { path = "../common" }
-curator-core = { path = "../curator-core" }
 server-core = { path = "../server-core" }
 hunter = { path = "../minigames/hunter" }
 snake = { path = "../minigames/snake" }
+clap = { workspace = true }
+
+[dev-dependencies]
 bevy_quinnet = { workspace = true }
-serde = { workspace = true }
-bincode = { workspace = true }
-
-[target.'cfg(target_os = "linux")'.dependencies]
-libc = "0.2"
-
-[[test]]
-name = "integrationtest"
-path = "test/integrationtest.rs"

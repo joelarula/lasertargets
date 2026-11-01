@@ -20,26 +20,61 @@ use common::session::SessionPlugin;
 use common::scene::SceneSetupPlugin;
 use common::state::{CalibrationState, SessionState, ServerInstanceId, ServerState};
 use curator_core::CuratorCorePlugin;
+use common::settings::{ConfigAppExt, ConfigSection};
+use serde::{Deserialize, Serialize};
 
-pub mod dac;
+
 pub mod plugins;
 
-const FIXED_TIMESTEP: f64 = 1.0 / 50.0;
+/// Main loop, fixed timestep and logging settings.
+#[derive(Resource, Debug, Clone, Serialize, Deserialize)]
+pub struct RuntimeSettings {
+    /// Main loop rate; defaults to the DAC frame rate (30000 PPS / 1024 points = ~29.3 Hz).
+    pub tick_hz: f64,
+    pub fixed_hz: f64,
+    /// Global log level: error, warn, info, debug or trace.
+    pub log_level: String,
+    /// Extra per-target `tracing` directives, e.g. "wgpu=error,server_core::plugins::projector=debug".
+    pub log_filter: String,
+}
+
+impl Default for RuntimeSettings {
+    fn default() -> Self {
+        Self {
+            tick_hz: 30000.0 / 1024.0,
+            fixed_hz: 50.0,
+            log_level: "info".into(),
+            log_filter: bevy::log::DEFAULT_FILTER.into(),
+        }
+    }
+}
+
+impl ConfigSection for RuntimeSettings {
+    const KEY: &'static str = "runtime";
+}
 
 pub fn create_server_app(schedule_runner: ScheduleRunnerPlugin) -> App {
     let mut app = App::new();
+    add_server_plugins(&mut app, schedule_runner);
+    app
+}
+
+/// Adds the headless runtime and all core server plugins.
+/// Insert a [`common::settings::ConfigSource`] beforehand to configure them from YAML.
+pub fn add_server_plugins(app: &mut App, schedule_runner: ScheduleRunnerPlugin) {
     app.add_plugins(MinimalPlugins.set(schedule_runner));
     app.add_plugins(InputPlugin);
     // On Linux (Raspberry Pi), gilrs uses evdev which works headlessly.
     // On Windows, gilrs uses WGI which requires a focused window — we use XInput directly instead.
     #[cfg(not(target_os = "windows"))]
     app.add_plugins(bevy::gilrs::GilrsPlugin);
-    add_common_server_plugins(&mut app);
-    app
+    add_common_server_plugins(app);
 }
 
 pub fn add_common_server_plugins(app: &mut App) {
-    app.insert_resource(Time::<Fixed>::from_seconds(FIXED_TIMESTEP))
+    app.init_config::<RuntimeSettings>();
+    let fixed_hz = app.world().resource::<RuntimeSettings>().fixed_hz;
+    app.insert_resource(Time::<Fixed>::from_hz(fixed_hz))
         .insert_resource(ServerInstanceId(Some(bevy::asset::uuid::Uuid::new_v4())))
         .add_plugins(StatesPlugin)
         .init_state::<ServerState>()

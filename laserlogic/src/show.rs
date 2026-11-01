@@ -301,3 +301,169 @@ fn render_keyframe_segment(kf: &ShowKeyframe) -> LaserSegment {
 
     LaserSegment::new(points)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn kf(time_secs: f32, shape: &str, position: [f32; 2]) -> ShowKeyframe {
+        ShowKeyframe {
+            time_secs,
+            shape_template: shape.to_string(),
+            position,
+            ..Default::default()
+        }
+    }
+
+    fn track(keyframes: Vec<ShowKeyframe>) -> ShowTrack {
+        ShowTrack { keyframes, ..Default::default() }
+    }
+
+    /// DAC x of the first square vertex (template x = 512, local -0.75) shifted by `offset`.
+    fn square_x(offset: f32) -> f32 {
+        ((-0.75 + offset + 1.0) / 2.0) * 4095.0
+    }
+
+    #[test]
+    fn easing_endpoints_and_clamp() {
+        for easing in [ShowEasing::Linear, ShowEasing::EaseInQuad, ShowEasing::EaseOutQuad, ShowEasing::EaseInOutQuad] {
+            assert!(easing.apply(0.0).abs() < 1e-6, "{:?}", easing);
+            assert!((easing.apply(1.0) - 1.0).abs() < 1e-6, "{:?}", easing);
+            assert_eq!(easing.apply(-1.0), easing.apply(0.0));
+            assert_eq!(easing.apply(2.0), easing.apply(1.0));
+        }
+    }
+
+    #[test]
+    fn easing_shapes() {
+        assert!((ShowEasing::Linear.apply(0.25) - 0.25).abs() < 1e-6);
+        assert!((ShowEasing::EaseInQuad.apply(0.5) - 0.25).abs() < 1e-6);
+        assert!((ShowEasing::EaseOutQuad.apply(0.5) - 0.75).abs() < 1e-6);
+        assert!((ShowEasing::EaseInOutQuad.apply(0.5) - 0.5).abs() < 1e-6);
+        assert!(ShowEasing::EaseInOutQuad.apply(0.25) < 0.25);
+        assert!(ShowEasing::EaseInOutQuad.apply(0.75) > 0.75);
+    }
+
+    #[test]
+    fn json_minimal_document_uses_defaults() {
+        let show = LaserShow::from_json(r#"{"title":"T","duration_secs":5.0}"#).unwrap();
+        assert_eq!(show.fps, 30);
+        assert!(show.loop_show);
+        assert!(show.tracks.is_empty());
+        assert_eq!(show.author, "");
+    }
+
+    #[test]
+    fn json_keyframe_defaults() {
+        let t: ShowTrack = serde_json::from_str(r#"{"name":"a","keyframes":[{"time_secs":1.5}]}"#).unwrap();
+        assert!(t.visible);
+        let k = &t.keyframes[0];
+        assert_eq!(k.shape_template, "circle");
+        assert_eq!(k.scale, [1.0, 1.0]);
+        assert_eq!(k.color, [255, 255, 255]);
+        assert_eq!(k.intensity, 255);
+        assert_eq!(k.dwell, 3);
+        assert_eq!(k.easing, ShowEasing::Linear);
+    }
+
+    #[test]
+    fn json_roundtrip() {
+        let mut show = LaserShow::default();
+        show.tracks.push(track(vec![kf(0.0, "star", [0.1, 0.2]), kf(2.0, "diamond", [0.0, 0.0])]));
+        let back = LaserShow::from_json(&show.to_json().unwrap()).unwrap();
+        assert_eq!(back.tracks.len(), 1);
+        assert_eq!(back.tracks[0].keyframes[0].shape_template, "star");
+        assert_eq!(back.tracks[0].keyframes[0].position, [0.1, 0.2]);
+        assert_eq!(back.duration_secs, show.duration_secs);
+    }
+
+    #[test]
+    fn invalid_json_is_an_error() {
+        assert!(LaserShow::from_json("{not json").is_err());
+        assert!(LaserShow::from_json(r#"{"title":"missing duration"}"#).is_err());
+    }
+
+    #[test]
+    fn hidden_or_empty_track_renders_nothing() {
+        assert!(evaluate_track(&track(vec![]), 0.0).is_none());
+        let mut hidden = track(vec![kf(0.0, "square", [0.0, 0.0])]);
+        hidden.visible = false;
+        assert!(evaluate_track(&hidden, 0.0).is_none());
+    }
+
+    #[test]
+    fn template_shapes_have_expected_point_counts() {
+        for (shape, count) in [("star", 11), ("diamond", 5), ("square", 5), ("box", 5), ("circle", 17), ("unknown", 17)] {
+            let seg = evaluate_track(&track(vec![kf(0.0, shape, [0.0, 0.0])]), 0.0).unwrap();
+            assert_eq!(seg.points.len(), count, "{}", shape);
+            // Every template is a closed outline
+            assert!(seg.is_closed(), "{}", shape);
+        }
+    }
+
+    #[test]
+    fn keyframe_color_and_intensity_applied() {
+        let mut k = kf(0.0, "diamond", [0.0, 0.0]);
+        k.color = [10, 20, 30];
+        k.intensity = 40;
+        let seg = evaluate_track(&track(vec![k]), 0.0).unwrap();
+        assert!(seg.points.iter().all(|p| (p.r, p.g, p.b, p.i) == (10, 20, 30, 40)));
+    }
+
+    #[test]
+    fn interpolates_position_between_keyframes() {
+        let t = track(vec![kf(0.0, "square", [0.0, 0.0]), kf(2.0, "square", [0.5, 0.0])]);
+        let seg = evaluate_track(&t, 1.0).unwrap();
+        assert!((seg.points[0].x as f32 - square_x(0.25)).abs() <= 2.0, "x = {}", seg.points[0].x);
+        assert_eq!(seg.points[0].y, seg.points[1].y);
+    }
+
+    #[test]
+    fn easing_of_first_keyframe_drives_transition() {
+        let mut a = kf(0.0, "square", [0.0, 0.0]);
+        a.easing = ShowEasing::EaseInQuad;
+        let t = track(vec![a, kf(2.0, "square", [0.5, 0.0])]);
+        let seg = evaluate_track(&t, 1.0).unwrap();
+        // eased t = 0.25 -> position 0.125
+        assert!((seg.points[0].x as f32 - square_x(0.125)).abs() <= 2.0, "x = {}", seg.points[0].x);
+    }
+
+    #[test]
+    fn morphs_between_shapes_with_different_point_counts() {
+        let t = track(vec![kf(0.0, "diamond", [0.0, 0.0]), kf(1.0, "star", [0.0, 0.0])]);
+        let seg = evaluate_track(&t, 0.5).unwrap();
+        assert_eq!(seg.points.len(), 11);
+    }
+
+    #[test]
+    fn transformed_points_are_clamped_to_dac_range() {
+        let mut k = kf(0.0, "square", [0.9, 0.9]);
+        k.scale = [3.0, 3.0];
+        let t = track(vec![k.clone(), ShowKeyframe { time_secs: 1.0, ..k }]);
+        let seg = evaluate_track(&t, 0.5).unwrap();
+        assert!(seg.points.iter().all(|p| p.x <= 4095 && p.y <= 4095));
+        assert!(seg.points.iter().any(|p| p.x == 4095));
+    }
+
+    #[test]
+    fn show_segments_skip_hidden_tracks() {
+        let mut hidden = track(vec![kf(0.0, "star", [0.0, 0.0])]);
+        hidden.visible = false;
+        let show = LaserShow {
+            tracks: vec![track(vec![kf(0.0, "square", [0.0, 0.0])]), hidden, track(vec![])],
+            ..Default::default()
+        };
+        assert_eq!(evaluate_show_segments(&show, 0.0).len(), 1);
+    }
+
+    #[test]
+    #[ignore = "BUG: outside the keyframe range (t <= first or t >= last) evaluate_track returns the raw \
+                template and ignores position/scale/rotation, so shapes jump at the timeline edges"]
+    fn transform_applied_at_timeline_edges() {
+        let t = track(vec![kf(0.0, "square", [0.0, 0.0]), kf(2.0, "square", [0.5, 0.0])]);
+        let just_before_end = evaluate_track(&t, 1.999).unwrap();
+        let at_end = evaluate_track(&t, 2.0).unwrap();
+        assert!((just_before_end.points[0].x as i32 - at_end.points[0].x as i32).abs() <= 4);
+        assert!((at_end.points[0].x as f32 - square_x(0.5)).abs() <= 2.0);
+    }
+}

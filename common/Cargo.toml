@@ -14,6 +14,7 @@ serde_json = { workspace = true }
 lyon_geom = "1.0.18"
 lyon_tessellation = { version = "1.0.16", features = ["serde"] }
 bincode = { workspace = true }
+figment = { workspace = true }
 lyon_path = { workspace = true, features = ["serialization"] }
 
 [dev-dependencies]
