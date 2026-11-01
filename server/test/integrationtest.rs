@@ -153,7 +153,7 @@ fn test_update_scene_config_broadcast() {
     }
 }
 mod util;
-use common::state::GameState;
+use common::state::SessionState;
 use util::{
     ReceivedMessages, TEST_PORT_BASE, connect_client, create_test_client, create_test_server,
     flush_server_messages,
@@ -639,7 +639,7 @@ fn test_init_game_session() {
         {
             let mut client = client_app.world_mut().resource_mut::<QuinnetClient>();
             let connection = client.get_connection_mut().unwrap();
-            let payload = NetworkMessage::InitGameSession(session_id, game_id, GameState::Paused)
+            let payload = NetworkMessage::InitGameSession(session_id, game_id, SessionState::Paused)
                 .to_bytes()
                 .expect("Serialize");
             connection.send_payload(payload).unwrap();
@@ -677,7 +677,7 @@ fn test_start_game_session() {
         let mut client = client_app.world_mut().resource_mut::<QuinnetClient>();
         let connection = client.get_connection_mut().unwrap();
             let session_id = bevy::asset::uuid::Uuid::new_v4();
-            let payload = NetworkMessage::InitGameSession(session_id, game_id,GameState::Paused)
+            let payload = NetworkMessage::InitGameSession(session_id, game_id,SessionState::Paused)
                 .to_bytes()
                 .expect("Serialize");
             connection.send_payload(payload).unwrap();
@@ -723,7 +723,7 @@ fn test_start_game_session() {
             .iter()
             .find(|m| {
                 if let NetworkMessage::GameSessionUpdate(session) = m {
-                    session.session_id == game_uuid && session.state == GameState::InGame
+                    session.session_id == game_uuid && session.state == SessionState::Active
                 } else {
                     false
                 }
@@ -747,7 +747,7 @@ fn test_pause_game_session() {
         let mut client = client_app.world_mut().resource_mut::<QuinnetClient>();
         let connection = client.get_connection_mut().unwrap();
             let session_id = bevy::asset::uuid::Uuid::new_v4();
-            let payload = NetworkMessage::InitGameSession(session_id, game_id, GameState::Paused)
+            let payload = NetworkMessage::InitGameSession(session_id, game_id, SessionState::Paused)
                 .to_bytes()
                 .expect("Serialize");
             connection.send_payload(payload).unwrap();
@@ -792,7 +792,7 @@ fn test_pause_game_session() {
             .iter()
             .find(|m| {
                 if let NetworkMessage::GameSessionUpdate(session) = m {
-                    session.session_id == game_uuid && session.state == GameState::Paused
+                    session.session_id == game_uuid && session.state == SessionState::Paused
                 } else {
                     false
                 }
@@ -816,7 +816,7 @@ fn test_resume_game_session() {
         let mut client = client_app.world_mut().resource_mut::<QuinnetClient>();
         let connection = client.get_connection_mut().unwrap();
             let session_id = bevy::asset::uuid::Uuid::new_v4();
-            let payload = NetworkMessage::InitGameSession(session_id, game_id, GameState::Paused)
+            let payload = NetworkMessage::InitGameSession(session_id, game_id, SessionState::Paused)
                 .to_bytes()
                 .expect("Serialize");
             connection.send_payload(payload).unwrap();
@@ -874,7 +874,7 @@ fn test_resume_game_session() {
             .iter()
             .find(|m| {
                 if let NetworkMessage::GameSessionUpdate(session) = m {
-                    session.session_id == game_uuid && session.state != GameState::Paused
+                    session.session_id == game_uuid && session.state != SessionState::Paused
                 } else {
                     false
                 }
@@ -898,7 +898,7 @@ fn test_stop_game_session() {
         let mut client = client_app.world_mut().resource_mut::<QuinnetClient>();
         let connection = client.get_connection_mut().unwrap();
             let session_id = bevy::asset::uuid::Uuid::new_v4();
-            let payload = NetworkMessage::InitGameSession(session_id, game_id, GameState::Paused)
+            let payload = NetworkMessage::InitGameSession(session_id, game_id, SessionState::Paused)
                 .to_bytes()
                 .expect("Serialize");
             connection.send_payload(payload).unwrap();
@@ -956,7 +956,7 @@ fn test_register_actor_success() {
         let mut client = client_app.world_mut().resource_mut::<QuinnetClient>();
         let connection = client.get_connection_mut().unwrap();
             let session_id = bevy::asset::uuid::Uuid::new_v4();
-            let payload = NetworkMessage::InitGameSession(session_id, game_id, GameState::Paused)
+            let payload = NetworkMessage::InitGameSession(session_id, game_id, SessionState::Paused)
                 .to_bytes()
                 .expect("Serialize");
             connection.send_payload(payload).unwrap();
@@ -1057,7 +1057,7 @@ fn test_unregister_actor_success() {
     {
         let mut client = client_app.world_mut().resource_mut::<QuinnetClient>();
         let connection = client.get_connection_mut().unwrap();
-        let payload = NetworkMessage::InitGameSession(session_id, game_id, GameState::Paused)
+        let payload = NetworkMessage::InitGameSession(session_id, game_id, SessionState::Paused)
             .to_bytes()
             .expect("Serialize");
         connection.send_payload(payload).unwrap();
@@ -1147,7 +1147,7 @@ fn test_unregister_nonexistent_actor() {
     {
         let mut client = client_app.world_mut().resource_mut::<QuinnetClient>();
         let connection = client.get_connection_mut().unwrap();
-        let payload = NetworkMessage::InitGameSession(session_id, game_id, GameState::Paused)
+        let payload = NetworkMessage::InitGameSession(session_id, game_id, SessionState::Paused)
             .to_bytes()
             .expect("Serialize");
         connection.send_payload(payload).unwrap();
@@ -1200,4 +1200,122 @@ fn test_unregister_nonexistent_actor() {
             });
         assert!(found.is_some(), "Expected ActorError for non-existent actor");
     }
+}
+
+
+#[test]
+fn test_curator_menu_workflow_lifecycle() {
+    use bevy::app::ScheduleRunnerPlugin;
+    use common::state::ServerState;
+
+    let mut server_app = App::new();
+    server_app.add_plugins(MinimalPlugins.set(ScheduleRunnerPlugin::run_once()));
+    server::add_common_server_plugins(&mut server_app);
+    server_app.add_plugins(hunter::common::HunterGamePlugin)
+        .add_plugins(snake::common::SnakeGamePlugin);
+
+    // Initial update enters ServerState::Menu
+    server_app.update();
+
+    // Verify ActiveMenuPrompt is populated
+    let prompt_id = {
+        let active_prompt = server_app.world().resource::<server::plugins::menu::ActiveMenuPrompt>();
+        assert!(active_prompt.prompt_id.is_some(), "Menu prompt should be active");
+        active_prompt.prompt_id.unwrap()
+    };
+
+    // Verify ServerMenuWorkflowMarker entity is spawned
+    {
+        let mut query = server_app.world_mut().query_filtered::<Entity, With<server::plugins::menu::ServerMenuWorkflowMarker>>();
+        assert_eq!(query.iter(server_app.world()).count(), 1, "Should have 1 menu workflow instance");
+    }
+
+    // Verify AuditLog recorded menu open event
+    {
+        let audit = server_app.world().resource::<curator_core::AuditLog>();
+        assert!(audit.len() > 0, "AuditLog should contain events");
+    }
+
+    // Simulate actor responding to the prompt choosing "hunter" (game ID 1)
+    {
+        let mut response_writer = server_app.world_mut().resource_mut::<bevy::ecs::message::Messages<curator_core::ActorPromptResponseEvent>>();
+        response_writer.write(curator_core::ActorPromptResponseEvent {
+            response: curator_core::ActorPromptResponse {
+                prompt_id,
+                actor_id: None,
+                selected_choice_id: "101".to_string(),
+                custom_payload: None,
+            },
+        });
+    }
+
+    // Run updates to process prompt response, init session, and state transitions
+    for _ in 0..4 {
+        server_app.update();
+    }
+
+    // Verify ServerState transitioned to InGame and GameSession was spawned
+    {
+        let server_state = server_app.world().resource::<State<ServerState>>();
+        assert_eq!(*server_state.get(), ServerState::Session, "ServerState should be InGame after selection");
+
+        let mut session_query = server_app.world_mut().query::<&common::game::GameSession>();
+        let session = session_query.iter(server_app.world()).next();
+        assert!(session.is_some(), "GameSession should be spawned");
+        assert_eq!(session.unwrap().game_id, 101, "Game ID should match Hunter (101)");
+    }
+
+    // Verify ServerMenuWorkflowMarker was cleaned up on exiting Menu
+    {
+        let mut query = server_app.world_mut().query_filtered::<Entity, With<server::plugins::menu::ServerMenuWorkflowMarker>>();
+        assert_eq!(query.iter(server_app.world()).count(), 0, "Menu workflow should be cleaned up on exiting Menu");
+    }
+}
+
+
+#[test]
+fn test_curator_menu_network_prompt_selection() {
+    use bevy::app::ScheduleRunnerPlugin;
+    use common::state::ServerState;
+
+    let mut server_app = App::new();
+    server_app.add_plugins(MinimalPlugins.set(ScheduleRunnerPlugin::run_once()));
+    server::add_common_server_plugins(&mut server_app);
+    server_app.add_plugins(hunter::common::HunterGamePlugin)
+        .add_plugins(snake::common::SnakeGamePlugin);
+
+    // Initial update enters ServerState::Menu and spawns workflow
+    server_app.update();
+
+    let prompt_id = {
+        let active_prompt = server_app.world().resource::<server::plugins::menu::ActiveMenuPrompt>();
+        active_prompt.prompt_id.expect("Active prompt")
+    };
+
+    // Simulate client sending NetworkMessage::CuratorPromptResponse
+    {
+        let mut msg_writer = server_app.world_mut().resource_mut::<bevy::ecs::message::Messages<server::plugins::network::FromClientMessage>>();
+        msg_writer.write(server::plugins::network::FromClientMessage {
+            client_id: 42,
+            message: NetworkMessage::CuratorPromptResponse(curator_core::ActorPromptResponse {
+                prompt_id,
+                actor_id: None,
+                selected_choice_id: "101".to_string(),
+                custom_payload: None,
+            }),
+        });
+    }
+
+    // Process network message -> prompt response event -> menu handler -> session init -> state transition
+    for _ in 0..4 {
+        server_app.update();
+    }
+
+    // Verify ServerState transitioned to InGame and Hunter session created
+    let server_state = server_app.world().resource::<State<ServerState>>();
+    assert_eq!(*server_state.get(), ServerState::Session);
+
+    let mut session_query = server_app.world_mut().query::<&common::game::GameSession>();
+    let session = session_query.iter(server_app.world()).next().expect("Game session");
+    assert_eq!(session.game_id, 101);
 }

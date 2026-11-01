@@ -3,8 +3,7 @@ use bincode;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-
-    actor::ActorMetaData, config::{CameraConfiguration, ProjectorConfiguration, SceneConfiguration}, game::GameSession, path::UniversalPath, scene::SceneSetup, state::GameState
+    config::{CameraConfiguration, ProjectorConfiguration, SceneConfiguration}, session::Session, scene::SceneSetup
 };
 
 /// Message wrapper from a client containing the client ID and the NetworkMessage
@@ -28,11 +27,9 @@ pub enum NetworkMessage {
 
     //server
     QueryServerState,
-    QueryGameState,
     QueryCalibrationState,
     
     ServerStateUpdate(crate::state::ServerState),
-    GameStateUpdate(crate::state::GameState),
     CalibrationStateUpdate(crate::state::CalibrationState),
     UpdateCalibrationState(crate::state::CalibrationState),
 
@@ -55,25 +52,9 @@ pub enum NetworkMessage {
     QuerySceneSetup,
     SceneSetupUpdate(SceneSetup),
 
-    // Game Configuration
-    QueryGameSession,
-    GameSessionCreated(GameSession),
-    GameSessionUpdate(GameSession),
-    ExitGameSession(Uuid),
-    /// Initialize a new game session with session_id, game_id, and initial GameState
-    InitGameSession(Uuid, u16, GameState),
-    StartGameSession(Uuid),
-    PauseGameSession(Uuid),
-    ResumeGameSession(Uuid),
-    FinishGameSession(Uuid),
-    ReplyGameSession(Uuid),
-
-    // Actor 
-    RegisterActor(Uuid,String,Vec<String>),
-    UnregisterActor(Uuid,Uuid),
-    QueryActor,
-    ActorResponse(ActorMetaData),
-    ActorError(String),
+    // Session Status Broadcasts
+    SessionCreated(Session),
+    SessionUpdate(Session),
 
     // Mouse Position
     UpdateMousePosition(Option<bevy::prelude::Vec3>),
@@ -94,13 +75,20 @@ pub enum NetworkMessage {
     // Abstract Minimal Path Scene Stream
     BroadcastScenePaths(Vec<crate::path::AbstractPathData>),
 
-    /// Generic minigame payload broadcast (game_id, session_id, event_tag, payload_json)
-    GameDataPayload {
-        game_id: u16,
+
+
+    // Curator Workflow & Session Channel Messages
+    /// Channel connection boundary (Server <-> Terminal)
+    OpenSession {
         session_id: Uuid,
-        event_tag: String,
-        payload_json: String,
+        channel_name: String,
     },
+    CloseSession {
+        session_id: Uuid,
+    },
+    CuratorPrompt(curator_core::ActorPrompt),
+    CuratorPromptResponse(curator_core::ActorPromptResponse),
+    CuratorEnvelope(curator_core::CuratorEventEnvelope),
 
     // Generic Receiver Mode (Terminal streams frames directly to Server DAC)
     SetReceiverMode {
@@ -137,3 +125,27 @@ impl NetworkMessage {
 /// Server configuration
 pub const SERVER_PORT: u16 = 6000;
 pub const SERVER_HOST: &str = "0.0.0.0";
+
+/// Event for mouse position updates from clients
+#[derive(bevy::prelude::Message, Debug, Clone)]
+pub struct MousePositionEvent {
+    pub client_id: u64,
+    pub position: Option<bevy::prelude::Vec3>,
+}
+
+/// Event for mouse button input from clients
+#[derive(bevy::prelude::Message, Debug, Clone)]
+pub struct MouseButtonInputEvent {
+    pub client_id: u64,
+    pub button: String,
+    pub pressed: bool,
+    pub position: Option<bevy::prelude::Vec3>,
+}
+
+/// Event for keyboard input from clients
+#[derive(bevy::prelude::Message, Debug, Clone)]
+pub struct KeyboardInputEvent {
+    pub client_id: u64,
+    pub key: String,
+    pub pressed: bool,
+}

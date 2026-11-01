@@ -1,7 +1,7 @@
 use bevy::asset::uuid::Uuid;
 use bevy::math::Vec3;
 use bevy::prelude::*;
-use common::target::HunterTarget;
+use crate::types::HunterTarget;
 use serde::{Deserialize, Serialize};
 
 /// Event for click detection from client (used by server)
@@ -26,4 +26,16 @@ pub struct BroadcastStatsUpdateEvent {
 pub struct SpawnHunterTargetEvent {
     pub target: HunterTarget,
     pub position: Vec3,
+}
+
+impl common::curator_core::CuratorPayload for BroadcastStatsUpdateEvent {
+    fn event_tag() -> &'static str {
+        "hunter_stats"
+    }
+}
+
+impl common::curator_core::CuratorPayload for SpawnHunterTargetEvent {
+    fn event_tag() -> &'static str {
+        "spawn_target"
+    }
 }

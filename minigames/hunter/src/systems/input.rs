@@ -1,6 +1,7 @@
 use bevy::prelude::*;
 use common::game::GameSession;
-use common::state::GameState;
+use common::network::MouseButtonInputEvent;
+use common::state::SessionState;
 use gamepad::{Btn, GamepadState, PrevGamepadState, ServerGamepadCursor};
 
 use crate::common::GAME_ID;
@@ -23,7 +24,7 @@ pub fn handle_hunter_gamepad_inputs(
     let (Some(state), Some(prev), Some(cursor)) = (state, prev, cursor) else { return; };
     if !state.connected { return; }
 
-    let Some(active_session) = game_sessions.iter().find(|s| s.game_id == GAME_ID && s.state == GameState::InGame) else { return; };
+    let Some(active_session) = game_sessions.iter().find(|s| s.game_id == GAME_ID && s.state == SessionState::Active) else { return; };
 
     // Button A (South) -> Roll / Cycle reticle mode
     if state.just_pressed(&prev, Btn::South) {
@@ -61,6 +62,44 @@ pub fn handle_hunter_gamepad_inputs(
                 session_id: active_session.session_id,
                 click_position: click_pos,
             });
+        }
+    }
+}
+
+/// Handles mouse button input (clicks) during Hunter game:
+/// - Right Click: Roll / cycle through target types
+/// - Left Click: Release selected target or shoot
+pub fn handle_hunter_mouse_clicks(
+    mut mouse_button_events: MessageReader<MouseButtonInputEvent>,
+    mut selection: ResMut<HunterTargetSelection>,
+    game_sessions: Query<&GameSession>,
+    mut click_events: MessageWriter<HunterClickEvent>,
+    mut spawn_events: MessageWriter<SpawnHunterTargetEvent>,
+) {
+    let Some(active_session) = game_sessions.iter().find(|s| s.game_id == GAME_ID && s.state == SessionState::Active) else { return; };
+
+    for event in mouse_button_events.read() {
+        if event.pressed {
+            if let Some(position) = event.position {
+                if event.button == "Right" {
+                    selection.cycle();
+                    info!("🖱️ [Hunter Mouse Mode] Cycled target mode #{}: {}", selection.selected_index, selection.target_name());
+                } else if event.button == "Left" {
+                    if let Some(target_to_spawn) = selection.get_target() {
+                        spawn_events.write(SpawnHunterTargetEvent {
+                            target: target_to_spawn,
+                            position,
+                        });
+                        selection.reset_to_gunshot();
+                        info!("🖱️ [Hunter Mouse Mode] Spawned target at {:?} and reset mode to GunShot", position);
+                    } else {
+                        click_events.write(HunterClickEvent {
+                            session_id: active_session.session_id,
+                            click_position: position,
+                        });
+                    }
+                }
+            }
         }
     }
 }

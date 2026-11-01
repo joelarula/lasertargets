@@ -1,5 +1,6 @@
 use bevy::asset::uuid::Uuid;
 use bevy::prelude::*;
+use common::curator_core::CuratorPayload;
 use serde::{Deserialize, Serialize};
 
 use crate::types::SnakeDirection;
@@ -19,9 +20,21 @@ pub struct BroadcastSnakeStatsEvent {
     pub game_over: bool,
 }
 
+impl CuratorPayload for BroadcastSnakeStatsEvent {
+    fn event_tag() -> &'static str {
+        "snake_stats"
+    }
+}
+
 /// Raised on server when game ends
 #[derive(Message, Debug, Clone, Serialize, Deserialize)]
 pub struct SnakeGameOverEvent {
     pub session_id: Uuid,
     pub final_score: u32,
+}
+
+impl CuratorPayload for SnakeGameOverEvent {
+    fn event_tag() -> &'static str {
+        "snake_game_over"
+    }
 }

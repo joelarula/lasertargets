@@ -1,4 +1,3 @@
-use bevy::asset::uuid::Uuid;
 use bevy::prelude::*;
 use bevy_quinnet::server::endpoint::Endpoint;
 use bevy_quinnet::server::{
@@ -6,19 +5,17 @@ use bevy_quinnet::server::{
     certificate::CertificateRetrievalMode,
 };
 use bevy_quinnet::shared::ClientId;
-use common::actor::{Actor, ActorMetaData};
+use common::actor::Actor;
 use common::config::{CameraConfiguration, ProjectorConfiguration, SceneConfiguration};
-use common::game::{ExitGameEvent, FinishGameEvent, GameSession, GameSessionCreated, InitGameSessionEvent, PauseGameEvent, ResumeGameEvent, StartGameEvent};
+use common::game::{ExitGameEvent, GameSession, GameSessionCreated, InitGameSessionEvent};
 use common::network::{NetworkMessage, SERVER_HOST, SERVER_PORT};
 use common::scene::SceneSetup;
-use common::state::{CalibrationState, GameState, ServerInstanceId, ServerState};
+use common::state::{CalibrationState, SessionState, ServerInstanceId, ServerState};
 use std::collections::{HashMap, HashSet};
 use std::net::{IpAddr, Ipv4Addr};
-use common::game::BroadcastGameDataPayload;
 use common::path::BroadcastScenePaths;
 use crate::plugins::actor::{
     ActorLink, ActorRegistrationResultEvent, ActorUnregistrationResultEvent, GameActorUpdateEvent,
-    RegisterActorEvent, UnregisterActorEvent,
 };
 
 #[derive(Resource, Debug, Clone)]
@@ -42,20 +39,7 @@ pub struct FromClientMessage {
     pub message: NetworkMessage,
 }
 
-/// Event for mouse position updates from clients
-#[derive(Message, Debug, Clone)]
-pub struct MousePositionEvent {
-    pub client_id: u64,
-    pub position: Option<Vec3>,
-}
-
-/// Event for keyboard input from clients
-#[derive(Message, Debug, Clone)]
-pub struct KeyboardInputEvent {
-    pub client_id: u64,
-    pub key: String,
-    pub pressed: bool,
-}
+pub use common::network::{KeyboardInputEvent, MouseButtonInputEvent, MousePositionEvent};
 
 pub struct NetworkingPlugin;
 
@@ -66,16 +50,15 @@ impl Plugin for NetworkingPlugin {
             .add_message::<ActorRegistrationResultEvent>()
             .add_message::<ActorUnregistrationResultEvent>()
             .add_message::<MousePositionEvent>()
+            .add_message::<MouseButtonInputEvent>()
             .add_message::<KeyboardInputEvent>()
             .add_message::<BroadcastScenePaths>()
             .init_resource::<NetworkingConfiguration>()
             .add_systems(Startup, start_server)
             .add_systems(Update, receive_network_messages)
             .add_systems(Update, handle_config_messages)
-            .add_systems(Update, handle_actor_messages)
-            .add_systems(Update, handle_game_session_messages)
+                        .add_systems(Update, handle_game_session_messages)
             .add_systems(Update, handle_input_messages)
-            .add_systems(Update, broadcast_game_data_payloads)
             .add_systems(Update, broadcast_path_events)
             .add_systems(Update, send_ping_periodically)
             .add_systems(Update, handle_lifecycle_messages)
@@ -84,7 +67,10 @@ impl Plugin for NetworkingPlugin {
             .add_systems(Update, handle_game_actor_update_event)
             .add_systems(Update, handle_actor_result_events)
             .add_systems(Update, broadcast_scene_setup_on_change)
-            .add_systems(Update, broadcast_state_on_change);
+            .add_systems(Update, broadcast_state_on_change)
+            .add_systems(Update, broadcast_curator_prompts)
+            .add_systems(Update, broadcast_curator_envelopes)
+            .add_systems(Update, handle_curator_client_messages);
     }
 }
 
@@ -171,7 +157,7 @@ fn handle_config_messages(
     scene_setup: Res<SceneSetup>,
     instance_id: Res<ServerInstanceId>,
     current_state: Res<State<ServerState>>,
-    current_game_state: Res<State<GameState>>,
+    _current_session_state: Res<State<SessionState>>,
     current_calibration_state: Res<State<CalibrationState>>,
     mut next_calibration_state: ResMut<NextState<CalibrationState>>,
     mut next_server_state: ResMut<NextState<ServerState>>,
@@ -228,11 +214,7 @@ fn handle_config_messages(
                 let payload = message.to_bytes().expect("Serialize ServerStateResponse");
                 send_payload_and_log_error(endpoint, msg.client_id, payload, "ServerStateResponse");
             }
-            NetworkMessage::QueryGameState => {
-                let message = NetworkMessage::GameStateUpdate(current_game_state.get().clone());
-                let payload = message.to_bytes().expect("Serialize GameStateResponse");
-                send_payload_and_log_error(endpoint, msg.client_id, payload, "GameStateResponse");
-            }
+
             NetworkMessage::QueryCalibrationState => {
                 let message = NetworkMessage::CalibrationStateUpdate(current_calibration_state.get().clone());
                 let payload = message.to_bytes().expect("Serialize CalibrationStateResponse");
@@ -270,104 +252,32 @@ fn handle_config_messages(
     }
 }
 
-/// Handle actor registration and unregistration messages
-fn handle_actor_messages(
-    mut messages: MessageReader<FromClientMessage>,
-    mut register_actor_events: MessageWriter<RegisterActorEvent>,
-    mut unregister_actor_events: MessageWriter<UnregisterActorEvent>,
-) {
-    for msg in messages.read() {
-        match &msg.message {
-            NetworkMessage::RegisterActor(game, name, roles) => {
-                let actor = Actor {
-                    uuid: Uuid::new_v4(),
-                    name: name.clone(),
-                    roles: roles.clone(),
-                };
-                register_actor_events.write(RegisterActorEvent {
-                    client_id: msg.client_id,
-                    game_session_id: *game,
-                    actor,
-                });
-            }
-            NetworkMessage::UnregisterActor(game_uuid, actor_uuid) => {
-                unregister_actor_events.write(UnregisterActorEvent {
-                    client_id: msg.client_id,
-                    actor_uuid: *actor_uuid,
-                    game_uuid: *game_uuid,
-                });
-            }
-            _ => {}
-        }
-    }
-}
-
-/// Handle game session management messages
+/// Handle session channel messages (OpenSession / CloseSession)
 fn handle_game_session_messages(
-    mut server: ResMut<QuinnetServer>,
     mut messages: MessageReader<FromClientMessage>,
-    mut start_game_session_events: MessageWriter<StartGameEvent>,
     mut init_game_session_events: MessageWriter<InitGameSessionEvent>,
-    mut pause_game_events: MessageWriter<PauseGameEvent>,
-    mut resume_game_events: MessageWriter<ResumeGameEvent>,
-    mut finish_game_events: MessageWriter<FinishGameEvent>,
     mut exit_game_events: MessageWriter<ExitGameEvent>,
-    game_sessions: Query<&GameSession>,
 ) {
-    let Some(endpoint) = server.get_endpoint_mut() else {
-        return;
-    };
 
     for msg in messages.read() {
         match &msg.message {
-            NetworkMessage::QueryGameSession => {
-                if let Some(session) = game_sessions.iter().next() {
-                    let message = NetworkMessage::GameSessionUpdate(session.clone());
-                    if let Ok(payload) = message.to_bytes() {
-                        send_payload_and_log_error(endpoint, msg.client_id, payload, "GameSessionResponse");
-                    }
-                } else {
-                    debug!("No active game session to return to client {}", msg.client_id);
-                }
-            }
-            NetworkMessage::InitGameSession(session_uuid, game_id, initial_state) => {
-                info!("Received InitGameSession for game ID: {} with initial state: {:?}", game_id, initial_state);
+            NetworkMessage::OpenSession { session_id, channel_name } => {
+                info!("Received OpenSession for channel '{}' (session: {})", channel_name, session_id);
+                let game_id = match channel_name.to_lowercase().as_str() {
+                    "hunter" => 101,
+                    "snake" => 102,
+                    _ => 101,
+                };
                 init_game_session_events.write(InitGameSessionEvent {
-                    game_id: *game_id,
-                    game_session_uuid: *session_uuid,
-                    initial_state: initial_state.clone(),
-                });
-
-            }
-            NetworkMessage::StartGameSession(uuid) => {
-                info!("Received StartGameSession for: {}", uuid);
-                start_game_session_events.write(StartGameEvent {
-                    game_session_uuid: *uuid,
+                    game_id,
+                    game_session_uuid: *session_id,
+                    initial_state: common::state::SessionState::Paused,
                 });
             }
-            NetworkMessage::PauseGameSession(uuid) => {
-                info!("Received PauseGame for: {}", uuid);
-                pause_game_events.write(PauseGameEvent {
-                    game_session_uuid: *uuid,
-                });
-            }
-            NetworkMessage::ResumeGameSession(uuid) => {
-                info!("Received ResumeGame for: {}", uuid);
-                resume_game_events.write(ResumeGameEvent {
-                    game_session_uuid: *uuid,
-                });
-            }
-            NetworkMessage::FinishGameSession(uuid) => {
-                info!("Received FinishGameSession for: {}", uuid);
-                finish_game_events.write(FinishGameEvent {
-                    game_session_uuid: *uuid,
-                });
-            }
-            NetworkMessage::ExitGameSession(uuid) => {
-                info!("Received ExitGameSession for: {}", uuid);
-                // Set server state to Menu and session to Finished
+            NetworkMessage::CloseSession { session_id } => {
+                info!("Received CloseSession for session: {}", session_id);
                 exit_game_events.write(ExitGameEvent {
-                    game_session_uuid: *uuid,
+                    game_session_uuid: *session_id,
                 });
             }
             _ => {}
@@ -379,11 +289,8 @@ fn handle_game_session_messages(
 fn handle_input_messages(
     mut messages: MessageReader<FromClientMessage>,
     mut mouse_position_events: MessageWriter<MousePositionEvent>,
+    mut mouse_button_events: MessageWriter<MouseButtonInputEvent>,
     mut keyboard_input_events: MessageWriter<KeyboardInputEvent>,
-    mut hunter_click_events: MessageWriter<hunter::model::HunterClickEvent>,
-    mut spawn_hunter_target_events: MessageWriter<hunter::server::SpawnHunterTargetEvent>,
-    mut selection: Option<ResMut<hunter::server::HunterTargetSelection>>,
-    game_sessions: Query<&GameSession>,
 ) {
     for msg in messages.read() {
         match &msg.message {
@@ -401,69 +308,19 @@ fn handle_input_messages(
                 });
             }
             NetworkMessage::MouseButtonInput { button, pressed, position } => {
-                if *pressed {
-                    if let Some(position) = position {
-                        for session in game_sessions.iter() {
-                            if session.game_id == 101 && session.state == GameState::InGame {
-                                if button == "Right" {
-                                    if let Some(ref mut sel) = selection {
-                                        sel.cycle();
-                                        info!("🖱️ [Hunter Mouse Mode] Cycled target mode #{}: {}", sel.selected_index, sel.target_name());
-                                    }
-                                } else if button == "Left" {
-                                    let mut spawned = false;
-                                    if let Some(ref mut sel) = selection {
-                                        if let Some(target_to_spawn) = sel.get_target() {
-                                            spawn_hunter_target_events.write(hunter::server::SpawnHunterTargetEvent {
-                                                target: target_to_spawn,
-                                                position: *position,
-                                            });
-                                            sel.reset_to_gunshot();
-                                            info!("🖱️ [Hunter Mouse Mode] Spawned target at {:?} and reset mode to GunShot", position);
-                                            spawned = true;
-                                        }
-                                    }
-                                    if !spawned {
-                                        hunter_click_events.write(hunter::model::HunterClickEvent {
-                                            session_id: session.session_id,
-                                            click_position: *position,
-                                        });
-                                    }
-                                }
-                                break;
-                            }
-                        }
-                    }
-                }
+                mouse_button_events.write(MouseButtonInputEvent {
+                    client_id: msg.client_id,
+                    button: button.clone(),
+                    pressed: *pressed,
+                    position: *position,
+                });
             }
             _ => {}
         }
     }
 }
 
-/// Broadcast generic minigame payloads to all connected clients
-fn broadcast_game_data_payloads(
-    mut server: ResMut<QuinnetServer>,
-    mut payload_events: MessageReader<BroadcastGameDataPayload>,
-) {
-    let Some(endpoint) = server.get_endpoint_mut() else {
-        return;
-    };
 
-    for event in payload_events.read() {
-        let message = NetworkMessage::GameDataPayload {
-            game_id: event.game_id,
-            session_id: event.session_id,
-            event_tag: event.event_tag.clone(),
-            payload_json: event.payload_json.clone(),
-        };
-        if let Ok(payload) = message.to_bytes() {
-            if let Err(e) = endpoint.broadcast_payload(payload) {
-                error!("Failed to broadcast GameDataPayload: {:?}", e);
-            }
-        }
-    }
-}
 
 /// Send periodic ping messages to all connected clients
 fn send_ping_periodically(
@@ -626,7 +483,7 @@ fn send_game_session_updates(
 
         // If no actors are registered yet, broadcast to all clients
         if recipients.is_empty() {
-            let message = NetworkMessage::GameSessionUpdate(game_session.clone());
+            let message = NetworkMessage::SessionUpdate(game_session.clone().into());
             let payload = message.to_bytes().expect("Serialize GameSessionResponse");
             broadcast_payload_and_log_error(
                 endpoint,
@@ -636,7 +493,7 @@ fn send_game_session_updates(
             continue;
         }
 
-        let message = NetworkMessage::GameSessionUpdate(game_session.clone());
+        let message = NetworkMessage::SessionUpdate(game_session.clone().into());
         let payload = message.to_bytes().expect("Serialize GameSessionResponse");
 
         // Send only to clients that have actors in this session
@@ -669,14 +526,16 @@ fn handle_game_actor_update_event(
         }
 
         for (client_id, actors) in per_client {
-            let payload = NetworkMessage::ActorResponse(ActorMetaData {
-                game_session_uuid: update.game_uuid,
-                actors,
-            })
-            .to_bytes()
-            .expect("Serialize ActorResponse");
-
-            send_payload_and_log_error(endpoint, client_id, payload, "ActorResponse");
+            let env = common::curator_core::CuratorEventEnvelope::new(
+                "actor_response",
+                serde_json::to_value(&common::actor::ActorMetaData {
+                    game_session_uuid: update.game_uuid,
+                    actors,
+                }).unwrap_or_default(),
+            ).with_session(update.game_uuid);
+            if let Ok(payload) = NetworkMessage::CuratorEnvelope(env).to_bytes() {
+                send_payload_and_log_error(endpoint, client_id, payload, "CuratorEnvelope(actor_response)");
+            }
         }
     }
 }
@@ -691,7 +550,7 @@ fn handle_game_session_created(
 
     for created in game_sessions.read() {
         info!("[Network] Received GameSessionCreated: {:?}", created.game_session);
-        let message = NetworkMessage::GameSessionCreated(created.game_session.clone());
+        let message = NetworkMessage::SessionCreated(created.game_session.clone().into());
         let payload = message
             .to_bytes()
             .expect("Serialize GameSessionResponse (created)");
@@ -718,54 +577,46 @@ fn handle_actor_result_events(
 
     // Registration results
     for result in reg_results.read() {
-        let payload = match &result.result {
-            Ok(actor) => NetworkMessage::ActorResponse(ActorMetaData {
-                game_session_uuid: result.game_uuid,
-                actors: vec![actor.clone()],
-            })
-            .to_bytes()
-            .expect("Serialize ActorResponse"),
-            Err(msg) => NetworkMessage::ActorError(msg.clone())
-                .to_bytes()
-                .expect("Serialize ActorError"),
+        let (tag, val) = match &result.result {
+            Ok(actor) => (
+                "actor_response",
+                serde_json::to_value(&common::actor::ActorMetaData {
+                    game_session_uuid: result.game_uuid,
+                    actors: vec![actor.clone()],
+                }).unwrap_or_default(),
+            ),
+            Err(msg) => ("actor_error", serde_json::Value::String(msg.clone())),
         };
-
-        send_payload_and_log_error(
-            endpoint,
-            result.client_id,
-            payload,
-            "Actor registration result",
-        );
+        let env = common::curator_core::CuratorEventEnvelope::new(tag, val).with_session(result.game_uuid);
+        if let Ok(payload) = NetworkMessage::CuratorEnvelope(env).to_bytes() {
+            send_payload_and_log_error(endpoint, result.client_id, payload, tag);
+        }
     }
 
     // Unregistration results
     for result in unreg_results.read() {
-        let payload = match &result.result {
-            Ok(actor) => NetworkMessage::ActorResponse(ActorMetaData {
-                game_session_uuid: result.game_uuid,
-                actors: vec![actor.clone()],
-            })
-            .to_bytes()
-            .expect("Serialize ActorResponse"),
-            Err(msg) => NetworkMessage::ActorError(msg.clone())
-                .to_bytes()
-                .expect("Serialize ActorError"),
+        let (tag, val) = match &result.result {
+            Ok(actor) => (
+                "actor_response",
+                serde_json::to_value(&common::actor::ActorMetaData {
+                    game_session_uuid: result.game_uuid,
+                    actors: vec![actor.clone()],
+                }).unwrap_or_default(),
+            ),
+            Err(msg) => ("actor_error", serde_json::Value::String(msg.clone())),
         };
-
-        send_payload_and_log_error(
-            endpoint,
-            result.client_id,
-            payload,
-            "Actor unregistration result",
-        );
+        let env = common::curator_core::CuratorEventEnvelope::new(tag, val).with_session(result.game_uuid);
+        if let Ok(payload) = NetworkMessage::CuratorEnvelope(env).to_bytes() {
+            send_payload_and_log_error(endpoint, result.client_id, payload, tag);
+        }
     }
 }
 
-/// Broadcasts ServerState, GameState, and CalibrationState to all clients when they change.
+/// Broadcasts ServerState and CalibrationState to all clients when they change.
 fn broadcast_state_on_change(
     mut server: ResMut<QuinnetServer>,
     server_state: Res<State<ServerState>>,
-    game_state: Res<State<GameState>>,
+    _session_state: Res<State<SessionState>>,
     calibration_state: Res<State<CalibrationState>>,
 ) {
     let Some(endpoint) = server.get_endpoint_mut() else {
@@ -780,13 +631,7 @@ fn broadcast_state_on_change(
         }
     }
 
-    if game_state.is_changed() {
-        info!("[broadcast_state_on_change] GameState changed, broadcasting GameStateUpdate: {:?}", game_state.get());
-        let msg = NetworkMessage::GameStateUpdate(game_state.get().clone());
-        if let Ok(payload) = msg.to_bytes() {
-            let _ = endpoint.broadcast_payload(payload);
-        }
-    }
+
 
     if calibration_state.is_changed() {
         info!("[broadcast_state_on_change] CalibrationState changed, broadcasting CalibrationStateUpdate: {:?}", calibration_state.get());
@@ -808,6 +653,68 @@ fn handle_lifecycle_messages(
         if matches!(msg.message, NetworkMessage::ShutdownServer) {
             info!("Received ShutdownServer from client {}. Exiting...", msg.client_id);
             exit_writer.write(bevy::app::AppExit::Success);
+        }
+    }
+}
+
+fn broadcast_curator_prompts(
+    mut server: ResMut<QuinnetServer>,
+    mut prompt_requests: MessageReader<curator_core::ActorPromptRequestEvent>,
+) {
+    let Some(endpoint) = server.get_endpoint_mut() else {
+        return;
+    };
+    for event in prompt_requests.read() {
+        let msg = NetworkMessage::CuratorPrompt(event.prompt.clone());
+        if let Ok(payload) = msg.to_bytes() {
+            info!(
+                "[NetworkingPlugin] Broadcasting CuratorPrompt '{}' (id: {})",
+                event.prompt.title, event.prompt.prompt_id
+            );
+            let _ = endpoint.broadcast_payload(payload);
+        }
+    }
+}
+
+fn broadcast_curator_envelopes(
+    mut server: ResMut<QuinnetServer>,
+    mut envelopes: MessageReader<curator_core::CuratorEventEnvelope>,
+) {
+    let Some(endpoint) = server.get_endpoint_mut() else {
+        return;
+    };
+    for env in envelopes.read() {
+        let msg = NetworkMessage::CuratorEnvelope(env.clone());
+        if let Ok(payload) = msg.to_bytes() {
+            let _ = endpoint.broadcast_payload(payload);
+        }
+    }
+}
+
+fn handle_curator_client_messages(
+    mut messages: MessageReader<FromClientMessage>,
+    mut prompt_responses: MessageWriter<curator_core::ActorPromptResponseEvent>,
+    mut envelopes: MessageWriter<curator_core::CuratorEventEnvelope>,
+) {
+    for msg in messages.read() {
+        match &msg.message {
+            NetworkMessage::CuratorPromptResponse(resp) => {
+                info!(
+                    "[NetworkingPlugin] Received CuratorPromptResponse for prompt {}",
+                    resp.prompt_id
+                );
+                prompt_responses.write(curator_core::ActorPromptResponseEvent {
+                    response: resp.clone(),
+                });
+            }
+            NetworkMessage::CuratorEnvelope(env) => {
+                info!(
+                    "[NetworkingPlugin] Received CuratorEnvelope tag '{}'",
+                    env.tag
+                );
+                envelopes.write(env.clone());
+            }
+            _ => {}
         }
     }
 }

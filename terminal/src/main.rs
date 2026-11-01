@@ -5,7 +5,6 @@ use common::game::GameRegistryPlugin;
 use common::scene::SceneSetupPlugin;
 use common::state::{CalibrationState, ServerState, TerminalState};
 use hunter::terminal::HunterTerminalPlugin;
-// Removed unused import: use log::info;
 
 mod plugins;
 mod util;
@@ -15,7 +14,7 @@ use crate::plugins::config::ConfigPlugin;
 use crate::plugins::camera::CameraPlugin;
 use crate::plugins::calibration::CalibrationPlugin;
 use crate::plugins::projector::ProjectorPlugin;
-use crate::plugins::scene::{ScenePlugin};
+use crate::plugins::scene::ScenePlugin;
 use crate::plugins::toolbar::ToolbarPlugin;
 use crate::plugins::settings::SettingsPlugin;
 use crate::plugins::network::NetworkPlugin;
@@ -23,13 +22,12 @@ use crate::plugins::path::PathPlugin;
 use crate::plugins::keyboard::KeyboardPlugin;
 use crate::plugins::mouse::MousePlugin;
 use crate::plugins::editor::ShapeEditorPlugin;
+use crate::plugins::prompt::CuratorPromptPlugin;
 use hunter::common::HunterGamePlugin;
 use snake::common::SnakeGamePlugin;
 use snake::terminal::SnakeTerminalPlugin;
 
-
 fn main() {
-
     util::setup_logging();
     unsafe {
         env::set_var("RUST_LOG", "debug");
@@ -41,7 +39,7 @@ fn main() {
         DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
                 title: "LaserTargets Server".to_string(),
-                present_mode: bevy::window::PresentMode::AutoNoVsync ,
+                present_mode: bevy::window::PresentMode::AutoNoVsync,
                 ..Default::default()
             }),
             ..Default::default()
@@ -63,6 +61,7 @@ fn main() {
     .add_plugins(ToolbarPlugin)
     .add_plugins(SettingsPlugin)
     .add_plugins(ShapeEditorPlugin)
+    .add_plugins(CuratorPromptPlugin)
     .add_plugins(PathPlugin)
     .add_plugins(KeyboardPlugin)
     .add_plugins(MousePlugin)

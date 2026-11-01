@@ -8,6 +8,8 @@ bevy = { workspace = true }
 egui = { workspace = true }
 bevy_egui = { workspace = true }
 common = { path = "../common" }
+terminal-ui = { workspace = true }
+curator-core = { path = "../curator-core" }
 hunter = { path = "../minigames/hunter" }
 snake = { path = "../minigames/snake" }
 log = { workspace = true }

@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "server",
+    "server-core",
     "common",
     "terminal",
     "minigames/hunter",
@@ -10,9 +11,12 @@ members = [
     "gamepad",
     "dac-test",
     "shape-editor",
+    "curator-core",
+    "terminal-ui",
 ]
 
 [workspace.dependencies]
+terminal-ui = { path = "terminal-ui" }
 bevy = { version = "0.17.1"}
 log = "0.4"
 egui = "0.33"

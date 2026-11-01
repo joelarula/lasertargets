@@ -1,8 +1,7 @@
 use bevy::prelude::*;
-use common::game::{BroadcastGameDataPayload, GameSession, GameSessionCreated, ExitGameEvent};
-use common::network::{FromClientMessage, NetworkMessage};
+use common::game::{GameSession, GameSessionCreated, ExitGameEvent};
 use common::scene::SceneSetup;
-use common::state::GameState;
+use common::state::SessionState;
 
 use crate::common::{GAME_ID, generate_game_report};
 use crate::components::{CollisionIndicator, HunterTargetEntity, HunterTitleAnnouncement};
@@ -13,7 +12,7 @@ use crate::types::GameReport;
 pub fn hunter_session_is_running(game_sessions: Query<&GameSession>) -> bool {
     game_sessions
         .iter()
-        .any(|session| session.game_id == GAME_ID && session.state == GameState::InGame)
+        .any(|session| session.game_id == GAME_ID && session.state == SessionState::Active)
 }
 
 pub fn reset_hunter_session(
@@ -173,30 +172,24 @@ fn format_report_text(report: &GameReport) -> String {
 
 pub fn forward_hunter_stats_to_network(
     mut events: MessageReader<BroadcastStatsUpdateEvent>,
-    mut payload_writer: MessageWriter<BroadcastGameDataPayload>,
+    mut envelope_writer: MessageWriter<common::curator_core::CuratorEventEnvelope>,
 ) {
     for event in events.read() {
-        if let Ok(json) = serde_json::to_string(event) {
-            payload_writer.write(BroadcastGameDataPayload {
-                game_id: GAME_ID,
-                session_id: event.session_id,
-                event_tag: "hunter_stats".to_string(),
-                payload_json: json,
-            });
-        }
+        envelope_writer.write(common::curator_core::CuratorEventEnvelope::from_payload(
+            event,
+            Some(event.session_id),
+        ));
     }
 }
 
 pub fn handle_incoming_hunter_payloads(
-    mut client_messages: MessageReader<FromClientMessage>,
+    mut envelopes: MessageReader<common::curator_core::CuratorEventEnvelope>,
     mut spawn_events: MessageWriter<SpawnHunterTargetEvent>,
 ) {
-    for msg in client_messages.read() {
-        if let NetworkMessage::GameDataPayload { game_id, ref event_tag, ref payload_json, .. } = msg.message {
-            if game_id == GAME_ID && event_tag == "spawn_target" {
-                if let Ok(event) = serde_json::from_str::<SpawnHunterTargetEvent>(payload_json) {
-                    spawn_events.write(event);
-                }
+    for env in envelopes.read() {
+        if env.is::<SpawnHunterTargetEvent>() {
+            if let Ok(event) = env.downcast::<SpawnHunterTargetEvent>() {
+                spawn_events.write(event);
             }
         }
     }

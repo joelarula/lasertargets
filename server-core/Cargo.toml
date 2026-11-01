@@ -1,0 +1,19 @@
+[package]
+name = "server-core"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+bevy = { workspace = true }
+log = { workspace = true }
+common = { path = "../common" }
+curator-core = { path = "../curator-core" }
+gamepad = { path = "../gamepad" }
+bevy_quinnet = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+bincode = { workspace = true }
+laserlogic = { path = "../laserlogic" }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = "0.2"

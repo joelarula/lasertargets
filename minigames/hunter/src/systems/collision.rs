@@ -2,7 +2,7 @@ use bevy::math::Mat4;
 use bevy::prelude::*;
 use common::path::{PathRenderable, UniversalPath};
 use common::scene::{SceneEntity, SceneSetup};
-use common::target::HunterTarget;
+use crate::types::HunterTarget;
 
 use crate::components::{CollisionIndicator, HunterShotRipple, HunterTargetEntity, TargetSpawnImmunity};
 use crate::events::{BroadcastStatsUpdateEvent, HunterClickEvent};

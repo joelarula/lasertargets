@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use common::toolbar::{Docking, ItemState, ToolbarButton, ToolbarItem};
+use terminal_ui::{Docking, ItemState, ToolbarButton, ToolbarItem};
 use crate::plugins::calibration::CalibrationSystemSet;
 
 use crate::plugins::instructions::InstructionState;

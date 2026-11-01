@@ -5,6 +5,10 @@ pub mod text_optimize;
 pub mod helios;
 pub mod morph;
 pub mod show;
+pub mod stream;
+pub mod ttf;
+
+pub use ttf::{from_ttf_text, LaserTextOptions};
 
 use serde::{Deserialize, Serialize};
 

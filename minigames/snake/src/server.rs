@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use common::state::{GameState, ServerState};
+use common::state::{SessionState, ServerState};
 
 use crate::events::{BroadcastSnakeStatsEvent, ChangeSnakeDirectionEvent, SnakeGameOverEvent};
 use crate::systems::input::{handle_direction_input, handle_snake_gamepad_inputs};
@@ -50,10 +50,10 @@ impl Plugin for SnakeGameServerPlugin {
         );
 
         app.add_systems(
-            OnExit(ServerState::InGame),
+            OnExit(ServerState::Session),
             (save_snake_report, cleanup_snake_game).chain(),
         );
 
-        app.add_systems(OnExit(GameState::InGame), cleanup_snake_game);
+        app.add_systems(OnExit(SessionState::Active), cleanup_snake_game);
     }
 }

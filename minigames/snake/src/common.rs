@@ -14,7 +14,7 @@ use crate::model::{GAME_ID, GAME_NAME};
 pub struct SnakeGamePlugin;
 
 #[derive(SubStates, Debug, Clone, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
-#[source(ServerState = ServerState::InGame)]
+#[source(ServerState = ServerState::Session)]
 pub enum SnakeGameState {
     #[default]
     Off,

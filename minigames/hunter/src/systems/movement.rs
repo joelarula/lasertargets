@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use common::scene::SceneSetup;
-use common::target::HunterTarget;
+use crate::types::HunterTarget;
 
 use crate::components::{BalloonRiseSpeed, BalloonTargetEntity, HunterTargetEntity};
 use crate::events::BroadcastStatsUpdateEvent;

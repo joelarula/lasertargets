@@ -1,7 +1,7 @@
 use bevy::asset::uuid::Uuid;
 use bevy::math::Vec3;
 use bevy::prelude::*;
-use common::target::HunterTarget;
+use crate::types::HunterTarget;
 
 /// Marker component for balloon target entities (rising targets)
 #[derive(Component, Debug, Clone)]

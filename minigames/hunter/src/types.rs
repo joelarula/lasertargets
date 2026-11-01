@@ -1,8 +1,15 @@
 use bevy::asset::uuid::Uuid;
+use bevy::color::Color;
 use bevy::math::Vec3;
 use common::path::UniversalPath;
 use common::scene::SceneSetup;
 use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum HunterTarget {
+    Basic(f32, Color),  // size
+    Baloon(f32, Color), // size
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Hunter {

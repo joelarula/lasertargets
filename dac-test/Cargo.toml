@@ -16,6 +16,6 @@ serde_json = "1.0"
 crossterm  = "0.28"
 common     = { path = "../common" }
 laserlogic = { path = "../laserlogic" }
-server     = { path = "../server" }
+server-core = { path = "../server-core" }
 
 

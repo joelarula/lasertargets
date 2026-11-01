@@ -1,5 +1,6 @@
 use bevy::prelude::*;
-use common::path::{LaserTextOptions, PathRenderable, PathSegment, UniversalPath};
+use common::path::{PathRenderable, PathSegment, UniversalPath};
+use laserlogic::{from_ttf_text, LaserTextOptions};
 use common::scene::SceneSetup;
 
 use crate::components::*;
@@ -204,7 +205,7 @@ pub fn spawn_snake_text_announcement(
     let mut maybe_title_path = None;
     for path in &font_paths {
         if let Ok(data) = std::fs::read(path) {
-            if let Ok(text_path) = UniversalPath::from_ttf_text(&data, text, &options) {
+            if let Ok(text_path) = from_ttf_text(&data, text, &options) {
                 info!("✓ [Snake] Rendered text announcement '{}' using font {}", text, path);
                 maybe_title_path = Some(text_path);
                 break;
@@ -214,7 +215,7 @@ pub fn spawn_snake_text_announcement(
 
     if maybe_title_path.is_none() {
         const FALLBACK_FONT_BYTES: &[u8] = include_bytes!("../../../../assets/fonts/centurygothic.ttf");
-        if let Ok(text_path) = UniversalPath::from_ttf_text(FALLBACK_FONT_BYTES, text, &options) {
+        if let Ok(text_path) = from_ttf_text(FALLBACK_FONT_BYTES, text, &options) {
             info!("✓ [Snake] Rendered text announcement '{}' using embedded fallback font", text);
             maybe_title_path = Some(text_path);
         }

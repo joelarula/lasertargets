@@ -1,6 +1,8 @@
+use terminal_ui::{Docking, ItemState, ToolbarButton, ToolbarItem};
 use bevy::{app::{App, Plugin, Update}, ecs::{component::Component, entity::Entity, query::{Changed, With}, system::{Commands, Query, Res, ResMut}}, prelude::default, state::{condition::in_state, state::{NextState, OnEnter, OnExit, State}}, ui::Interaction, input::ButtonInput, window::PrimaryWindow};
 use bevy_quinnet::client::QuinnetClient;
-use common::{game::{GameSessionCreated, GameSessionUpdate}, network::NetworkMessage, path::UniversalPath, scene::{SceneData, SceneSetup}, state::{GameState, ServerState, TerminalState}, toolbar::{Docking, ItemState, ToolbarButton, ToolbarItem}};
+use common::curator_core::CuratorEventEnvelope;
+use common::{game::{GameSessionCreated, GameSessionUpdate}, network::NetworkMessage, path::UniversalPath, scene::{SceneData, SceneSetup}, state::{ServerState, TerminalState}};
 use crate::common::{GAME_ID, HunterGameState, generate_game_report};
 use crate::events::SpawnHunterTargetEvent;
 use crate::model::{HunterGameStats};
@@ -201,14 +203,9 @@ fn handle_balloon_button_click(
             log::info!("'Spawn Balloon' button pressed");
             if *terminal_state.get() == TerminalState::Connected {
                 if let Some(connection) = client.get_connection_mut() {
-                    let target = common::target::HunterTarget::Baloon(0.2, Color::srgb(1.0, 0.0, 0.0));
-                    let payload_json = serde_json::to_string(&SpawnHunterTargetEvent { target, position: Vec3::ZERO }).unwrap_or_default();
-                    let message = NetworkMessage::GameDataPayload {
-                        game_id: GAME_ID,
-                        session_id: bevy::asset::uuid::Uuid::nil(),
-                        event_tag: "spawn_target".to_string(),
-                        payload_json,
-                    };
+                    let target = crate::types::HunterTarget::Baloon(0.2, Color::srgb(1.0, 0.0, 0.0));
+                    let env = CuratorEventEnvelope::from_payload(&SpawnHunterTargetEvent { target, position: Vec3::ZERO }, None);
+                    let message = NetworkMessage::CuratorEnvelope(env);
                     if let Ok(payload) = message.to_bytes() {
                         if let Err(e) = connection.send_payload(payload) {
                             bevy::log::warn!("Failed to send spawn balloon message: {:?}", e);
@@ -259,9 +256,12 @@ fn handle_button_click(
             log::info!("'Start Hunter Game' button pressed");
             if *terminal_state.get() == TerminalState::Connected {
                 if let Some(connection) = client.get_connection_mut() {
-                    // Initialize a Hunter game session with a new UUID and game ID
+                    // Open Hunter channel session with a new UUID
                     let game_uuid = bevy::asset::uuid::Uuid::new_v4();
-                    let message = NetworkMessage::InitGameSession(game_uuid, GAME_ID, GameState::Paused);
+                    let message = NetworkMessage::OpenSession {
+                        session_id: game_uuid,
+                        channel_name: "hunter".to_string(),
+                    };
 
                     if let Ok(payload) = message.to_bytes() {
                         if let Err(e) = connection.send_payload(payload) {
@@ -311,14 +311,9 @@ fn handle_target_drag(
             if *terminal_state.get() == TerminalState::Connected {
                 if let Some(connection) = client.get_connection_mut() {
                     // Create a basic target with size 0.25 world units
-                    let target = common::target::HunterTarget::Basic(0.25, Color::srgb(1.0, 1.0, 1.0));
-                    let payload_json = serde_json::to_string(&SpawnHunterTargetEvent { target, position: world_pos }).unwrap_or_default();
-                    let message = NetworkMessage::GameDataPayload {
-                        game_id: GAME_ID,
-                        session_id: bevy::asset::uuid::Uuid::nil(),
-                        event_tag: "spawn_target".to_string(),
-                        payload_json,
-                    };
+                    let target = crate::types::HunterTarget::Basic(0.25, Color::srgb(1.0, 1.0, 1.0));
+                    let env = CuratorEventEnvelope::from_payload(&SpawnHunterTargetEvent { target, position: world_pos }, None);
+                    let message = NetworkMessage::CuratorEnvelope(env);
 
                     if let Ok(payload) = message.to_bytes() {
                         if let Err(e) = connection.send_payload(payload) {

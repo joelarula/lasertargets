@@ -4,30 +4,8 @@ use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 use crate::path::{LineStyle, PathPoint, PathSegment, UniversalPath};
 
-/// A single relative point in a shape template
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ShapePoint {
-    pub x: f32,
-    pub y: f32,
-    #[serde(default = "default_color_val")]
-    pub r: u8,
-    #[serde(default = "default_color_val")]
-    pub g: u8,
-    #[serde(default = "default_color_val")]
-    pub b: u8,
-    #[serde(default)]
-    pub dwell: u8,
-}
-
-fn default_color_val() -> u8 {
-    255
-}
-
-impl ShapePoint {
-    pub fn new(x: f32, y: f32, r: u8, g: u8, b: u8, dwell: u8) -> Self {
-        Self { x, y, r, g, b, dwell }
-    }
-}
+/// Backward-compatible alias: ShapePoint is unified with PathPoint
+pub type ShapePoint = PathPoint;
 
 /// A reusable, named shape template for laser targets, UI, and minigames
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -167,6 +145,8 @@ impl ShapeLibrary {
         // Dynamically scan asset directories on disk for any new or updated JSON shape templates
         self.scan_directory("assets/shapes/templates");
         self.scan_directory("assets/shapes");
+        self.scan_directory("../assets/shapes/templates");
+        self.scan_directory("../assets/shapes");
     }
 
     /// Scan a filesystem directory (recursively) for shape template .json files and register them
@@ -234,6 +214,171 @@ impl ShapeLibrary {
     }
 }
 
+/// Procedural vector shape generators
+pub mod procedural {
+    use bevy::prelude::*;
+    use lyon_path::Path;
+    use crate::path::{PathPoint, PathSegment, UniversalPath};
+
+    /// Create a circle path with zero-tail galvo blanking and dwell
+    pub fn circle(center: Vec2, radius: f32, color: Color) -> UniversalPath {
+        let mut seg = PathSegment::empty();
+        let num_pts = 32;
+        let (r, g, b) = PathPoint::color_to_rgb(color);
+        let start_x = center.x + radius;
+        let start_y = center.y;
+
+        // 1. Blank move + 4 blanked dwell points at start position (laser OFF, galvo settles)
+        seg.points.push(PathPoint::new(start_x, start_y, 0, 0, 0, 4));
+
+        // 2. 4 lit dwell points at start position (laser ON, galvo stationary)
+        seg.points.push(PathPoint::new(start_x, start_y, r, g, b, 4));
+
+        // 3. Scan 360° circle perimeter
+        for i in 1..=num_pts {
+            let angle = (i as f32 / num_pts as f32) * std::f32::consts::TAU;
+            let x = center.x + radius * angle.cos();
+            let y = center.y + radius * angle.sin();
+            seg.points.push(PathPoint::new(x, y, r, g, b, 0));
+        }
+
+        // 4. Extra 2 overlap points past 360° to ensure 100% galvo loop closure
+        for i in 1..=2 {
+            let angle = (i as f32 / num_pts as f32) * std::f32::consts::TAU;
+            let x = center.x + radius * angle.cos();
+            let y = center.y + radius * angle.sin();
+            seg.points.push(PathPoint::new(x, y, r, g, b, 0));
+        }
+
+        let end_angle = (2.0 as f32 / num_pts as f32) * std::f32::consts::TAU;
+        let end_x = center.x + radius * end_angle.cos();
+        let end_y = center.y + radius * end_angle.sin();
+
+        // 5. 4 lit dwell points at end position (laser ON, galvo stationary)
+        seg.points.push(PathPoint::new(end_x, end_y, r, g, b, 4));
+
+        // 6. 4 blanked dwell points at end position (laser OFF at end position before moving)
+        seg.points.push(PathPoint::new(end_x, end_y, 0, 0, 0, 4));
+
+        UniversalPath::from_segment(seg)
+    }
+
+    /// Create a balloon path shape (closed circular body + knot + string) with zero-tail blanking dwell
+    pub fn balloon(center: Vec2, radius: f32, color: Color) -> UniversalPath {
+        let mut seg = PathSegment::empty();
+        let num_pts = 32;
+        let (r, g, b) = PathPoint::color_to_rgb(color);
+        let top_x = center.x;
+        let top_y = center.y + radius;
+
+        // 1. Blank move + 4 blanked dwell points at top of balloon (laser OFF, galvo settles)
+        seg.points.push(PathPoint::new(top_x, top_y, 0, 0, 0, 4));
+
+        // 2. 4 lit dwell points at top position (laser ON, galvo stationary)
+        seg.points.push(PathPoint::new(top_x, top_y, r, g, b, 4));
+
+        // 3. Balloon circular body
+        for i in 1..=num_pts {
+            let angle = std::f32::consts::FRAC_PI_2 + (i as f32 / num_pts as f32) * std::f32::consts::TAU;
+            let x = center.x + radius * angle.cos();
+            let y = center.y + radius * angle.sin();
+            seg.points.push(PathPoint::new(x, y, r, g, b, 0));
+        }
+
+        // 4. Extra 2 overlap points to ensure 100% body closure
+        for i in 1..=2 {
+            let angle = std::f32::consts::FRAC_PI_2 + (i as f32 / num_pts as f32) * std::f32::consts::TAU;
+            let x = center.x + radius * angle.cos();
+            let y = center.y + radius * angle.sin();
+            seg.points.push(PathPoint::new(x, y, r, g, b, 0));
+        }
+
+        // 5. Balloon Knot at bottom
+        let knot_y = center.y - radius;
+        seg.points.push(PathPoint::new(center.x, knot_y, r, g, b, 4));
+        seg.points.push(PathPoint::new(center.x - 0.04 * radius, knot_y - 0.05 * radius, r, g, b, 2));
+        seg.points.push(PathPoint::new(center.x + 0.04 * radius, knot_y - 0.05 * radius, r, g, b, 2));
+        seg.points.push(PathPoint::new(center.x, knot_y, r, g, b, 2));
+
+        // 6. Balloon String
+        let string_y = knot_y - 0.15 * radius;
+        seg.points.push(PathPoint::new(center.x, string_y, r, g, b, 4));
+
+        // 7. Blanked dwell points at end of string (laser OFF before galvo moves to next path)
+        seg.points.push(PathPoint::new(center.x, string_y, 0, 0, 0, 4));
+
+        UniversalPath::from_segment(seg)
+    }
+
+    /// Create a diamond (rotated square) path — a square rotated 45° with sharp corner dwells
+    pub fn diamond(center: Vec2, half_size: f32, color: Color) -> UniversalPath {
+        let top    = Vec2::new(center.x,             center.y + half_size);
+        let right  = Vec2::new(center.x + half_size, center.y);
+        let bottom = Vec2::new(center.x,             center.y - half_size);
+        let left   = Vec2::new(center.x - half_size, center.y);
+
+        let mut segment = PathSegment::empty();
+        // Closed loop: top → right → bottom → left → top, all with sharp corner dwell
+        segment.push(top.x,    top.y,    color, 4);
+        segment.push(right.x,  right.y,  color, 4);
+        segment.push(bottom.x, bottom.y, color, 4);
+        segment.push(left.x,   left.y,   color, 4);
+        segment.push(top.x,    top.y,    color, 4); // Exact closed loop seam (start == end)
+
+        UniversalPath::from_segment(segment)
+    }
+
+    /// Create a sharp perpendicular crosshair path with proper arrival/departure dwells & blanking
+    pub fn crosshair(center: Vec2, size: f32, color: Color) -> UniversalPath {
+        let half_size = size / 2.0;
+        let blank = Color::NONE;
+
+        // 1. Horizontal Line Segment (-X to +X)
+        let mut horiz_seg = PathSegment::empty();
+        let left_x = center.x - half_size;
+        let right_x = center.x + half_size;
+        let y = center.y;
+
+        horiz_seg.push(left_x, y, blank, 4);  // Blanked arrival dwell
+        horiz_seg.push(left_x, y, color, 4);  // Lit start dwell
+        horiz_seg.push(right_x, y, color, 4); // Lit end dwell
+        horiz_seg.push(right_x, y, blank, 4); // Blanked departure dwell
+
+        // 2. Vertical Line Segment (-Y to +Y)
+        let mut vert_seg = PathSegment::empty();
+        let bottom_y = center.y - half_size;
+        let top_y = center.y + half_size;
+        let x = center.x;
+
+        vert_seg.push(x, bottom_y, blank, 4); // Blanked arrival dwell
+        vert_seg.push(x, bottom_y, color, 4); // Lit start dwell
+        vert_seg.push(x, top_y, color, 4);    // Lit end dwell
+        vert_seg.push(x, top_y, blank, 4);    // Blanked departure dwell
+
+        let mut path = UniversalPath::new();
+        path.add_segment(horiz_seg);
+        path.add_segment(vert_seg);
+        path
+    }
+
+    /// Create a rectangle path
+    pub fn rectangle(top_left: Vec2, size: Vec2, color: Color) -> UniversalPath {
+        use lyon_tessellation::math::point;
+        let mut builder = Path::builder().with_svg();
+        builder.move_to(point(top_left.x, top_left.y));
+        builder.line_to(point(top_left.x + size.x, top_left.y));
+        builder.line_to(point(top_left.x + size.x, top_left.y + size.y));
+        builder.line_to(point(top_left.x, top_left.y + size.y));
+        builder.close();
+
+        UniversalPath {
+            segments: vec![PathSegment::from_lyon_path(&builder.build(), color, 1.0)],
+        }
+    }
+}
+
+pub use procedural::*;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -273,7 +418,12 @@ mod tests {
     #[test]
     fn test_directory_scanning() {
         let mut lib = ShapeLibrary::new();
-        let loaded = lib.scan_directory("assets/shapes/templates");
+        let dir = if std::path::Path::new("assets/shapes/templates").exists() {
+            "assets/shapes/templates"
+        } else {
+            "../assets/shapes/templates"
+        };
+        let loaded = lib.scan_directory(dir);
         assert!(loaded >= 7, "Expected at least 7 templates loaded from directory scan");
     }
 }

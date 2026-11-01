@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
-use crate::path::{PathPoint, PathSegment, UniversalPath};
+use common::path::{PathPoint, PathSegment, UniversalPath};
 
 /// Windowing function applied to the spatial coordinate s in [0, 1] to prevent
 /// laser clipping, tearing, or abrupt endpoint jumps.
@@ -387,3 +387,4 @@ mod tests {
         assert!(path.segments[0].points.len() >= 64);
     }
 }
+

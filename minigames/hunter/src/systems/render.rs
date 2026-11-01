@@ -1,7 +1,8 @@
 use bevy::prelude::*;
-use common::path::{LaserTextOptions, PathRenderable, UniversalPath};
+use common::path::{PathRenderable, UniversalPath};
+use laserlogic::{from_ttf_text, LaserTextOptions};
 use common::scene::{SceneEntity, SceneSetup};
-use common::state::GameState;
+use common::state::SessionState;
 
 use crate::common::GAME_ID;
 use crate::components::{HunterShotRipple, HunterTitleAnnouncement};
@@ -14,7 +15,7 @@ pub fn spawn_hunter_title_on_session_start(
     existing_titles: Query<Entity, With<HunterTitleAnnouncement>>,
 ) {
     for event in created_events.read() {
-        if event.game_session.game_id != GAME_ID || event.game_session.state != GameState::InGame {
+        if event.game_session.game_id != GAME_ID || event.game_session.state != SessionState::Active {
             continue;
         }
 
@@ -53,7 +54,7 @@ pub fn spawn_hunter_title_on_session_start(
         let mut maybe_title_path = None;
         for path in &font_paths {
             if let Ok(data) = std::fs::read(path) {
-                if let Ok(text_path) = UniversalPath::from_ttf_text(&data, "HUNTER", &options) {
+                if let Ok(text_path) = from_ttf_text(&data, "HUNTER", &options) {
                     info!("✓ [Hunter] Rendered full-scene center vector title using font {}", path);
                     maybe_title_path = Some(text_path);
                     break;
@@ -63,7 +64,7 @@ pub fn spawn_hunter_title_on_session_start(
 
         if maybe_title_path.is_none() {
             const FALLBACK_FONT_BYTES: &[u8] = include_bytes!("../../../../assets/fonts/centurygothic.ttf");
-            if let Ok(text_path) = UniversalPath::from_ttf_text(FALLBACK_FONT_BYTES, "HUNTER", &options) {
+            if let Ok(text_path) = from_ttf_text(FALLBACK_FONT_BYTES, "HUNTER", &options) {
                 info!("✓ [Hunter] Rendered full-scene center vector title using embedded fallback font");
                 maybe_title_path = Some(text_path);
             }

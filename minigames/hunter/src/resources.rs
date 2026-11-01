@@ -1,6 +1,6 @@
 use bevy::asset::uuid::Uuid;
 use bevy::prelude::*;
-use common::target::HunterTarget;
+use crate::types::HunterTarget;
 use serde::{Deserialize, Serialize};
 
 use crate::types::TargetEvent;

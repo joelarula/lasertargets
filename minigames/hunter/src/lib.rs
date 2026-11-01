@@ -7,3 +7,4 @@ pub mod common;
 pub mod systems;
 pub mod server;
 pub mod terminal;
+pub mod workflow;

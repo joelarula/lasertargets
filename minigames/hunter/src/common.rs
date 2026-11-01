@@ -12,7 +12,7 @@ pub const GAME_NAME: &str = "huntergame";
 pub struct HunterGamePlugin;
 
 #[derive(SubStates,Debug, Clone, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
-#[source(ServerState = ServerState::InGame)]
+#[source(ServerState = ServerState::Session)]
 pub enum HunterGameState {
     #[default]
     Off,

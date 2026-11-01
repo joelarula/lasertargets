@@ -6,7 +6,7 @@ pub use crate::components::HunterTitleAnnouncement;
 pub use crate::events::SpawnHunterTargetEvent;
 pub use crate::resources::HunterTargetSelection;
 use crate::systems::collision::handle_hunter_clicks;
-use crate::systems::input::handle_hunter_gamepad_inputs;
+use crate::systems::input::{handle_hunter_gamepad_inputs, handle_hunter_mouse_clicks};
 use crate::systems::lifecycle::{
     forward_hunter_stats_to_network, handle_incoming_hunter_payloads, hunter_session_is_running,
     reset_hunter_on_new_session, reset_hunter_session, save_hunter_report,
@@ -38,14 +38,14 @@ impl Plugin for HunterGameServerPlugin {
                 HunterSystemSet::Render,
                 HunterSystemSet::Lifecycle,
             )
-                .run_if(in_state(ServerState::InGame))
+                .run_if(in_state(ServerState::Session))
                 .run_if(hunter_session_is_running),
         );
 
         app.add_systems(
             Update,
             (
-                handle_hunter_gamepad_inputs.in_set(HunterSystemSet::Input),
+                (handle_hunter_gamepad_inputs, handle_hunter_mouse_clicks).in_set(HunterSystemSet::Input),
                 (spawn_hunter_targets, update_target_spawn_immunity).in_set(HunterSystemSet::Spawn),
                 handle_hunter_clicks.in_set(HunterSystemSet::Collision),
                 (animate_hunter_shot_ripples, check_balloon_out_of_bounds).in_set(HunterSystemSet::Render),
@@ -57,12 +57,12 @@ impl Plugin for HunterGameServerPlugin {
             FixedUpdate,
             update_balloon_positions
                 .in_set(HunterSystemSet::Movement)
-                .run_if(in_state(ServerState::InGame))
+                .run_if(in_state(ServerState::Session))
                 .run_if(hunter_session_is_running),
         );
 
         app.add_systems(
-            OnExit(ServerState::InGame),
+            OnExit(ServerState::Session),
             (save_hunter_report, reset_hunter_session).chain(),
         );
 
@@ -72,7 +72,28 @@ impl Plugin for HunterGameServerPlugin {
                 reset_hunter_on_new_session,
                 spawn_hunter_title_on_session_start,
                 animate_hunter_title_announcement,
+                spawn_hunter_workflow_on_session_start,
+                crate::workflow::handle_hunter_phase_events,
             ),
         );
+    }
+}
+
+fn spawn_hunter_workflow_on_session_start(
+    mut commands: Commands,
+    mut created_events: MessageReader<common::game::GameSessionCreated>,
+    existing_workflows: Query<&common::curator_core::WorkflowInstance>,
+) {
+    use common::curator_core::CuratorCommandsExt;
+    for event in created_events.read() {
+        if event.game_session.game_id != crate::common::GAME_ID {
+            continue;
+        }
+        let session_id = event.game_session.session_id;
+        let already_running = existing_workflows.iter().any(|w| w.session_id == Some(session_id) && w.status == common::curator_core::WorkflowStatus::Running);
+        if !already_running {
+            info!("[HunterServer] Launching declarative Curator workflow for session {}", session_id);
+            commands.spawn_workflow_with_session(session_id, crate::workflow::build_hunter_workflow(session_id));
+        }
     }
 }

@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use common::config::{CameraConfiguration, ProjectorConfiguration, SceneConfiguration};
 use common::game::{ExitGameEvent, GameSession, InitGameSessionEvent};
-use common::state::{CalibrationState, GameState, ServerState};
+use common::state::{CalibrationState, SessionState, ServerState};
 use gamepad::{Btn, GamepadBasePlugin, GamepadState, PrevGamepadState, ServerGamepadCursor, GAMEPAD_STICK_DEADZONE, SERVER_GAMEPAD_CLIENT_ID};
 use crate::plugins::actor::ActorLink;
 use crate::plugins::network::MousePositionEvent;
@@ -430,7 +430,7 @@ fn gamepad_menu_game_switcher(
     state: Res<GamepadState>,
     prev: Res<PrevGamepadState>,
     game_sessions: Query<&GameSession>,
-    next_game_state: Res<NextState<GameState>>,
+    next_game_state: Res<NextState<SessionState>>,
     next_server_state: Res<NextState<ServerState>>,
     game_registry: Option<Res<common::game::GameRegistry>>,
     mut init_events: MessageWriter<InitGameSessionEvent>,
@@ -459,7 +459,7 @@ fn gamepad_menu_game_switcher(
             return;
         }
 
-        let active_session = game_sessions.iter().find(|s| s.state == GameState::InGame);
+        let active_session = game_sessions.iter().find(|s| s.state == SessionState::Active);
         if let Some(current_session) = active_session {
             let current_game_id = current_session.game_id;
             let current_uuid = current_session.session_id;
@@ -479,7 +479,7 @@ fn gamepad_menu_game_switcher(
                     init_events.write(InitGameSessionEvent {
                         game_id: next_game.id,
                         game_session_uuid: new_uuid,
-                        initial_state: GameState::InGame,
+                        initial_state: SessionState::Active,
                     });
                 } else {
                     info!("★ Gamepad Menu Switcher: Switched back to Calibration / Main Menu");
@@ -488,14 +488,14 @@ fn gamepad_menu_game_switcher(
                 info!("★ Gamepad Menu Switcher: Switched back to Calibration / Main Menu");
             }
         } else {
-            // No active InGame session -> Launch first registered game
+            // No active Session -> Launch first registered game
             let first_game = available_games[0];
             let new_uuid = bevy::asset::uuid::Uuid::new_v4();
             info!("🎮 GAME STARTED: {} (Game ID {}) [session {}]", first_game.name, first_game.id, new_uuid);
             init_events.write(InitGameSessionEvent {
                 game_id: first_game.id,
                 game_session_uuid: new_uuid,
-                initial_state: GameState::InGame,
+                initial_state: SessionState::Active,
             });
         }
     }

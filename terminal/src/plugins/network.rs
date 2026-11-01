@@ -1,10 +1,10 @@
-use common::state::{CalibrationState, GameState, ServerState, TerminalState, ServerInstanceId};
+use common::state::{CalibrationState, ServerState, TerminalState, ServerInstanceId};
 use bevy::prelude::*;
 use bevy_quinnet::client::connection::ClientSideConnection;
 use bevy_quinnet::client::{certificate::CertificateVerificationMode, connection::ClientAddrConfiguration, ClientConnectionConfiguration, QuinnetClient, QuinnetClientPlugin};
 use common::config::{CameraConfiguration, ProjectorConfiguration, SceneConfiguration};
 use common::network::{NetworkMessage, SERVER_PORT};
-use common::toolbar::{Docking, ItemState, ToolbarItem};
+use terminal_ui::{Docking, ItemState, ToolbarItem};
 use std::net::{IpAddr, Ipv6Addr};
 use common::game::{GameSessionUpdate, GameSessionCreated};
 use hunter::model::HunterGameStats;
@@ -80,7 +80,8 @@ impl Plugin for NetworkPlugin {
             .add_systems(Update, receive_server_messages)
             .add_systems(Update, send_projector_config_updates)
             .add_systems(Update, send_camera_config_updates)
-            .add_systems(Update, send_scene_config_updates);
+            .add_systems(Update, send_scene_config_updates)
+            .add_systems(Update, send_curator_prompt_responses);
 
     }
 }
@@ -116,7 +117,6 @@ fn handle_client_connection_events(
     current_state: Res<State<TerminalState>>,
     mut next_state: ResMut<NextState<TerminalState>>,
     mut next_server_state: ResMut<NextState<ServerState>>,
-    mut next_game_state: ResMut<NextState<GameState>>,
     mut attempt: ResMut<ConnectionAttempt>,
 ) {
     if client.is_connected() {
@@ -129,9 +129,7 @@ fn handle_client_connection_events(
             if let Some(connection) = client.get_connection_mut() {
                 let queries = [
                     NetworkMessage::QueryServerState,
-                    NetworkMessage::QueryGameState,
                     NetworkMessage::QueryCalibrationState,
-                    NetworkMessage::QueryGameSession,
                     NetworkMessage::QueryProjectorConfig,
                     NetworkMessage::QueryCameraConfig,
                     NetworkMessage::QuerySceneConfig,
@@ -153,7 +151,6 @@ fn handle_client_connection_events(
             info!("Disconnected from server!");
             next_state.set(TerminalState::Disconnected);
             next_server_state.set(ServerState::Menu);
-            next_game_state.set(GameState::Paused);
             attempt.in_flight = false;
         } else if *current_state.get() == TerminalState::Disconnected {
             // After being Disconnected, transition to Connecting to trigger automated reconnection
@@ -215,10 +212,11 @@ fn receive_server_messages(
     mut broadcast_scene_paths_writer: MessageWriter<BroadcastScenePaths>,
     mut next_states: ParamSet<(
         ResMut<NextState<ServerState>>,
-        ResMut<NextState<GameState>>,
         ResMut<NextState<CalibrationState>>,
     )>,
     mut local_instance_id: ResMut<ServerInstanceId>,
+    mut prompt_request_writer: MessageWriter<curator_core::ActorPromptRequestEvent>,
+    mut curator_envelope_writer: MessageWriter<curator_core::CuratorEventEnvelope>,
 ) {
     if !client.is_connected() {
         return;
@@ -280,29 +278,24 @@ fn receive_server_messages(
                                     info!("Updated scene configuration from SceneSetup");
                                 }
                             }
-                            NetworkMessage::GameSessionCreated(session) => {
-                                info!("Received GameSessionCreated from server: {:?}", session);
-                                game_session_created_writer.write(GameSessionCreated { game_session: session });
+                            NetworkMessage::SessionCreated(session) => {
+                                info!("Received SessionCreated from server: {:?}", session);
+                                game_session_created_writer.write(GameSessionCreated { game_session: session.into() });
                             }
-                            NetworkMessage::GameSessionUpdate(session) => {
-                                info!("Received GameSessionUpdate from server: {:?}", session);
-                                game_session_update_writer.write(GameSessionUpdate { game_session: session });
+                            NetworkMessage::SessionUpdate(session) => {
+                                info!("Received SessionUpdate from server: {:?}", session);
+                                game_session_update_writer.write(GameSessionUpdate { game_session: session.into() });
                             }
                             NetworkMessage::ServerStateUpdate(server_state) => {
                                 info!("Received ServerStateUpdate from server: {:?}", server_state);
                                 next_states.p0().set(server_state);
                             }
-                            NetworkMessage::GameStateUpdate(game_state) => {
-                                info!("Received GameStateUpdate from server: {:?}", game_state);
-                                next_states.p1().set(game_state);
-                            }
                             NetworkMessage::CalibrationStateUpdate(calibration_state) => {
                                 info!("Received CalibrationStateUpdate from server: {:?}", calibration_state);
-                                next_states.p2().set(calibration_state);
+                                next_states.p1().set(calibration_state);
                             }
-                            NetworkMessage::ExitGameSession(uuid) => {
-                                info!("Received ExitGameSession from server for session: {:?}", uuid);
-                                
+                            NetworkMessage::CloseSession { session_id } => {
+                                info!("Received CloseSession from server for session: {:?}", session_id);
                             }
                             NetworkMessage::Ping { timestamp } => {
                                 info!("Received Ping from server: timestamp={}", timestamp);
@@ -320,9 +313,15 @@ fn receive_server_messages(
                                     frame: common::path::VectorFrame::new(0, paths),
                                 });
                             }
-                            NetworkMessage::GameDataPayload { game_id, session_id, event_tag, payload_json } => {
-                                if event_tag == "hunter_stats" {
-                                    if let Ok(event) = serde_json::from_str::<hunter::model::BroadcastStatsUpdateEvent>(&payload_json) {
+                            NetworkMessage::CuratorPrompt(prompt) => {
+                                info!("Received CuratorPrompt: {} ({:?})", prompt.title, prompt.prompt_id);
+                                prompt_request_writer.write(curator_core::ActorPromptRequestEvent { prompt });
+                            }
+                            NetworkMessage::CuratorEnvelope(env) => {
+                                info!("Received CuratorEnvelope: {}", env.tag);
+                                if env.tag == "hunter_stats" {
+                                    if let Ok(event) = serde_json::from_value::<hunter::model::BroadcastStatsUpdateEvent>(env.payload.clone()) {
+                                        let session_id = env.session_id.unwrap_or_default();
                                         if let Some(mut stats) = hunter_stats.as_mut() {
                                             if stats.session_id != session_id {
                                                 **stats = HunterGameStats {
@@ -352,16 +351,17 @@ fn receive_server_messages(
                                             });
                                         }
                                     }
-                                } else if event_tag == "snake_stats" {
-                                    if let Ok(event) = serde_json::from_str::<snake::model::BroadcastSnakeStatsEvent>(&payload_json) {
+                                } else if env.tag == "snake_stats" {
+                                    if let Ok(event) = serde_json::from_value::<snake::model::BroadcastSnakeStatsEvent>(env.payload.clone()) {
                                         commands.insert_resource(snake::model::SnakeGameStats {
-                                            session_id,
+                                            session_id: env.session_id.unwrap_or_default(),
                                             score: event.score,
                                             length: event.length,
                                             game_over: event.game_over,
                                         });
                                     }
                                 }
+                                curator_envelope_writer.write(env);
                             }
                             NetworkMessage::ServerInfo { instance_id } => {
                                 if local_instance_id.0 != Some(instance_id) {
@@ -536,6 +536,24 @@ fn handle_shutdown_button(
             if let Some(connection) = client.get_connection_mut() {
                 let _ = connection.send_payload(NetworkMessage::ShutdownServer.to_bytes().unwrap());
                 info!("Sent ShutdownServer command");
+            }
+        }
+    }
+}
+fn send_curator_prompt_responses(
+    mut client: ResMut<QuinnetClient>,
+    mut prompt_responses: MessageReader<curator_core::ActorPromptResponseEvent>,
+    terminal_state: Res<State<TerminalState>>,
+) {
+    if *terminal_state.get() != TerminalState::Connected {
+        return;
+    }
+    if let Some(connection) = client.get_connection_mut() {
+        for resp in prompt_responses.read() {
+            let msg = NetworkMessage::CuratorPromptResponse(resp.response.clone());
+            if let Ok(bytes) = msg.to_bytes() {
+                info!("Sending CuratorPromptResponse for prompt {:?}", resp.response.prompt_id);
+                let _ = connection.send_payload(bytes);
             }
         }
     }

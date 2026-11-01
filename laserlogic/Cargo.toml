@@ -9,6 +9,9 @@ serde_json = { workspace = true }
 libloading = { workspace = true }
 log = { workspace = true }
 crossterm = "0.28"
+bevy = { workspace = true }
+common = { path = "../common" }
+ttf-parser = { workspace = true }
 
 [[bin]]
 name = "dac-test"

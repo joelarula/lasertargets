@@ -2132,13 +2132,12 @@ version = "0.1.0"
 dependencies = [
  "bevy",
  "bincode",
- "laserlogic",
+ "curator-core",
  "lyon_geom",
  "lyon_path",
  "lyon_tessellation",
  "serde",
  "serde_json",
- "ttf-parser 0.21.1",
 ]
 
 [[package]]
@@ -2415,6 +2414,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "curator-core"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "log",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "cursor-icon"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2432,7 +2441,7 @@ dependencies = [
  "log",
  "serde",
  "serde_json",
- "server",
+ "server-core",
 ]
 
 [[package]]
@@ -3550,11 +3559,13 @@ dependencies = [
  "bevy_quinnet",
  "common",
  "gamepad",
+ "laserlogic",
  "log",
  "rand",
  "seldom_state",
  "serde",
  "serde_json",
+ "terminal-ui",
 ]
 
 [[package]]
@@ -3890,11 +3901,14 @@ dependencies = [
 name = "laserlogic"
 version = "0.1.0"
 dependencies = [
+ "bevy",
+ "common",
  "crossterm",
  "libloading",
  "log",
  "serde",
  "serde_json",
+ "ttf-parser 0.21.1",
 ]
 
 [[package]]
@@ -5639,13 +5653,30 @@ dependencies = [
  "bevy_quinnet",
  "bincode",
  "common",
- "gamepad",
+ "curator-core",
  "hunter",
+ "libc",
+ "log",
+ "serde",
+ "server-core",
+ "snake",
+]
+
+[[package]]
+name = "server-core"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "bevy_quinnet",
+ "bincode",
+ "common",
+ "curator-core",
+ "gamepad",
  "laserlogic",
  "libc",
  "log",
  "serde",
- "snake",
+ "serde_json",
 ]
 
 [[package]]
@@ -5832,10 +5863,12 @@ dependencies = [
  "bevy_quinnet",
  "common",
  "gamepad",
+ "laserlogic",
  "log",
  "rand",
  "serde",
  "serde_json",
+ "terminal-ui",
 ]
 
 [[package]]
@@ -6026,6 +6059,7 @@ dependencies = [
  "bevy_prototype_lyon",
  "bevy_quinnet",
  "common",
+ "curator-core",
  "egui",
  "hunter",
  "log",
@@ -6033,6 +6067,14 @@ dependencies = [
  "serde",
  "serde_json",
  "snake",
+ "terminal-ui",
+]
+
+[[package]]
+name = "terminal-ui"
+version = "0.1.0"
+dependencies = [
+ "bevy",
 ]
 
 [[package]]

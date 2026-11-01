@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use common::{
     game::{ExitGameEvent, FinishGameEvent, GameRegistry, GameSession, GameSessionCreated, GameSessionUpdate, InitGameSessionEvent, PauseGameEvent, ResumeGameEvent, StartGameEvent},
-    state::{GameState, ServerState},
+    state::{SessionState, ServerState},
 };
 
 pub struct GamePlugin;
@@ -19,7 +19,7 @@ impl Plugin for GamePlugin {
 
 fn handle_exit_game(
     mut commands: Commands,
-    mut next_game_state: ResMut<NextState<GameState>>,
+    mut next_game_state: ResMut<NextState<SessionState>>,
     mut next_server_state: ResMut<NextState<ServerState>>,
     game_sessions: Query<(Entity, &GameSession)>,
     mut exit_game_events: MessageReader<ExitGameEvent>,
@@ -31,7 +31,7 @@ fn handle_exit_game(
         if let Some((entity, game_session)) = game_sessions.iter().find(|(_, gs)| gs.session_id == event.game_session_uuid) {
             info!("[handle_exit_game] Found GameSession entity, setting state to Finished and despawning");
             let mut session = game_session.clone();
-            session.state = GameState::Finished;
+            session.state = SessionState::Finished;
             broadcast_events.write(GameSessionUpdate { game_session: session });
             commands.entity(entity).despawn();
         } else {
@@ -39,18 +39,18 @@ fn handle_exit_game(
         }
 
         if init_game_events.is_empty() {
-            info!("[handle_exit_game] Setting GameState to Finished and ServerState to Menu");
-            next_game_state.set(GameState::Finished);
+            info!("[handle_exit_game] Setting SessionState to Finished and ServerState to Menu");
+            next_game_state.set(SessionState::Finished);
             next_server_state.set(ServerState::Menu);
         } else {
-            info!("[handle_exit_game] New game being initialized in same frame; preserving InGame state");
+            info!("[handle_exit_game] New game being initialized in same frame; preserving Session state");
         }
     }
 }
 
 fn handle_init_game(
     mut commands: Commands,
-    mut next_state: ResMut<NextState<GameState>>,
+    mut next_state: ResMut<NextState<SessionState>>,
     mut next_server_state: ResMut<NextState<ServerState>>,
     mut init_game_events: MessageReader<InitGameSessionEvent>,
     mut game_session_created: MessageWriter<GameSessionCreated>,
@@ -69,6 +69,7 @@ fn handle_init_game(
 
         let mut new_game_session = GameSession {
             game_id: event.game_id,
+            channel_name: game.name.clone(),
             session_id: event.game_session_uuid,
             name: game.name.clone(),
             state: event.initial_state.clone(),
@@ -80,8 +81,8 @@ fn handle_init_game(
         let session = new_game_session.clone();
         commands.spawn(session.clone());
 
-        next_server_state.set(ServerState::InGame);
-        next_state.set(GameState::InGame);
+        next_server_state.set(ServerState::Session);
+        next_state.set(SessionState::Active);
 
         game_session_created.write(GameSessionCreated {
             game_session: session,
@@ -91,13 +92,13 @@ fn handle_init_game(
 
 fn handle_start_game(
     mut game_sessions: Query<&mut GameSession>,
-    mut next_state: ResMut<NextState<GameState>>,
+    mut next_state: ResMut<NextState<SessionState>>,
     mut start_game_events: MessageReader<StartGameEvent>,
     mut broadcast_events: MessageWriter<GameSessionUpdate>,
 ) {
     for event in start_game_events.read() {
         if let Some(mut game_session) = game_sessions.iter_mut().find(|gs| gs.session_id == event.game_session_uuid) {
-            next_state.set(GameState::InGame);
+            next_state.set(SessionState::Active);
             game_session.start();
             broadcast_events.write(GameSessionUpdate { game_session: game_session.clone() });
         }
@@ -106,13 +107,13 @@ fn handle_start_game(
 
 fn handle_pause_game(
     mut game_sessions: Query<&mut GameSession>,
-    mut next_state: ResMut<NextState<GameState>>,
+    mut next_state: ResMut<NextState<SessionState>>,
     mut pause_game_events: MessageReader<PauseGameEvent>,
     mut broadcast_events: MessageWriter<GameSessionUpdate>,
 ) {
     for event in pause_game_events.read() {
         if let Some(mut game_session) = game_sessions.iter_mut().find(|gs| gs.session_id == event.game_session_uuid) {
-            next_state.set(GameState::Paused);
+            next_state.set(SessionState::Paused);
             game_session.pause();
             broadcast_events.write(GameSessionUpdate { game_session: game_session.clone() });
         }
@@ -121,13 +122,13 @@ fn handle_pause_game(
 
 fn handle_resume_game(
     mut game_sessions: Query<&mut GameSession>,
-    mut next_state: ResMut<NextState<GameState>>,
+    mut next_state: ResMut<NextState<SessionState>>,
     mut resume_game_events: MessageReader<ResumeGameEvent>,
     mut broadcast_events: MessageWriter<GameSessionUpdate>,
 ) {
     for event in resume_game_events.read() {
         if let Some(mut game_session) = game_sessions.iter_mut().find(|gs| gs.session_id == event.game_session_uuid) {
-            next_state.set(GameState::InGame);
+            next_state.set(SessionState::Active);
             game_session.resume();
             broadcast_events.write(GameSessionUpdate { game_session: game_session.clone() });
         }

@@ -3,9 +3,8 @@ use bevy_quinnet::server::ConnectionLostEvent;
 use common::path::{UniversalPath, PathSegment};
 use common::scene::SceneEntity;
 use common::scene::{SceneSetup, SceneSystemSet};
-use common::game::GameSession;
-use common::state::{CalibrationState, GameState};
-use crate::plugins::network::{MousePositionEvent};
+use common::state::CalibrationState;
+use common::network::MousePositionEvent;
 
 pub struct CalibrationPlugin;
 
@@ -84,105 +83,23 @@ fn handle_mouse_position_updates(
             calibration_data.mouse_positions.remove(&event.client_id);
         }
     }
-}fn build_hunter_reticle_path(selection: Option<&hunter::server::HunterTargetSelection>) -> UniversalPath {
+}
+
+fn build_calibration_crosshair_path() -> UniversalPath {
     let crosshair_size = 0.4;
     let cyan = Color::srgb(0.0, 0.9, 1.0);
-    let blank = Color::srgb(0.0, 0.0, 0.0);
-    
-    // 1. Crosshair (+) with 2 separate segments (Horizontal & Vertical)
-    let crosshair_base = UniversalPath::crosshair(Vec2::ZERO, crosshair_size, cyan);
-    let mut segments = crosshair_base.segments;
-
-    // 2. Selected target visual preview outline centered at reticle cursor (only in Target Release modes 1-4)
-    if let Some(sel) = selection {
-        if let Some(target) = sel.get_target() {
-            let (radius, color, is_balloon) = match target {
-                common::target::HunterTarget::Basic(size, color) => (size, color, false),
-                common::target::HunterTarget::Baloon(size, color) => (size, color, true),
-            };
-
-            let mut preview_seg = common::path::PathSegment::empty();
-            if is_balloon {
-                let num_pts = 16;
-                preview_seg.push(0.0, radius, blank, 3);
-                for i in 0..=num_pts {
-                    let angle = (i as f32 / num_pts as f32) * std::f32::consts::TAU;
-                    let px = radius * angle.cos();
-                    let py = radius * angle.sin();
-                    preview_seg.push(px, py, color, 0);
-                }
-                // Knot
-                preview_seg.push(0.0, -radius, color, 2);
-                preview_seg.push(-0.04, -radius - 0.04, color, 2);
-                preview_seg.push(0.04, -radius - 0.04, color, 2);
-                preview_seg.push(0.0, -radius, color, 2);
-                // String
-                preview_seg.push(0.0, -radius - 0.12, color, 2);
-                preview_seg.push(0.0, -radius - 0.12, blank, 3);
-            } else {
-                let num_pts = 24;
-                let px_start = radius;
-                let py_start = 0.0;
-
-                // 1. Blank move + 4 blanked dwell points at start position
-                preview_seg.push(px_start, py_start, blank, 4);
-
-                // 2. 4 lit dwell points at start position
-                preview_seg.push(px_start, py_start, color, 4);
-
-                // 3. Circle perimeter
-                for i in 1..=num_pts {
-                    let angle = (i as f32 / num_pts as f32) * std::f32::consts::TAU;
-                    let px = radius * angle.cos();
-                    let py = radius * angle.sin();
-                    preview_seg.push(px, py, color, 0);
-                }
-
-                // 4. Extra 2 overlap points past 360° for 100% closed reticle circle!
-                for i in 1..=2 {
-                    let angle = (i as f32 / num_pts as f32) * std::f32::consts::TAU;
-                    let px = radius * angle.cos();
-                    let py = radius * angle.sin();
-                    preview_seg.push(px, py, color, 0);
-                }
-
-                let end_angle = (2.0 as f32 / num_pts as f32) * std::f32::consts::TAU;
-                let px_end = radius * end_angle.cos();
-                let py_end = radius * end_angle.sin();
-
-                // 5. 4 lit dwell points at end position
-                preview_seg.push(px_end, py_end, color, 4);
-
-                // 6. 4 blanked dwell points at end position (laser OFF at end position before moving)
-                preview_seg.push(px_end, py_end, blank, 4);
-            }
-            segments.push(preview_seg);
-        }
-    }
-
-    UniversalPath { segments }
+    UniversalPath::crosshair(Vec2::ZERO, crosshair_size, cyan)
 }
 
 fn update_and_maintain_crosshair_positions(
     mut commands: Commands,
     calibration_data: Res<CalibrationData>,
-    game_sessions: Query<&GameSession>,
-    hunter_selection: Option<Res<hunter::server::HunterTargetSelection>>,
-    title_announcements: Query<Entity, With<hunter::server::HunterTitleAnnouncement>>,
+    calibration_state: Res<State<CalibrationState>>,
     scene_query: Query<(Entity, &Transform), (With<SceneEntity>, Without<CalibrationCrosshair>)>,
-    mut crosshair_query: Query<(Entity, &mut Transform, &mut GlobalTransform, Option<&ChildOf>, &mut UniversalPath, &CalibrationCrosshair)>,
+    mut crosshair_query: Query<(Entity, &mut Transform, &mut GlobalTransform, Option<&ChildOf>, &CalibrationCrosshair)>,
 ) {
-    // Reticle cursor is an exclusive feature of Hunter game ONLY
-    let hunter_active = game_sessions
-        .iter()
-        .any(|s| s.game_id == 101 && s.state == GameState::InGame);
-
-    // Suppress reticle cursor spawning while game intro vector title announcement ("HUNTER") is active/displayed
-    let title_active = title_announcements.iter().next().is_some();
-
-    if !hunter_active || title_active {
-        // Despawn all cursor crosshairs while intro text is displayed or when not in Hunter game mode
-        for (entity, _, _, _, _, _) in crosshair_query.iter() {
+    if *calibration_state.get() != CalibrationState::On {
+        for (entity, _, _, _, _) in crosshair_query.iter() {
             commands.entity(entity).despawn();
         }
         return;
@@ -191,14 +108,7 @@ fn update_and_maintain_crosshair_positions(
     let scene_transform = scene_query.single().ok().map(|(_, t)| t);
     let mut existing_clients: std::collections::HashMap<u64, Entity> = std::collections::HashMap::new();
 
-    let selection_changed = hunter_selection.as_ref().map(|s| s.is_changed()).unwrap_or(false);
-
-    for (entity, mut transform, mut global_transform, parent, _path, crosshair) in crosshair_query.iter_mut() {
-        if selection_changed {
-            commands.entity(entity).despawn();
-            continue;
-        }
-
+    for (entity, mut transform, mut global_transform, parent, crosshair) in crosshair_query.iter_mut() {
         if let Some(&world_pos) = calibration_data.mouse_positions.get(&crosshair.client_id) {
             let local_pos = if parent.is_some() {
                 if let Some(scene_t) = scene_transform {
@@ -223,7 +133,7 @@ fn update_and_maintain_crosshair_positions(
     let scene_entity = scene_query.single().ok().map(|(e, _)| e);
     for (&client_id, &world_pos) in calibration_data.mouse_positions.iter() {
         if !existing_clients.contains_key(&client_id) {
-            spawn_crosshair_at_position(&mut commands, client_id, world_pos, scene_entity, scene_transform, hunter_selection.as_deref());
+            spawn_crosshair_at_position(&mut commands, client_id, world_pos, scene_entity, scene_transform);
             info!("✓ Auto-restored active crosshair for client {} at {:?}", client_id, world_pos);
         }
     }
@@ -258,9 +168,8 @@ fn spawn_crosshair_at_position(
     world_position: Vec3,
     scene_entity: Option<Entity>,
     scene_transform: Option<&Transform>,
-    selection: Option<&hunter::server::HunterTargetSelection>,
 ) {
-    let crosshair_universal_path = build_hunter_reticle_path(selection);
+    let crosshair_universal_path = build_calibration_crosshair_path();
     
     let local_pos = if let Some(scene_t) = scene_transform {
         let scene_matrix = Mat4::from_scale_rotation_translation(scene_t.scale, scene_t.rotation, scene_t.translation);

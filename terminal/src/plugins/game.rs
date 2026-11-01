@@ -1,7 +1,8 @@
+use terminal_ui::{Docking, ItemState, ToolbarButton, ToolbarItem};
 
-use common::{state::TerminalState, toolbar::{Docking, ItemState, ToolbarButton, ToolbarItem}};
+use common::{state::TerminalState};
 use bevy::{asset::uuid::Uuid, prelude::*};
-use common::{game::{GameSessionUpdate as GameSessionUpdate, GameSessionCreated}, state::{GameState, ServerState}};
+use common::{game::{GameSessionUpdate as GameSessionUpdate, GameSessionCreated}, state::{SessionState, ServerState}};
 
 const GAME_BUTTON: &str = "exit_game";
 const PAUSE_RESUME_BUTTON: &str = "pause_resume_game";
@@ -24,11 +25,11 @@ pub struct GamePlugin;
 impl Plugin for GamePlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<LastGameSessionId>();
-        app.add_systems(OnEnter(ServerState::InGame), spawn_exit_game_toolbar_item);
-        app.add_systems(OnEnter(ServerState::InGame), spawn_pause_resume_toolbar_item);
-        app.add_systems(OnExit(ServerState::InGame), despawn_exit_game_toolbar_item);
-        app.add_systems(OnExit(ServerState::InGame), despawn_pause_resume_toolbar_item);
-        app.add_systems(OnExit(ServerState::InGame), clear_last_session_id);
+        app.add_systems(OnEnter(ServerState::Session), spawn_exit_game_toolbar_item);
+        app.add_systems(OnEnter(ServerState::Session), spawn_pause_resume_toolbar_item);
+        app.add_systems(OnExit(ServerState::Session), despawn_exit_game_toolbar_item);
+        app.add_systems(OnExit(ServerState::Session), despawn_pause_resume_toolbar_item);
+        app.add_systems(OnExit(ServerState::Session), clear_last_session_id);
         app.add_systems(OnEnter(TerminalState::Connecting), clear_game_session_on_disconnect);
         app.add_systems(Update, spawn_gamesession_entity);
         app.add_systems(Update, update_gamesession_entity);
@@ -74,7 +75,7 @@ fn update_gamesession_entity(
         last_session_id.0 = Some(update.game_session.session_id);
     }
 }
-/// Spawns the Exit Game toolbar item when ServerState is InGame
+/// Spawns the Exit Game toolbar item when ServerState is Session
 fn spawn_exit_game_toolbar_item(
     mut commands: Commands,
 ) {
@@ -102,7 +103,7 @@ fn spawn_pause_resume_toolbar_item(
     // Default to Pause if in-game, Resume if paused
     let (icon, label) = if let Ok(session) = session_query.single() {
         match session.state {
-            GameState::Paused => ("\u{f04b}", "Resume"), // Play icon
+            SessionState::Paused => ("\u{f04b}", "Resume"), // Play icon
             _ => ("\u{f04c}", "Pause"), // Pause icon
         }
     } else {
@@ -122,7 +123,7 @@ fn spawn_pause_resume_toolbar_item(
     ));
 }
 
-/// Despawns the Exit Game toolbar item when leaving InGame state
+/// Despawns the Exit Game toolbar item when leaving Session state
 fn despawn_exit_game_toolbar_item(
     mut commands: Commands,
     query: Query<Entity, With<ExitGameButton>>,
@@ -163,11 +164,11 @@ fn handle_exit_game_button(
 
             if let Some(session_id) = session_id {
                 if let Some(connection) = client.get_connection_mut() {
-                    let payload = common::network::NetworkMessage::ExitGameSession(session_id)
+                    let payload = common::network::NetworkMessage::CloseSession { session_id }
                         .to_bytes()
-                        .expect("Failed to serialize ExitGameSession");
+                        .expect("Failed to serialize CloseSession");
                     if let Err(e) = connection.send_payload(payload) {
-                        error!("Failed to send ExitGameSession: {e}");
+                        error!("Failed to send CloseSession: {e}");
                     }
                 }
             } else {
@@ -203,10 +204,12 @@ fn handle_pause_resume_button(
             info!("[GamePlugin] Pause/Resume button pressed");
             if let Ok(session) = session_query.single() {
                 if let Some(connection) = client.get_connection_mut() {
-                    let msg = match session.state {
-                        GameState::Paused => common::network::NetworkMessage::ResumeGameSession(session.session_id),
-                        _ => common::network::NetworkMessage::PauseGameSession(session.session_id),
+                    let tag = match session.state {
+                        SessionState::Paused => "resume_session",
+                        _ => "pause_session",
                     };
+                    let env = common::curator_core::CuratorEventEnvelope::new(tag, serde_json::json!({})).with_session(session.session_id);
+                    let msg = common::network::NetworkMessage::CuratorEnvelope(env);
                     let payload = msg.to_bytes().expect("Failed to serialize Pause/Resume message");
                     if let Err(e) = connection.send_payload(payload) {
                         error!("Failed to send Pause/Resume message: {e}");

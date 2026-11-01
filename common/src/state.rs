@@ -1,21 +1,20 @@
 use bevy::state::state::{States, SubStates};
 use serde::{Deserialize, Serialize};
-use bevy::prelude::StateSet;
-use bevy::prelude::Resource;
+use bevy::prelude::{Resource, StateSet};
 
 #[derive(States, Debug, Clone, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 pub enum ServerState {
     #[default]
     Menu,
-    InGame,
+    Session,
     Receiver,
 }
 
-#[derive(SubStates,Debug, Clone, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
-#[source(ServerState = ServerState::InGame)]
-pub enum GameState {
+#[derive(SubStates, Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+#[source(ServerState = ServerState::Session)]
+pub enum SessionState {
     #[default]
-    InGame,
+    Active,
     Paused,
     Finished,
 }

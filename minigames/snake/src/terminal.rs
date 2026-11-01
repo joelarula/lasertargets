@@ -9,11 +9,11 @@ use bevy::state::state::{NextState, OnEnter, OnExit, State};
 use bevy::ui::Interaction;
 use bevy_quinnet::client::QuinnetClient;
 use common::network::NetworkMessage;
-use common::state::{GameState, ServerState, TerminalState};
-use common::toolbar::{Docking, ItemState, ToolbarButton, ToolbarItem};
+use common::state::{ServerState, TerminalState};
+use terminal_ui::{Docking, ItemState, ToolbarButton, ToolbarItem};
 
 use crate::common::SnakeGameState;
-use crate::model::{SnakeGameStats, GAME_ID};
+use crate::model::SnakeGameStats;
 
 const START_SNAKE_BTN: &str = "start_snake_game";
 
@@ -99,8 +99,10 @@ fn handle_snake_start_button(
             if *terminal_state.get() == TerminalState::Connected {
                 if let Some(connection) = client.get_connection_mut() {
                     let game_uuid = bevy::asset::uuid::Uuid::new_v4();
-                    let message =
-                        NetworkMessage::InitGameSession(game_uuid, GAME_ID, GameState::Paused);
+                    let message = NetworkMessage::OpenSession {
+                        session_id: game_uuid,
+                        channel_name: "snake".to_string(),
+                    };
                     if let Ok(payload) = message.to_bytes() {
                         if let Err(e) = connection.send_payload(payload) {
                             bevy::log::warn!("Failed to send init Snake game message: {:?}", e);
@@ -155,7 +157,7 @@ fn handle_snake_escape(
                 let session_id = snake_stats
                     .map(|s| s.session_id)
                     .unwrap_or_else(bevy::asset::uuid::Uuid::new_v4);
-                let message = NetworkMessage::ExitGameSession(session_id);
+                let message = NetworkMessage::CloseSession { session_id };
                 if let Ok(payload) = message.to_bytes() {
                     let _ = connection.send_payload(payload);
                 }

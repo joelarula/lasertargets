@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use common::scene::SceneData;
-use common::toolbar::{Docking, ItemState, ToolbarButton, ToolbarItem};
+use terminal_ui::{Docking, ItemState, ToolbarButton, ToolbarItem};
 use log::info;
 use crate::plugins::basictarget::BasicTarget;
 use common::path::PathRenderable;

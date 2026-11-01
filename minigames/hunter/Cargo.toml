@@ -11,6 +11,8 @@ bevy = { workspace = true }
 log = { workspace = true }
 bevy_quinnet = { workspace = true }
 common = { path = "../../common" }
+terminal-ui = { workspace = true }
+laserlogic = { path = "../../laserlogic" }
 gamepad = { path = "../../gamepad" }
 serde = { workspace = true }
 serde_json = { workspace = true }

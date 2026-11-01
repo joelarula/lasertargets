@@ -2,10 +2,10 @@
 use bevy_egui::EguiContexts;
 use bevy_egui::egui;
 use common::config::{SceneConfiguration, ProjectorConfiguration};
-use common::toolbar::Docking;
-use common::toolbar::ItemState;
-use common::toolbar::ToolbarButton;
-use common::toolbar::ToolbarItem;
+use terminal_ui::{Docking, ItemState, ToolbarButton, ToolbarItem};
+
+
+
 
 use crate::plugins::camera::DisplayMode;
 use crate::plugins::{

@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use common::config::{CameraConfiguration, ProjectorConfiguration, SceneConfiguration};
 use common::game::GameSession;
-use common::state::{CalibrationState, GameState, ServerInstanceId, ServerState};
+use common::state::{CalibrationState, SessionState, ServerInstanceId, ServerState};
 use gamepad::{GamepadState, ServerGamepadCursor};
 use crate::plugins::actor::ActorLink;
 use crate::plugins::projector::{ProjectorDacController, LaserOptimizeConfig, LaserPointBuffer};
@@ -33,7 +33,7 @@ fn handle_status_report_event(
     gamepad_cursor: Option<Res<ServerGamepadCursor>>,
     server_state: Option<Res<State<ServerState>>>,
     calibration_state: Option<Res<State<CalibrationState>>>,
-    game_state: Option<Res<State<GameState>>>,
+    session_state: Option<Res<State<SessionState>>>,
     server_instance_id: Option<Res<ServerInstanceId>>,
     game_sessions: Query<(Entity, &GameSession, Option<&Children>)>,
     projector_config: Option<Res<ProjectorConfiguration>>,
@@ -60,12 +60,12 @@ fn handle_status_report_event(
     if let Some(s) = &server_state {
         let current_server_state = s.get();
         info!("  • Server Mode:        {:?}", current_server_state);
-        if *current_server_state == ServerState::InGame {
-            if let Some(g) = &game_state {
-                info!("  • Game Session State: {:?}", g.get());
+        if *current_server_state == ServerState::Session {
+            if let Some(g) = &session_state {
+                info!("  • Session State: {:?}", g.get());
             }
         } else {
-            info!("  • Game Session State: Inactive (Server in Menu)");
+            info!("  • Session State: Inactive (Server in Menu)");
         }
     }
     if let Some(c) = &calibration_state {

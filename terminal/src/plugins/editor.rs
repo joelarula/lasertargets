@@ -8,7 +8,7 @@ use std::path::Path;
 use common::network::NetworkMessage;
 use common::path::{PathPoint, PathRenderable, PathSegment, UniversalPath};
 use common::scene::SceneEntity;
-use common::toolbar::{Docking, ItemState, ToolbarButton, ToolbarItem};
+use terminal_ui::{Docking, ItemState, ToolbarButton, ToolbarItem};
 
 const BTN_NAME: &str = "shape_editor";
 

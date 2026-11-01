@@ -1,7 +1,6 @@
 use bevy::prelude::*;
-use common::game::BroadcastGameDataPayload;
 use common::scene::{SceneEntity, SceneSetup};
-use common::state::GameState;
+use common::state::SessionState;
 
 use crate::components::*;
 use crate::events::{BroadcastSnakeStatsEvent, SnakeGameOverEvent};
@@ -31,14 +30,14 @@ pub fn init_snake_game(
     let mut other_game_started = false;
 
     for event in created_events.read() {
-        if event.game_session.game_id == GAME_ID && event.game_session.state == GameState::InGame {
+        if event.game_session.game_id == GAME_ID && event.game_session.state == SessionState::Active {
             should_init = Some(event.game_session.session_id);
         } else {
             other_game_started = true;
         }
     }
     for event in update_events.read() {
-        if event.game_session.game_id == GAME_ID && event.game_session.state == GameState::InGame && existing_state.is_none() {
+        if event.game_session.game_id == GAME_ID && event.game_session.state == SessionState::Active && existing_state.is_none() {
             should_init = Some(event.game_session.session_id);
         }
     }
@@ -199,16 +198,12 @@ pub fn save_snake_report(
 
 pub fn forward_snake_stats_to_network(
     mut events: MessageReader<BroadcastSnakeStatsEvent>,
-    mut payload_writer: MessageWriter<BroadcastGameDataPayload>,
+    mut envelope_writer: MessageWriter<common::curator_core::CuratorEventEnvelope>,
 ) {
     for event in events.read() {
-        if let Ok(json) = serde_json::to_string(event) {
-            payload_writer.write(BroadcastGameDataPayload {
-                game_id: GAME_ID,
-                session_id: event.session_id,
-                event_tag: "snake_stats".to_string(),
-                payload_json: json,
-            });
-        }
+        envelope_writer.write(common::curator_core::CuratorEventEnvelope::from_payload(
+            event,
+            Some(event.session_id),
+        ));
     }
 }

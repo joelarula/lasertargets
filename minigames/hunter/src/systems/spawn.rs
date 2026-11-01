@@ -3,7 +3,7 @@ use bevy::prelude::*;
 use common::game::GameSession;
 use common::path::UniversalPath;
 use common::scene::SceneEntity;
-use common::target::HunterTarget;
+use crate::types::HunterTarget;
 use gamepad::ServerGamepadCursor;
 
 use crate::common::GAME_ID;
