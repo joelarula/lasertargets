@@ -48,7 +48,7 @@ This skill provides step-by-step instructions for provisioning a fresh Raspberry
 Run the automated OS optimization script to lock CPU frequencies and disable USB power management:
 
 ```powershell
-.\scripts\optimize-pi-system.ps1 -TargetHost lasertargets@lasertargets.local
+.\scripts\pi.ps1 optimize -TargetHost lasertargets@lasertargets.local
 ```
 
 ### Optimizations Applied:
@@ -83,13 +83,13 @@ Run hardware diagnostics scripts to verify setup before deploying production ser
 
 - **Verify Network Stability**:
   ```powershell
-  .\scripts\check-pi-network.ps1
+  .\scripts\pi.ps1 check
   ```
-- **Verify SD Card Read/Write Speed**:
+- **Verify SD Card Bootfs**:
   ```powershell
-  .\scripts\check-sd-card.ps1
+  .\scripts\pi.ps1 check-sd -BootDrive D:
   ```
 - **Test USB Helios DAC Output**:
   ```powershell
-  .\scripts\run-dac-test-pi.ps1
+  .\scripts\pi.ps1 dac-test -Scenario shapes
   ```

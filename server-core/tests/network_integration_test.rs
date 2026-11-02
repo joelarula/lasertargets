@@ -647,3 +647,4 @@ fn test_update_scene_config_broadcast() {
         );
     }
 }
+

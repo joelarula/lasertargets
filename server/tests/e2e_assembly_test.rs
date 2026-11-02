@@ -310,3 +310,4 @@ fn test_curator_menu_network_prompt_selection() {
     let session = session_query.iter(server_app.world()).next().expect("Game session");
     assert_eq!(session.game_id, 101);
 }
+

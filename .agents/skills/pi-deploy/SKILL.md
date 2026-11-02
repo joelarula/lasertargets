@@ -24,7 +24,7 @@ This skill documents the full lifecycle for deploying, launching, monitoring, an
 Deploy compiled ARM64 binaries, dynamic libraries, shape templates, and assets to the Pi:
 
 ```powershell
-.\scripts\deploy-pi.ps1 -TargetHost lasertargets@lasertargets.local
+.\scripts\pi.ps1 deploy -TargetHost lasertargets@lasertargets.local
 ```
 
 ### Assets Deployed to `/opt/lasertargets/`:
@@ -40,7 +40,7 @@ Deploy compiled ARM64 binaries, dynamic libraries, shape templates, and assets t
 To launch the host server interactively over SSH with live log streaming:
 
 ```powershell
-.\scripts\run-server-pi.ps1 -TargetHost lasertargets@lasertargets.local
+.\scripts\pi.ps1 run -TargetHost lasertargets@lasertargets.local
 ```
 
 - Streams real-time `tracing`/`log` logs via `journalctl -u lasertargets-server -f`.
@@ -53,7 +53,7 @@ To launch the host server interactively over SSH with live log streaming:
 To ensure smooth 60 FPS DAC streaming and low network latency, tune system parameters on the Pi:
 
 ```powershell
-.\scripts\optimize-pi-system.ps1
+.\scripts\pi.ps1 optimize -TargetHost lasertargets@lasertargets.local
 ```
 
 ### Optimization Actions Performed:
@@ -67,13 +67,13 @@ To ensure smooth 60 FPS DAC streaming and low network latency, tune system param
 
 - **Run Standalone DAC Hardware Test on Pi**:
   ```powershell
-  .\scripts\run-dac-test-pi.ps1
+  .\scripts\pi.ps1 dac-test -TargetHost lasertargets@lasertargets.local -Scenario shapes
   ```
 - **Check Pi Network Interface & Latency**:
   ```powershell
-  .\scripts\check-pi-network.ps1
+  .\scripts\pi.ps1 check -TargetHost lasertargets@lasertargets.local
   ```
 - **Check SD Card Read/Write Health**:
   ```powershell
-  .\scripts\check-sd-card.ps1
+  .\scripts\pi.ps1 check-sd -BootDrive D:
   ```

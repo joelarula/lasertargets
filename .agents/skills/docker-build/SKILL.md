@@ -22,17 +22,23 @@ This skill provides step-by-step instructions for cross-compiling Linux ARM64 (`
 
 ## 2. Standard Remote Docker Build Workflow
 
+This workstation has no local Docker installed; builds run inside a Docker container on the dedicated remote build server (`joel@192.168.1.110`).
+
 To trigger a remote ARM64 cross-compilation run:
 
 ```powershell
-.\scripts\docker-build-rpi4-remote.ps1 -RemoteHost joel@192.168.1.110
+# Via xtask:
+cargo xtask build-arm64
+
+# Or via PowerShell script:
+.\scripts\build-arm64.ps1
 ```
 
-### What this script does:
-1. Syncs current workspace source code (`server`, `common`, `laserlogic`, `gamepad`, `minigames/*`) to the remote build machine.
-2. Spawns/attaches to the `lasertargets-builder` Docker container (`cross-rs` `aarch64-unknown-linux-gnu` toolchain).
-3. Runs `cargo build --release --target aarch64-unknown-linux-gnu --package server`.
-4. Copies target output artifacts back to local workspace build directory.
+### What this does:
+1. Packages local workspace source code via `tar` into a temporary archive (excluding `target`, `dist`, `.git`).
+2. Transfers archive to the remote Docker build host (`joel@192.168.1.110`) via `scp`.
+3. Unpacks and runs `docker run` on the remote server mounting `cargo_registry_cache` and `cargo_target_cache` volumes in the `lasertargets-cross-aarch64` container to compile `server` and `dac-test`.
+4. Copies compiled ARM64 binaries (`server`, `dac-test`, `libHeliosLaserDAC.so`) via `scp` into local `dist\pi\`.
 
 ---
 
@@ -40,15 +46,15 @@ To trigger a remote ARM64 cross-compilation run:
 
 - **Watch Live Build Progress**:
   ```powershell
-  .\scripts\watch-remote-build.ps1
+  .\scripts\remote-docker.ps1 watch -RemoteHost joel@192.168.1.110
   ```
 - **Ensure Remote Docker Service is Running**:
   ```powershell
-  .\scripts\ensure-remote-docker.ps1
+  .\scripts\remote-docker.ps1 status -RemoteHost joel@192.168.1.110
   ```
 - **Restart Remote Docker Container**:
   ```powershell
-  .\scripts\restart-remote-docker.ps1
+  .\scripts\remote-docker.ps1 restart -RemoteHost joel@192.168.1.110
   ```
 
 ---
@@ -56,6 +62,6 @@ To trigger a remote ARM64 cross-compilation run:
 ## 4. Troubleshooting & Known Gotchas
 
 - **Docker Container Stuck or File Lock**:
-  Run `.\scripts\restart-remote-docker.ps1` to stop lingering cargo build processes and clear stale container locks.
+  Run `.\scripts\remote-docker.ps1 restart -RemoteHost joel@192.168.1.110` to stop lingering cargo build processes and clear stale container locks.
 - **Helios DAC Library Requirement**:
   Ensure `libHeliosLaserDAC.so` is included in the deployment bundle when transferring compiled binaries to the Pi.
