@@ -4,6 +4,7 @@ use bevy::prelude::*;
 use clap::Parser;
 use common::settings::{ConfigSection, ConfigSource};
 use server::{add_server_plugins, RuntimeSettings};
+use server_core::plugins::keyboard::ConsoleKeyboardPlugin;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -46,5 +47,6 @@ fn main() {
     let tick = Duration::from_secs_f64(1.0 / runtime.tick_hz);
     app.insert_resource(config).insert_resource(runtime);
     add_server_plugins(&mut app, ScheduleRunnerPlugin::run_loop(tick));
+    app.add_plugins(ConsoleKeyboardPlugin);
     app.run();
 }

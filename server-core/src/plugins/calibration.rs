@@ -5,7 +5,9 @@ use common::network::MousePositionEvent;
 use common::path::{PathSegment, UniversalPath};
 use common::scene::SceneEntity;
 use common::scene::{SceneSetup, SceneSystemSet};
+use common::calibration::{log_calibration_status, nudge, CalibrationAction, CalibrationMode};
 use common::state::CalibrationState;
+use laserlogic::helios::HELIOS_MAX_COORD;
 use gamepad::{Btn, GamepadButtonEvent, GamepadState, PrevGamepadState, GAMEPAD_STICK_DEADZONE};
 
 /// Target entity currently being calibrated by the gamepad in calibration mode.
@@ -16,6 +18,50 @@ pub enum CalibrationTargetMode {
     RigPointA,
     /// Mode B: Physical Billboard Plane (Laser reflection canvas on the wall at Point B)
     BillboardPointB,
+}
+
+fn apply_calibration_actions(
+    mut actions: MessageReader<CalibrationAction>,
+    calibration_state: Res<State<CalibrationState>>,
+    mut next_calibration_state: ResMut<NextState<CalibrationState>>,
+    mut mode: ResMut<CalibrationMode>,
+    mut scene_config: ResMut<SceneConfiguration>,
+    mut projector_config: ResMut<ProjectorConfiguration>,
+    mut camera_config: ResMut<CameraConfiguration>,
+) {
+    // Track the state locally so several toggles in one frame resolve in order
+    let mut calibration_on = match &*next_calibration_state {
+        NextState::Pending(state) => *state == CalibrationState::On,
+        _ => *calibration_state.get() == CalibrationState::On,
+    };
+
+    for action in actions.read() {
+        match *action {
+            CalibrationAction::ToggleCalibration => {
+                calibration_on = !calibration_on;
+                let next = if calibration_on { CalibrationState::On } else { CalibrationState::Off };
+                info!("[Calibration] {:?}", next);
+                if calibration_on {
+                    info!("[Calibration] Mode {}", mode.help());
+                }
+                next_calibration_state.set(next);
+            }
+            CalibrationAction::ToggleLaser => {
+                projector_config.switched_on = !projector_config.switched_on;
+                info!("[Calibration] Laser {}", if projector_config.switched_on { "ON" } else { "OFF" });
+            }
+            CalibrationAction::NextMode if calibration_on => {
+                *mode = mode.next();
+                info!("[Calibration] Mode {}", mode.help());
+                log_calibration_status(*mode, &scene_config, &projector_config, &camera_config);
+            }
+            CalibrationAction::Nudge { dir, fine } if calibration_on => {
+                nudge(*mode, dir, fine, &mut scene_config, &mut projector_config, &mut camera_config);
+                log_calibration_status(*mode, &scene_config, &projector_config, &camera_config);
+            }
+            _ => {}
+        }
+    }
 }
 
 #[derive(Resource)]
@@ -65,9 +111,19 @@ pub struct ProjectionAreaRectangle;
 #[derive(Component)]
 pub struct CalibrationCenterCrosshair;
 
-/// Component to mark calibration-only paths (not broadcast to terminals)
+/// Component to mark calibration-only paths (not broadcast to terminals).
+/// They are drawn only while calibration is on and are not culled to the scene bounds.
 #[derive(Component)]
 pub struct CalibrationPath;
+
+/// Path whose points are raw DAC coordinates (0..=HELIOS_MAX_COORD), sent as-is without any
+/// world or projector transform.
+#[derive(Component)]
+pub struct DacSpacePath;
+
+/// Component to mark the red DAC perimeter entity
+#[derive(Component)]
+pub struct DacPerimeter;
 
 impl Plugin for CalibrationPlugin {
     fn build(&self, app: &mut App) {
@@ -75,6 +131,9 @@ impl Plugin for CalibrationPlugin {
             .init_resource::<CalibrationData>()
             .init_resource::<CalibrationGamepadCooldowns>()
             .init_resource::<CalibrationTargetMode>()
+            .init_resource::<CalibrationMode>()
+            .add_message::<CalibrationAction>()
+            .add_systems(Update, apply_calibration_actions.before(SceneSystemSet))
             .add_systems(OnExit(CalibrationState::On), despawn_calibration_overlays.after(SceneSystemSet))
             .add_systems(Update, handle_mouse_position_updates)
             .add_systems(Update, cleanup_disconnected_clients)
@@ -201,53 +260,67 @@ fn spawn_crosshair_at_position(
     info!("Spawned mouse crosshair for client {} in scene at local position {:?}", client_id, local_pos);
 }
 
-/// Build calibration universal path containing four L-shaped corner bracket markers with high corner dwells (dwell = 14) for 100% sharp 90-degree corners
-fn build_calibration_rectangle_path(scene_dimensions: Vec2) -> UniversalPath {
-    let half_w = scene_dimensions.x / 2.0;
-    let half_h = scene_dimensions.y / 2.0;
-    let green = Color::srgb(0.0, 1.0, 0.0);
+/// Closed box through `corners` with a long dwell at every vertex for sharp 90 degree corners.
+fn closed_box_segment(corners: [Vec2; 4], color: Color) -> PathSegment {
     let blank = Color::srgb(0.0, 0.0, 0.0);
-    let corner_arm = (scene_dimensions.x.min(scene_dimensions.y) * 0.10).clamp(0.25, 0.5);
-
-    let mut segments = Vec::new();
-
-    // Corner definitions: (Corner Position, Horizontal Arm Vector Direction, Vertical Arm Vector Direction)
-    let corners = [
-        (Vec2::new(-half_w, -half_h), Vec2::new(1.0, 0.0), Vec2::new(0.0, 1.0)),  // BL: └
-        (Vec2::new(half_w, -half_h),  Vec2::new(-1.0, 0.0), Vec2::new(0.0, 1.0)), // BR: ┘
-        (Vec2::new(half_w, half_h),   Vec2::new(-1.0, 0.0), Vec2::new(0.0, -1.0)),// TR: ┐
-        (Vec2::new(-half_w, half_h),  Vec2::new(1.0, 0.0), Vec2::new(0.0, -1.0)), // TL: ┌
-    ];
-
-    for (corner, h_dir, v_dir) in &corners {
-        // Continuous L-bracket path segment:
-        // 1. Arm end point (dwell = 4)
-        // 2. Corner 90° vertex with high dwell = 14 so physical galvos come to complete stop for 100% sharp 90° corners!
-        // 3. Arm end point (dwell = 4)
-        let mut l_seg = PathSegment::empty();
-        let h_end = *corner + *h_dir * corner_arm;
-        let v_end = *corner + *v_dir * corner_arm;
-
-        l_seg.push(h_end.x, h_end.y, blank, 4);
-        l_seg.push(h_end.x, h_end.y, green, 5);
-        l_seg.push(corner.x, corner.y, green, 14); // Dwell = 14 at vertex for 100% sharp 90° corners!
-        l_seg.push(v_end.x, v_end.y, green, 5);
-        l_seg.push(v_end.x, v_end.y, blank, 4);
-
-        segments.push(l_seg);
+    let mut seg = PathSegment::empty();
+    seg.push_vec2(corners[0], blank, 4);
+    for corner in corners.iter().chain(std::iter::once(&corners[0])) {
+        seg.push_vec2(*corner, color, 14);
     }
+    seg.push_vec2(corners[0], blank, 4);
+    seg
+}
 
+/// Green box outlining the scene bounds (scene-local metres).
+fn build_calibration_rectangle_path(scene_dimensions: Vec2) -> UniversalPath {
+    let half = scene_dimensions / 2.0;
+    let green = Color::srgb(0.0, 1.0, 0.0);
+    let corners = [
+        Vec2::new(-half.x, -half.y),
+        Vec2::new(half.x, -half.y),
+        Vec2::new(half.x, half.y),
+        Vec2::new(-half.x, half.y),
+    ];
+    UniversalPath { segments: vec![closed_box_segment(corners, green)] }
+}
+
+/// Red box around the full DAC coordinate range with inward ticks at each side's midpoint
+/// (DAC centre), in raw DAC units. Shows the X/Y proportions of the galvo signal on the wall.
+fn build_dac_perimeter_path() -> UniversalPath {
+    let max = HELIOS_MAX_COORD as f32;
+    let mid = max / 2.0;
+    let tick = max * 0.05;
+    let red = Color::srgb(1.0, 0.0, 0.0);
+    let blank = Color::srgb(0.0, 0.0, 0.0);
+    let corners = [Vec2::ZERO, Vec2::new(max, 0.0), Vec2::new(max, max), Vec2::new(0.0, max)];
+
+    let mut segments = vec![closed_box_segment(corners, red)];
+    for (edge, inward) in [
+        (Vec2::new(mid, 0.0), Vec2::Y),
+        (Vec2::new(max, mid), -Vec2::X),
+        (Vec2::new(mid, max), -Vec2::Y),
+        (Vec2::new(0.0, mid), Vec2::X),
+    ] {
+        let mut seg = PathSegment::empty();
+        let end = edge + inward * tick;
+        seg.push_vec2(edge, blank, 4);
+        seg.push_vec2(edge, red, 5);
+        seg.push_vec2(end, red, 5);
+        seg.push_vec2(end, blank, 4);
+        segments.push(seg);
+    }
     UniversalPath { segments }
 }
 
-/// Spawn a green crosshair at the scene center matching the corner L-brackets
+/// Spawn a yellow crosshair at the scene center
 fn spawn_center_crosshair(
     commands: &mut Commands,
     scene_entity: Entity,
 ) {
     let crosshair_size = 0.5;
-    let green = Color::srgb(0.0, 1.0, 0.0); // Matching green color as corner L-brackets
-    let crosshair_path = UniversalPath::crosshair(Vec2::ZERO, crosshair_size, green);
+    let yellow = Color::srgb(1.0, 1.0, 0.0);
+    let crosshair_path = UniversalPath::crosshair(Vec2::ZERO, crosshair_size, yellow);
     let child_entity = commands.spawn((
         Transform::IDENTITY,
         Visibility::default(),
@@ -257,7 +330,7 @@ fn spawn_center_crosshair(
         common::path::PathRenderable::default(),
     )).id();
     commands.entity(scene_entity).add_child(child_entity);
-    info!("Spawned green center crosshair overlay parented to SceneEntity");
+    info!("Spawned yellow center crosshair overlay parented to SceneEntity");
 }
 
 /// Spawn projection area rectangle at scene center (projection surface)
@@ -276,7 +349,7 @@ fn spawn_projection_area_rectangle(
         common::path::PathRenderable::default(),
     )).id();
     commands.entity(scene_entity).add_child(child_entity);
-    info!("Spawned scene corner calibration overlay parented to SceneEntity");
+    info!("Spawned green scene box overlay parented to SceneEntity");
 }
 
 /// Spawns overlays parented to SceneEntity once SceneEntity is ready
@@ -285,8 +358,22 @@ fn spawn_calibration_overlays(
     scene_setup: Res<SceneSetup>,
     rectangle_query: Query<Entity, With<ProjectionAreaRectangle>>,
     center_query: Query<Entity, With<CalibrationCenterCrosshair>>,
+    perimeter_query: Query<Entity, With<DacPerimeter>>,
     scene_entity_query: Query<Entity, With<SceneEntity>>,
 ) {
+    if perimeter_query.iter().next().is_none() {
+        // DAC space: not parented to the scene, and no PathRenderable so terminals never get it
+        commands.spawn((
+            Transform::IDENTITY,
+            Visibility::default(),
+            CalibrationPath,
+            DacSpacePath,
+            DacPerimeter,
+            build_dac_perimeter_path(),
+        ));
+        info!("Spawned red DAC perimeter overlay");
+    }
+
     let needs_rectangle = rectangle_query.iter().next().is_none();
     let needs_center = center_query.iter().next().is_none();
 
@@ -517,5 +604,18 @@ fn gamepad_calibration_controls(
             camera_config.origin.rotation = Transform::from_translation(camera_config.origin.translation)
                 .looking_at(billboard_center, Vec3::Y).rotation;
         }
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dac_perimeter_spans_full_dac_range() {
+        let max = HELIOS_MAX_COORD as f32;
+        let points: Vec<Vec2> = build_dac_perimeter_path().flatten();
+        let (min_p, max_p) = points.iter().fold((Vec2::MAX, Vec2::MIN), |(lo, hi), p| (lo.min(*p), hi.max(*p)));
+        assert_eq!(min_p, Vec2::ZERO);
+        assert_eq!(max_p, Vec2::splat(max));
     }
 }

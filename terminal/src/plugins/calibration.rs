@@ -21,7 +21,7 @@ pub const DARK_GREY_THIRD: Srgba = Srgba::new(0.663, 0.663, 0.663, 0.3);
 
 pub const GRID_SPACING: f32 = 0.25;
 
-const INSTRUCTION_TEXT_F3: &str = "Press [F3] to toggle calibration gizmos visibility";
+const INSTRUCTION_TEXT_F3: &str = "Press [F3] calibration on/off, [Space] next mode, [Arrows] adjust ([Shift] fine)";
 const INSTRUCTION_TEXT_F4: &str = "Press [F4] to toggle background grid lines visibility";
 const INSTRUCTION_TEXT_MOUSE_DISTANCE: &str = "Press [Mouse Back/Forward] to move scene distance further/closer";
 
@@ -52,7 +52,6 @@ impl Plugin for CalibrationPlugin {
         app
         .init_resource::<TerminalGridVisibility>()
         .add_systems(Startup, setup_calibration_instructions)
-        .add_systems(Update, toggle_calibration_visibility.in_set(CalibrationSystemSet))
         .add_systems(Update, toggle_grid_visibility.in_set(CalibrationSystemSet))
         .add_systems(Update, adjust_scene_distance_with_mouse.in_set(CalibrationSystemSet))
         .add_systems(Update, ensure_calibration_text.in_set(CalibrationSystemSet))
@@ -145,34 +144,8 @@ fn ensure_calibration_text(
     ));
 }
 
-fn toggle_calibration_visibility(
-    keyboard_input: Res<ButtonInput<KeyCode>>,
-    calibration_state: Res<State<CalibrationState>>,
-    mut commands: Commands,
-    mut client: ResMut<QuinnetClient>,
-) {
-    if keyboard_input.just_pressed(KeyCode::F3) {
-        let new_state = match calibration_state.get() {
-            CalibrationState::On => CalibrationState::Off,
-            CalibrationState::Off => CalibrationState::On,
-        };
-        
-        // Update local state
-        commands.insert_resource(NextState::Pending(new_state.clone()));
-        
-        // Send to server
-        if let Some(connection) = client.get_connection_mut() {
-            let message = NetworkMessage::UpdateCalibrationState(new_state.clone());
-            if let Ok(payload) = message.to_bytes() {
-                if let Err(e) = connection.send_payload(payload) {
-                    error!("Failed to send calibration state update: {:?}", e);
-                } else {
-                    info!("Calibration state toggled to: {:?}", new_state);
-                }
-            }
-        }
-    }
-}
+// F3 (calibration on/off), Space (mode) and arrows (adjust) are forwarded to the server by the
+// keyboard plugin; the server applies them and broadcasts the resulting state and configs.
 
 fn toggle_grid_visibility(
     keyboard_input: Res<ButtonInput<KeyCode>>,

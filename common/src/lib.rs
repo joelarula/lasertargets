@@ -1,4 +1,5 @@
 pub use session as actor;
+pub mod calibration;
 pub mod camera;
 pub mod config;
 pub use session as game;

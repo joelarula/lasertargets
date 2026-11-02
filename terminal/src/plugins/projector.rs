@@ -24,7 +24,6 @@ impl Plugin for ProjectorPlugin {
                 register_projector_instructions).in_set(ProjectorSystemSet).after(CalibrationSystemSet))
             .add_systems(Update, (
                 handle_projector_button,
-                update_projector_system,
                 sync_toolbar_with_config,
             ).chain().in_set(ProjectorSystemSet).after(CalibrationSystemSet));
     }
@@ -78,19 +77,6 @@ fn handle_projector_button(
     }
 }
 
-fn update_projector_system(
-    mut projector_config: ResMut<ProjectorConfiguration>,
-    mut item_query: Query<&mut ToolbarItem, With<ProjectorButton>>,
-    keyboard: Res<ButtonInput<KeyCode>>,
-) {
-    let prev_enabled = projector_config.switched_on;
-    
-    configure_projector(&mut projector_config, &keyboard);
-    if prev_enabled != projector_config.switched_on {
-        update_toolbar_state(&projector_config, &mut item_query);
-    }
-}
-
 fn sync_toolbar_with_config(
     projector_config: Res<ProjectorConfiguration>,
     mut item_query: Query<&mut ToolbarItem, With<ProjectorButton>>,
@@ -99,12 +85,4 @@ fn sync_toolbar_with_config(
         update_toolbar_state(&projector_config, &mut item_query);
     }
 }
-
-fn configure_projector(
-    projector_config: &mut ResMut<ProjectorConfiguration>,
-    keyboard: &Res<ButtonInput<KeyCode>>,
-) {
-    if keyboard.just_pressed(KeyCode::F1) {
-        projector_config.switched_on = !projector_config.switched_on;
-    }
-}
+// F1 (laser on/off) is forwarded to the server by the keyboard plugin and handled there.

@@ -6,9 +6,7 @@ use crate::plugins::camera::{CameraTag};
 use crate::plugins::instructions::InstructionState;
 
 
-const INSTRUCTION_TEXT_A: &str = "Press [Up][Down] to adjust target distance";
-
-const STEP: f32 = 0.25;
+const INSTRUCTION_TEXT_A: &str = "Calibration modes: [Space] size -> position -> rig";
 
 
 pub struct ScenePlugin;
@@ -22,7 +20,7 @@ impl Plugin for ScenePlugin {
         app.init_resource::<SceneSetup>();
         app.init_resource::<SceneData>();
         app.add_systems(Startup, (setup_scene, setup_scene_entity).in_set(SceneSystemSet));
-        app.add_systems(Update, (update_scene, sync_scene_transform, handle_scene_keyboard).in_set(SceneSystemSet));  
+        app.add_systems(Update, (update_scene, sync_scene_transform).in_set(SceneSystemSet));  
     }
 }
 
@@ -100,42 +98,5 @@ fn sync_scene_transform(
             transform.rotation = scene_setup.scene.origin.rotation;
             transform.scale = scene_setup.scene.origin.scale;
         }
-    }
-}
-
-fn handle_scene_keyboard(
-    keyboard_input: Res<ButtonInput<KeyCode>>,
-    mut scene_config: ResMut<SceneConfiguration>,
-) {
-    // Arrow Up/Down: adjust scene middle point (origin Y)
-    if keyboard_input.just_pressed(KeyCode::ArrowUp) {
-        scene_config.origin.translation.y += STEP;
-    }
-    if keyboard_input.just_pressed(KeyCode::ArrowDown) {
-        scene_config.origin.translation.y -= STEP;
-    }
-
-    // Numpad +/-: adjust target distance (origin Z, negative = farther)
-    if keyboard_input.just_pressed(KeyCode::NumpadAdd) {
-        scene_config.origin.translation.z += STEP;
-    }
-    if keyboard_input.just_pressed(KeyCode::NumpadSubtract) {
-        scene_config.origin.translation.z -= STEP;
-    }
-
-    // Arrow Left/Right: adjust scene width
-    if keyboard_input.just_pressed(KeyCode::ArrowRight) {
-        scene_config.scene_dimension.x += STEP;
-    }
-    if keyboard_input.just_pressed(KeyCode::ArrowLeft) {
-        scene_config.scene_dimension.x = (scene_config.scene_dimension.x - STEP).max(STEP);
-    }
-
-    // Page Up/Down: adjust scene height
-    if keyboard_input.just_pressed(KeyCode::PageUp) {
-        scene_config.scene_dimension.y += STEP;
-    }
-    if keyboard_input.just_pressed(KeyCode::PageDown) {
-        scene_config.scene_dimension.y = (scene_config.scene_dimension.y - STEP).max(STEP);
     }
 }

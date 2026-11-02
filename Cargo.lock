@@ -5824,6 +5824,7 @@ dependencies = [
  "bevy_quinnet",
  "bincode",
  "common",
+ "crossterm",
  "curator-core",
  "gamepad",
  "laserlogic",

@@ -5,6 +5,7 @@ use crate::plugins::calibration::CalibrationPlugin;
 use crate::plugins::camera::CameraPlugin;
 use crate::plugins::session::SessionLifecyclePlugin;
 use crate::plugins::gamepad::GamepadInputPlugin;
+use crate::plugins::keyboard::KeyboardControlPlugin;
 use crate::plugins::menu::ServerMenuWorkflowPlugin;
 use crate::plugins::network::NetworkingPlugin;
 use crate::plugins::path::PathNetworkPlugin;
@@ -94,6 +95,7 @@ pub fn add_common_server_plugins(app: &mut App) {
         .add_plugins(CuratorCorePlugin)
         .add_plugins(ServerMenuWorkflowPlugin)
         .add_plugins(GamepadInputPlugin)
+        .add_plugins(KeyboardControlPlugin)
         .add_plugins(StatusPlugin)
         // Log state transitions for states without existing handlers
         .add_systems(OnExit(ServerState::Menu), || {

@@ -5,7 +5,7 @@ use common::scene::SceneSetup;
 use common::path::UniversalPath;
 use common::settings::{ConfigAppExt, ConfigSection};
 use common::state::CalibrationState;
-use crate::plugins::calibration::CalibrationPath;
+use crate::plugins::calibration::{CalibrationPath, DacSpacePath};
 use laserlogic::helios::{HeliosDacController, HeliosPoint, HELIOS_MAX_COORD, HELIOS_FLAGS_DEFAULT};
 use laserlogic::{LaserPoint, LaserSegment, OptimizeConfig};
 use serde::{Deserialize, Serialize};
@@ -642,7 +642,7 @@ fn update_point_buffer(
     point_buffer: Res<LaserPointBuffer>,
     optimize_config: Res<LaserOptimizeConfig>,
     calibration_state: Option<Res<State<CalibrationState>>>,
-    path_query: Query<(&UniversalPath, &Transform, Option<&CalibrationPath>)>,
+    path_query: Query<(&UniversalPath, &Transform, Option<&CalibrationPath>, Option<&DacSpacePath>)>,
     scene_query: Query<&Transform, With<SceneEntity>>,
 ) {
     let is_calibration_on = calibration_state
@@ -671,11 +671,17 @@ fn update_point_buffer(
     let mut general_segments: Vec<LaserSegment> = Vec::new();
     let scene_transform = scene_query.single().ok();
 
-    for (universal_path, transform, calibration_path) in path_query.iter() {
+    for (universal_path, transform, calibration_path, dac_space) in path_query.iter() {
         if calibration_path.is_some() && !is_calibration_on {
-            // Calibration mode is OFF: skip all calibration paths (green rectangle, crosshairs)
+            // Calibration mode is OFF: skip all calibration paths (DAC perimeter, scene box, crosshairs)
             continue;
         }
+        if dac_space.is_some() {
+            general_segments.extend(dac_space_segments(universal_path));
+            continue;
+        }
+        // Calibration overlays must stay visible outside the scene, e.g. while the scene is resized
+        let cull_to_scene = calibration_path.is_none();
         let global_transform = if let Some(scene_transform) = scene_transform {
             let world_matrix = scene_transform.to_matrix() * transform.to_matrix();
             GlobalTransform::from(Transform::from_matrix(world_matrix))
@@ -700,10 +706,11 @@ fn update_point_buffer(
 
                 // Automatic Scene Boundary Culling:
                 // Check if point is inside scene rectangle bounds
-                let is_inside_scene = transformed.x >= min_x
-                    && transformed.x <= max_x
-                    && transformed.y >= min_y
-                    && transformed.y <= max_y;
+                let is_inside_scene = !cull_to_scene
+                    || (transformed.x >= min_x
+                        && transformed.x <= max_x
+                        && transformed.y >= min_y
+                        && transformed.y <= max_y);
 
                 if is_inside_scene {
                     if let Some((x, y)) = world_to_projector_coordinates(transformed, &projector_config) {
@@ -762,6 +769,27 @@ fn update_point_buffer(
     if let Ok(mut buffer) = point_buffer.points.lock() {
         *buffer = helios_points;
     }
+}
+
+/// Raw DAC-coordinate path to laser segments: no transform, no culling, clamped to the DAC range.
+fn dac_space_segments(path: &UniversalPath) -> Vec<LaserSegment> {
+    let max = HELIOS_MAX_COORD as f32;
+    path.segments
+        .iter()
+        .map(|segment| {
+            let points: Vec<LaserPoint> = segment
+                .expand_line_style()
+                .iter()
+                .flat_map(|p| {
+                    let x = p.x.round().clamp(0.0, max) as u16;
+                    let y = p.y.round().clamp(0.0, max) as u16;
+                    std::iter::repeat_n(LaserPoint::new(x, y, p.r, p.g, p.b, 255), p.dwell.max(1) as usize)
+                })
+                .collect();
+            LaserSegment::new(points)
+        })
+        .filter(|segment| !segment.points.is_empty())
+        .collect()
 }
 
 /// Transform world coordinates to projector coordinates using perspective projection

@@ -248,3 +248,29 @@ fn projector_locks_onto_scene_center() {
     let expected = (SCENE_CENTER - config.origin.translation).normalize();
     assert!(forward.dot(expected) > 0.9999, "forward {:?} expected {:?}", forward, expected);
 }
+
+#[test]
+fn dac_space_path_is_sent_untransformed() {
+    use server_core::plugins::calibration::DacSpacePath;
+    let path = UniversalPath::from_segment(PathSegment::new(vec![white(100.0, 200.0), white(3900.0, 4000.0)]));
+    let mut t = projector_app();
+    // Transform and scene position must not matter for DAC-space paths
+    t.world_mut().spawn((path, Transform::from_translation(Vec3::new(50.0, 50.0, 50.0)), CalibrationPath, DacSpacePath));
+    t.step_n(SETTLE);
+
+    let lit = lit(&t);
+    assert!(lit.iter().any(|p| p.x == 100 && p.y == 200), "start point missing");
+    assert!(lit.iter().any(|p| p.x == 3900 && p.y == 4000), "end point missing");
+}
+
+#[test]
+fn calibration_paths_are_not_culled_to_scene() {
+    // Outside the 10 x 6 m scene but inside the projector FOV
+    let outside = SCENE_CENTER + Vec3::new(5.4, 0.0, 0.0);
+    let mut t = projector_app();
+    t.world_mut().spawn((square(0.2), Transform::from_translation(outside), CalibrationPath));
+    t.step_n(SETTLE);
+    assert!(!lit(&t).is_empty(), "calibration path outside the scene should still be drawn");
+
+    assert!(render(square(0.2), outside).is_empty(), "regular paths outside the scene are still culled");
+}
