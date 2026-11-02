@@ -1,0 +1,38 @@
+{
+  "name": "cable_test",
+  "description": "ILDA cable & diode check, 1.6 m: border with one colour per side (R, G, B, W) and sharp corners, red vertical and blue horizontal axis, white centre dot",
+  "tags": ["test", "hardware", "calibration"],
+  "author": "LaserTargets",
+  "version": 2,
+  "strokes": [
+    {
+      "closed": true,
+      "points": [
+        {"x": -0.8, "y": 0.8, "color": [255, 0, 0], "corner_radius_m": 0.0},
+        {"x": 0.8, "y": 0.8, "color": [0, 255, 0], "corner_radius_m": 0.0},
+        {"x": 0.8, "y": -0.8, "color": [0, 0, 255], "corner_radius_m": 0.0},
+        {"x": -0.8, "y": -0.8, "color": [255, 255, 255], "corner_radius_m": 0.0}
+      ]
+    },
+    {
+      "color": [255, 0, 0],
+      "points": [
+        {"x": 0.0, "y": 0.8},
+        {"x": 0.0, "y": -0.8}
+      ]
+    },
+    {
+      "color": [0, 0, 255],
+      "points": [
+        {"x": -0.8, "y": 0.0},
+        {"x": 0.8, "y": 0.0}
+      ]
+    },
+    {
+      "color": [255, 255, 255],
+      "points": [
+        {"x": 0.0, "y": 0.0}
+      ]
+    }
+  ]
+}

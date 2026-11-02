@@ -1,0 +1,25 @@
+{
+  "name": "star",
+  "description": "5-pointed star outline, 0.25 m tips: sharp tips, inner vertices auto",
+  "tags": ["geometry", "star"],
+  "author": "LaserTargets",
+  "version": 2,
+  "strokes": [
+    {
+      "closed": true,
+      "color": [255, 255, 0],
+      "points": [
+        {"x": 0.0, "y": 0.25, "corner_radius_m": 0.0},
+        {"x": -0.0561, "y": 0.0773},
+        {"x": -0.2378, "y": 0.0773, "corner_radius_m": 0.0},
+        {"x": -0.0908, "y": -0.0295},
+        {"x": -0.1469, "y": -0.2023, "corner_radius_m": 0.0},
+        {"x": 0.0, "y": -0.0955},
+        {"x": 0.1469, "y": -0.2023, "corner_radius_m": 0.0},
+        {"x": 0.0908, "y": -0.0295},
+        {"x": 0.2378, "y": 0.0773, "corner_radius_m": 0.0},
+        {"x": 0.0561, "y": 0.0773}
+      ]
+    }
+  ]
+}

@@ -797,34 +797,12 @@ fn world_to_projector_coordinates(
     world_pos: Vec3,
     projector_config: &ProjectorConfiguration,
 ) -> Option<(u16, u16)> {
-    // Create projector view matrix
-    let projector_transform = Mat4::from_scale_rotation_translation(
-        projector_config.origin.scale,
-        projector_config.origin.rotation,
-        projector_config.origin.translation,
-    );
-    
-    // Transform world position to projector local space
-    let local_pos = projector_transform.inverse().transform_point3(world_pos);
-    
-    // Check if point is in front of projector
-    // In projector local space, negative Z means the point is in the direction the projector is looking
-    if local_pos.z >= 0.0 {
-        debug!("Point {:?} behind projector (local_z: {})", world_pos, local_pos.z);
-        return None; // Behind projector
-    }
-    
-    // Use absolute value for projection calculations
-    let distance = local_pos.z.abs();
-    
-    // Apply perspective projection
-    let fov_rad = projector_config.angle.to_radians();
-    let half_fov = fov_rad / 2.0;
-    
-    // Project to normalized device coordinates [-1, 1]
-    let projected_x = (local_pos.x / distance) / half_fov.tan();
-    let projected_y = -((local_pos.y / distance) / half_fov.tan());
-    
+    let Some(ndc) = common::scene::projector_ndc(world_pos, projector_config) else {
+        debug!("Point {:?} behind projector", world_pos);
+        return None;
+    };
+    let (projected_x, projected_y) = (ndc.x, ndc.y);
+
     // Clip to visible range
     if projected_x.abs() > 1.0 || projected_y.abs() > 1.0 {
         debug!("Point {:?} outside FOV (projected: {}, {})", world_pos, projected_x, projected_y);

@@ -1,0 +1,23 @@
+{
+  "name": "crosshair",
+  "description": "0.5 m crosshair: two perpendicular strokes",
+  "tags": ["ui", "game", "crosshair", "target"],
+  "author": "LaserTargets",
+  "version": 2,
+  "strokes": [
+    {
+      "color": [255, 255, 255],
+      "points": [
+        {"x": -0.25, "y": 0.0},
+        {"x": 0.25, "y": 0.0}
+      ]
+    },
+    {
+      "color": [255, 255, 255],
+      "points": [
+        {"x": 0.0, "y": -0.25},
+        {"x": 0.0, "y": 0.25}
+      ]
+    }
+  ]
+}

@@ -36,6 +36,8 @@ fn apply_calibration_actions(
     };
 
     for action in actions.read() {
+        // Built from the configs, which stay the source of truth (the SceneSetup resource lags a frame)
+        let mut setup = SceneSetup::new(scene_config.clone(), camera_config.clone(), projector_config.clone());
         match *action {
             CalibrationAction::ToggleCalibration => {
                 calibration_on = !calibration_on;
@@ -53,11 +55,17 @@ fn apply_calibration_actions(
             CalibrationAction::NextMode if calibration_on => {
                 *mode = mode.next();
                 info!("[Calibration] Mode {}", mode.help());
-                log_calibration_status(*mode, &scene_config, &projector_config, &camera_config);
+                log_calibration_status(*mode, &setup);
             }
             CalibrationAction::Nudge { dir, fine } if calibration_on => {
-                nudge(*mode, dir, fine, &mut scene_config, &mut projector_config, &mut camera_config);
-                log_calibration_status(*mode, &scene_config, &projector_config, &camera_config);
+                if nudge(*mode, dir, fine, &mut setup) {
+                    log_calibration_status(*mode, &setup);
+                    scene_config.set_if_neq(setup.scene);
+                    projector_config.set_if_neq(setup.projector);
+                    camera_config.set_if_neq(setup.camera);
+                } else {
+                    info!("[Calibration] Scene at the red DAC perimeter, not moving further");
+                }
             }
             _ => {}
         }

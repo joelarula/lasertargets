@@ -1,0 +1,20 @@
+{
+  "name": "dashed_box",
+  "description": "0.5 m square outline, 5 cm dashes with 2.5 cm gaps",
+  "tags": ["geometry", "box", "style"],
+  "author": "LaserTargets",
+  "version": 2,
+  "strokes": [
+    {
+      "closed": true,
+      "color": [0, 255, 255],
+      "style": {"dashed": {"dash_m": 0.05, "gap_m": 0.025}},
+      "points": [
+        {"x": -0.25, "y": 0.25},
+        {"x": 0.25, "y": 0.25},
+        {"x": 0.25, "y": -0.25},
+        {"x": -0.25, "y": -0.25}
+      ]
+    }
+  ]
+}

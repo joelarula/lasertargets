@@ -5,6 +5,10 @@ description: Prepare, optimize, and tune polylines, 2D vector shapes, corner dwe
 
 # Laser Galvo Polyline & Path Preparation Skill
 
+> **Redesign in progress:** shape language v2 and the staged laser pipeline (shapes in metres,
+> laser physics in one transform stage) are described in [DESIGN_V2.md](DESIGN_V2.md). This file
+> describes the current implementation.
+
 This skill documents the complete pipeline for converting 2D vector shapes, polylines, and text paths into optimized DAC point streams for physical ILDA/Helios laser galvo scanners using the `laserlogic` crate.
 
 ---

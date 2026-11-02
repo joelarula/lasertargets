@@ -161,6 +161,9 @@ fn console_reader(sender: Sender<ConsoleInput>) {
                         KeyCode::F(3) => Some(ControlKey::F3),
                         _ => None,
                     };
+                    if control_key.is_none() {
+                        info!("Console keyboard: {:?} has no action", key.code);
+                    }
                     control_key.map(|k| ConsoleInput::Key(k, key.modifiers.contains(KeyModifiers::SHIFT)))
                 }
             }

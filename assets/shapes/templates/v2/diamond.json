@@ -1,0 +1,19 @@
+{
+  "name": "diamond",
+  "description": "0.5 m diamond outline",
+  "tags": ["geometry", "diamond"],
+  "author": "LaserTargets",
+  "version": 2,
+  "strokes": [
+    {
+      "closed": true,
+      "color": [0, 255, 255],
+      "points": [
+        {"x": 0.0, "y": 0.25},
+        {"x": 0.25, "y": 0.0},
+        {"x": 0.0, "y": -0.25},
+        {"x": -0.25, "y": 0.0}
+      ]
+    }
+  ]
+}

@@ -9,7 +9,7 @@
 //! | Space        | next calibration mode                |
 //! | Arrows       | adjust (hold Shift for fine steps)   |
 
-use crate::config::{CameraConfiguration, ProjectorConfiguration, SceneConfiguration};
+use crate::scene::SceneSetup;
 use bevy::prelude::*;
 
 pub const KEY_HELP: &str =
@@ -104,50 +104,31 @@ const STEP_M: f32 = 0.05;
 const FINE_STEP_M: f32 = 0.01;
 const STEP_DEG: f32 = 0.5;
 const FINE_STEP_DEG: f32 = 0.1;
-const MIN_SCENE_SIZE: f32 = 0.1;
-/// Closest the scene may come to the projector along Z
-const MIN_SCENE_DISTANCE: f32 = 0.5;
-const PROJECTOR_FOV_RANGE: (f32, f32) = (5.0, 90.0);
 
-/// Applies one arrow-key nudge for `mode`. Camera and projector move together as one rig.
-pub fn nudge(
-    mode: CalibrationMode,
-    dir: IVec2,
-    fine: bool,
-    scene: &mut SceneConfiguration,
-    projector: &mut ProjectorConfiguration,
-    camera: &mut CameraConfiguration,
-) {
+/// Applies one arrow-key nudge for `mode` to the physical setup. Returns `false` when the setup
+/// refused it (the scene would leave the red DAC perimeter); see the [`SceneSetup`] operations.
+pub fn nudge(mode: CalibrationMode, dir: IVec2, fine: bool, setup: &mut SceneSetup) -> bool {
     let step = if fine { FINE_STEP_M } else { STEP_M };
-    let dx = dir.x as f32;
-    let dy = dir.y as f32;
-
+    let d = dir.as_vec2();
     match mode {
-        CalibrationMode::SceneSize => {
-            scene.scene_dimension.x = (scene.scene_dimension.x + dx * step).max(MIN_SCENE_SIZE);
-            scene.scene_dimension.y = (scene.scene_dimension.y + dy * step).max(MIN_SCENE_SIZE);
-        }
-        CalibrationMode::ScenePosition => {
-            scene.origin.translation.y += dy * step;
-            // The rig looks down -Z: farther means more negative Z
-            let z = scene.origin.translation.z - dx * step;
-            scene.origin.translation.z = z.min(projector.origin.translation.z - MIN_SCENE_DISTANCE);
-        }
+        CalibrationMode::SceneSize => setup.resize_scene(d * step),
+        CalibrationMode::ScenePosition => setup.move_scene(d.y * step, d.x * step),
         CalibrationMode::Rig => {
-            projector.origin.translation.y += dy * step;
-            camera.origin.translation.y += dy * step;
             let deg = if fine { FINE_STEP_DEG } else { STEP_DEG };
-            projector.angle = (projector.angle + dx * deg).clamp(PROJECTOR_FOV_RANGE.0, PROJECTOR_FOV_RANGE.1);
+            let mut accepted = true;
+            if dir.y != 0 {
+                accepted &= setup.move_rig(d.y * step);
+            }
+            if dir.x != 0 {
+                accepted &= setup.change_projector_fov(d.x * deg);
+            }
+            accepted
         }
     }
 }
 
-pub fn log_calibration_status(
-    mode: CalibrationMode,
-    scene: &SceneConfiguration,
-    projector: &ProjectorConfiguration,
-    camera: &CameraConfiguration,
-) {
+pub fn log_calibration_status(mode: CalibrationMode, setup: &SceneSetup) {
+    let (scene, projector, camera) = (&setup.scene, &setup.projector, &setup.camera);
     match mode {
         CalibrationMode::SceneSize => info!(
             "[Calibration] SIZE      width {:.2} m  height {:.2} m",
@@ -169,10 +150,6 @@ pub fn log_calibration_status(
 mod tests {
     use super::*;
 
-    fn configs() -> (SceneConfiguration, ProjectorConfiguration, CameraConfiguration) {
-        (SceneConfiguration::default(), ProjectorConfiguration::default(), CameraConfiguration::default())
-    }
-
     #[test]
     fn modes_cycle_size_position_rig() {
         let mode = CalibrationMode::default();
@@ -182,62 +159,33 @@ mod tests {
         assert_eq!(mode.next().next().next(), CalibrationMode::SceneSize);
     }
 
+    /// Each mode drives the matching setup operation with the coarse or fine step
     #[test]
-    fn scene_size_mode_changes_width_and_height_only() {
-        let (mut scene, mut projector, mut camera) = configs();
-        let before = scene.clone();
-        nudge(CalibrationMode::SceneSize, IVec2::X, false, &mut scene, &mut projector, &mut camera);
-        nudge(CalibrationMode::SceneSize, IVec2::NEG_Y, true, &mut scene, &mut projector, &mut camera);
-        assert!((scene.scene_dimension.x - (before.scene_dimension.x + STEP_M)).abs() < 1e-5);
-        assert!((scene.scene_dimension.y - (before.scene_dimension.y - FINE_STEP_M)).abs() < 1e-5);
-        assert_eq!(scene.origin, before.origin);
-        assert_eq!((projector, camera), (ProjectorConfiguration::default(), CameraConfiguration::default()));
-    }
-
-    #[test]
-    fn scene_size_never_collapses() {
-        let (mut scene, mut projector, mut camera) = configs();
-        for _ in 0..1000 {
-            nudge(CalibrationMode::SceneSize, IVec2::new(-1, -1), false, &mut scene, &mut projector, &mut camera);
+    fn modes_map_arrows_to_setup_operations() {
+        let cases: [(CalibrationMode, IVec2, bool, fn(&mut SceneSetup) -> bool); 6] = [
+            (CalibrationMode::SceneSize, IVec2::X, false, |s| s.resize_scene(Vec2::new(STEP_M, 0.0))),
+            (CalibrationMode::SceneSize, IVec2::NEG_Y, true, |s| s.resize_scene(Vec2::new(0.0, -FINE_STEP_M))),
+            (CalibrationMode::ScenePosition, IVec2::Y, false, |s| s.move_scene(STEP_M, 0.0)),
+            (CalibrationMode::ScenePosition, IVec2::X, false, |s| s.move_scene(0.0, STEP_M)),
+            (CalibrationMode::Rig, IVec2::NEG_Y, false, |s| s.move_rig(-STEP_M)),
+            (CalibrationMode::Rig, IVec2::X, true, |s| s.change_projector_fov(FINE_STEP_DEG)),
+        ];
+        for (mode, dir, fine, expected) in cases {
+            let mut nudged = SceneSetup::default();
+            let mut direct = SceneSetup::default();
+            assert!(nudge(mode, dir, fine, &mut nudged));
+            assert!(expected(&mut direct));
+            assert_eq!(nudged, direct, "{:?} {:?} fine={}", mode, dir, fine);
         }
-        assert_eq!(scene.scene_dimension, Vec2::splat(MIN_SCENE_SIZE));
     }
 
     #[test]
-    fn scene_position_mode_moves_middle_height_and_distance() {
-        let (mut scene, mut projector, mut camera) = configs();
-        let before = scene.origin.translation;
-        nudge(CalibrationMode::ScenePosition, IVec2::Y, false, &mut scene, &mut projector, &mut camera);
-        nudge(CalibrationMode::ScenePosition, IVec2::X, false, &mut scene, &mut projector, &mut camera);
-        let after = scene.origin.translation;
-        assert!((after.y - (before.y + STEP_M)).abs() < 1e-5);
-        // Right = farther away from the rig, which looks down -Z
-        assert!((after.z - (before.z - STEP_M)).abs() < 1e-5);
-        assert_eq!(projector.origin, ProjectorConfiguration::default().origin);
-    }
-
-    #[test]
-    fn scene_cannot_move_through_the_rig() {
-        let (mut scene, mut projector, mut camera) = configs();
-        for _ in 0..1000 {
-            nudge(CalibrationMode::ScenePosition, IVec2::NEG_X, false, &mut scene, &mut projector, &mut camera);
-        }
-        let distance = projector.origin.translation.z - scene.origin.translation.z;
-        assert!((distance - MIN_SCENE_DISTANCE).abs() < 1e-5, "distance {}", distance);
-    }
-
-    #[test]
-    fn rig_mode_moves_camera_and_projector_together_and_leaves_scene() {
-        let (mut scene, mut projector, mut camera) = configs();
-        let (p0, c0) = (projector.origin.translation, camera.origin.translation);
-        nudge(CalibrationMode::Rig, IVec2::NEG_Y, false, &mut scene, &mut projector, &mut camera);
-        assert_eq!(projector.origin.translation - p0, Vec3::new(0.0, -STEP_M, 0.0));
-        assert_eq!(camera.origin.translation - c0, Vec3::new(0.0, -STEP_M, 0.0));
-        assert_eq!(scene, SceneConfiguration::default());
-
-        let angle = projector.angle;
-        nudge(CalibrationMode::Rig, IVec2::X, true, &mut scene, &mut projector, &mut camera);
-        assert!((projector.angle - (angle + FINE_STEP_DEG)).abs() < 1e-5);
+    fn refused_nudge_reports_false() {
+        let mut setup = SceneSetup::default();
+        while nudge(CalibrationMode::SceneSize, IVec2::X, false, &mut setup) {}
+        let before = setup.clone();
+        assert!(!nudge(CalibrationMode::SceneSize, IVec2::X, false, &mut setup));
+        assert_eq!(setup, before);
     }
 
     #[test]
