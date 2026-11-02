@@ -1,7 +1,13 @@
 {
   "name": "120",
-  "description": "",
-  "tags": [],
+  "description": "Unsorted #120: linear calibration scale (2 pts, monochrome, single continuous stroke)",
+  "tags": [
+    "density:low",
+    "stroke:single",
+    "color:mono",
+    "color:white",
+    "pattern:calibration"
+  ],
   "author": "LaserTargets",
   "line_style": "Continuous",
   "points": [

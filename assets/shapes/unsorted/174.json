@@ -1,7 +1,13 @@
 {
   "name": "174",
-  "description": "",
-  "tags": [],
+  "description": "Unsorted #174: detailed artwork (334 pts, monochrome, 3 strokes)",
+  "tags": [
+    "density:very_high",
+    "stroke:segmented",
+    "color:mono",
+    "color:yellow",
+    "pattern:artwork"
+  ],
   "author": "LaserTargets",
   "line_style": "Continuous",
   "points": [

@@ -1,7 +1,13 @@
 {
   "name": "114",
-  "description": "",
-  "tags": [],
+  "description": "Unsorted #114: closed geometric loop (54 pts, monochrome, single continuous stroke)",
+  "tags": [
+    "density:medium",
+    "stroke:single",
+    "color:mono",
+    "color:white",
+    "pattern:loop"
+  ],
   "author": "LaserTargets",
   "line_style": "Continuous",
   "points": [

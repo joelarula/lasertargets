@@ -1,8 +1,13 @@
 [
   {
     "name": "001",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #001: linear calibration scale (21 pts, multi-color (7 colors), single continuous stroke)",
+    "tags": [
+      "density:low",
+      "stroke:single",
+      "color:multi",
+      "pattern:calibration"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -178,8 +183,13 @@
   },
   {
     "name": "002",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #002: linear calibration scale (21 pts, multi-color (7 colors), single continuous stroke)",
+    "tags": [
+      "density:low",
+      "stroke:single",
+      "color:multi",
+      "pattern:calibration"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -355,8 +365,13 @@
   },
   {
     "name": "003",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #003: point array / beam test (21 pts, multi-color (7 colors), single continuous stroke)",
+    "tags": [
+      "density:low",
+      "stroke:single",
+      "color:multi",
+      "pattern:point_array"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -532,8 +547,13 @@
   },
   {
     "name": "004",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #004: point array / beam test (21 pts, multi-color (7 colors), single continuous stroke)",
+    "tags": [
+      "density:low",
+      "stroke:single",
+      "color:multi",
+      "pattern:point_array"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -709,8 +729,13 @@
   },
   {
     "name": "005",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #005: point array / beam test (26 pts, multi-color (4 colors), 2 strokes)",
+    "tags": [
+      "density:low",
+      "stroke:segmented",
+      "color:multi",
+      "pattern:point_array"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -926,8 +951,13 @@
   },
   {
     "name": "006",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #006: point array / beam test (18 pts, multi-color (7 colors), single continuous stroke)",
+    "tags": [
+      "density:low",
+      "stroke:single",
+      "color:multi",
+      "pattern:point_array"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -1079,8 +1109,13 @@
   },
   {
     "name": "007",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #007: point array / beam test (25 pts, multi-color (3 colors), single continuous stroke)",
+    "tags": [
+      "density:low",
+      "stroke:single",
+      "color:multi",
+      "pattern:point_array"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -1288,8 +1323,13 @@
   },
   {
     "name": "008",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #008: point array / beam test (21 pts, multi-color (4 colors), single continuous stroke)",
+    "tags": [
+      "density:low",
+      "stroke:single",
+      "color:multi",
+      "pattern:point_array"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -1465,8 +1505,13 @@
   },
   {
     "name": "009",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #009: point array / beam test (29 pts, multi-color (5 colors), single continuous stroke)",
+    "tags": [
+      "density:low",
+      "stroke:single",
+      "color:multi",
+      "pattern:point_array"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -1706,8 +1751,13 @@
   },
   {
     "name": "010",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #010: point array / beam test (25 pts, multi-color (7 colors), single continuous stroke)",
+    "tags": [
+      "density:low",
+      "stroke:single",
+      "color:multi",
+      "pattern:point_array"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -1915,8 +1965,13 @@
   },
   {
     "name": "011",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #011: closed geometric loop (22 pts, multi-color (5 colors), single continuous stroke)",
+    "tags": [
+      "density:low",
+      "stroke:single",
+      "color:multi",
+      "pattern:loop"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -2100,8 +2155,13 @@
   },
   {
     "name": "012",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #012: point array / beam test (45 pts, multi-color (7 colors), single continuous stroke)",
+    "tags": [
+      "density:medium",
+      "stroke:single",
+      "color:multi",
+      "pattern:point_array"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -2469,8 +2529,13 @@
   },
   {
     "name": "013",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #013: point array / beam test (101 pts, multi-color (7 colors), single continuous stroke)",
+    "tags": [
+      "density:high",
+      "stroke:single",
+      "color:multi",
+      "pattern:point_array"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -3286,8 +3351,13 @@
   },
   {
     "name": "014",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #014: multi-segment geometry / reticle (32 pts, multi-color (7 colors), 16 multi-segment strokes)",
+    "tags": [
+      "density:medium",
+      "stroke:multi",
+      "color:multi",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -3551,8 +3621,13 @@
   },
   {
     "name": "015",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #015: multi-segment geometry / reticle (90 pts, multi-color (7 colors), 45 multi-segment strokes)",
+    "tags": [
+      "density:medium",
+      "stroke:multi",
+      "color:multi",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -4280,8 +4355,13 @@
   },
   {
     "name": "016",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #016: multi-segment geometry / reticle (32 pts, multi-color (7 colors), 16 multi-segment strokes)",
+    "tags": [
+      "density:medium",
+      "stroke:multi",
+      "color:multi",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -4545,8 +4625,13 @@
   },
   {
     "name": "017",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #017: multi-segment geometry / reticle (32 pts, multi-color (7 colors), 16 multi-segment strokes)",
+    "tags": [
+      "density:medium",
+      "stroke:multi",
+      "color:multi",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -4810,8 +4895,13 @@
   },
   {
     "name": "018",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #018: linear calibration scale (91 pts, multi-color (4 colors), single continuous stroke)",
+    "tags": [
+      "density:medium",
+      "stroke:single",
+      "color:multi",
+      "pattern:calibration"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -5547,8 +5637,13 @@
   },
   {
     "name": "019",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #019: point array / beam test (81 pts, multi-color (3 colors), single continuous stroke)",
+    "tags": [
+      "density:medium",
+      "stroke:single",
+      "color:multi",
+      "pattern:point_array"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -6204,8 +6299,13 @@
   },
   {
     "name": "020",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #020: linear calibration scale (41 pts, multi-color (3 colors), single continuous stroke)",
+    "tags": [
+      "density:medium",
+      "stroke:single",
+      "color:multi",
+      "pattern:calibration"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -6541,8 +6641,13 @@
   },
   {
     "name": "021",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #021: point array / beam test (41 pts, dual-color, single continuous stroke)",
+    "tags": [
+      "density:medium",
+      "stroke:single",
+      "color:dual",
+      "pattern:point_array"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -6878,8 +6983,13 @@
   },
   {
     "name": "022",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #022: point array / beam test (81 pts, multi-color (3 colors), single continuous stroke)",
+    "tags": [
+      "density:medium",
+      "stroke:single",
+      "color:multi",
+      "pattern:point_array"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -7535,8 +7645,13 @@
   },
   {
     "name": "023",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #023: point array / beam test (18 pts, multi-color (7 colors), single continuous stroke)",
+    "tags": [
+      "density:low",
+      "stroke:single",
+      "color:multi",
+      "pattern:point_array"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -7688,8 +7803,13 @@
   },
   {
     "name": "024",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #024: detailed artwork (162 pts, multi-color (7 colors), 2 strokes)",
+    "tags": [
+      "density:high",
+      "stroke:segmented",
+      "color:multi",
+      "pattern:artwork"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -8993,8 +9113,13 @@
   },
   {
     "name": "025",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #025: linear calibration scale (16 pts, dual-color, 2 strokes)",
+    "tags": [
+      "density:low",
+      "stroke:segmented",
+      "color:dual",
+      "pattern:calibration"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -9130,8 +9255,13 @@
   },
   {
     "name": "026",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #026: point array / beam test (27 pts, multi-color (3 colors), 3 strokes)",
+    "tags": [
+      "density:low",
+      "stroke:segmented",
+      "color:multi",
+      "pattern:point_array"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -9355,8 +9485,13 @@
   },
   {
     "name": "027",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #027: multi-segment geometry / reticle (32 pts, dual-color, 4 strokes)",
+    "tags": [
+      "density:medium",
+      "stroke:segmented",
+      "color:dual",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -9620,8 +9755,13 @@
   },
   {
     "name": "028",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #028: multi-segment geometry / reticle (24 pts, multi-color (6 colors), 6 multi-segment strokes)",
+    "tags": [
+      "density:low",
+      "stroke:multi",
+      "color:multi",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -9821,8 +9961,13 @@
   },
   {
     "name": "029",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #029: multi-segment geometry / reticle (32 pts, multi-color (7 colors), 8 multi-segment strokes)",
+    "tags": [
+      "density:medium",
+      "stroke:multi",
+      "color:multi",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -10086,8 +10231,13 @@
   },
   {
     "name": "030",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #030: multi-segment geometry / reticle (40 pts, multi-color (7 colors), 10 multi-segment strokes)",
+    "tags": [
+      "density:medium",
+      "stroke:multi",
+      "color:multi",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -10415,8 +10565,13 @@
   },
   {
     "name": "031",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #031: multi-segment geometry / reticle (36 pts, multi-color (7 colors), 12 multi-segment strokes)",
+    "tags": [
+      "density:medium",
+      "stroke:multi",
+      "color:multi",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -10712,8 +10867,13 @@
   },
   {
     "name": "032",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #032: multi-segment geometry / reticle (36 pts, dual-color, 6 multi-segment strokes)",
+    "tags": [
+      "density:medium",
+      "stroke:multi",
+      "color:dual",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -11009,8 +11169,13 @@
   },
   {
     "name": "033",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #033: multi-segment geometry / reticle (45 pts, multi-color (5 colors), 5 strokes)",
+    "tags": [
+      "density:medium",
+      "stroke:segmented",
+      "color:multi",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -11378,8 +11543,14 @@
   },
   {
     "name": "034",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #034: linear calibration scale (81 pts, monochrome, single continuous stroke)",
+    "tags": [
+      "density:medium",
+      "stroke:single",
+      "color:mono",
+      "color:yellow",
+      "pattern:calibration"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -12035,8 +12206,13 @@
   },
   {
     "name": "035",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #035: multi-segment geometry / reticle (62 pts, dual-color, 21 multi-segment strokes)",
+    "tags": [
+      "density:medium",
+      "stroke:multi",
+      "color:dual",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -12540,8 +12716,13 @@
   },
   {
     "name": "036",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #036: multi-segment geometry / reticle (18 pts, dual-color, 9 multi-segment strokes)",
+    "tags": [
+      "density:low",
+      "stroke:multi",
+      "color:dual",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -12693,8 +12874,13 @@
   },
   {
     "name": "037",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #037: point array / beam test (12 pts, multi-color (3 colors), 3 strokes)",
+    "tags": [
+      "density:low",
+      "stroke:segmented",
+      "color:multi",
+      "pattern:point_array"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -12798,8 +12984,13 @@
   },
   {
     "name": "038",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #038: multi-segment geometry / reticle (20 pts, multi-color (4 colors), 4 strokes)",
+    "tags": [
+      "density:low",
+      "stroke:segmented",
+      "color:multi",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -12967,8 +13158,13 @@
   },
   {
     "name": "039",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #039: closed geometric loop (32 pts, multi-color (3 colors), single continuous stroke)",
+    "tags": [
+      "density:medium",
+      "stroke:single",
+      "color:multi",
+      "pattern:loop"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -13232,8 +13428,13 @@
   },
   {
     "name": "040",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #040: point array / beam test (26 pts, multi-color (4 colors), 2 strokes)",
+    "tags": [
+      "density:low",
+      "stroke:segmented",
+      "color:multi",
+      "pattern:point_array"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -13449,8 +13650,13 @@
   },
   {
     "name": "041",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #041: point array / beam test (24 pts, multi-color (4 colors), 2 strokes)",
+    "tags": [
+      "density:low",
+      "stroke:segmented",
+      "color:multi",
+      "pattern:point_array"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -13650,8 +13856,13 @@
   },
   {
     "name": "042",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #042: multi-segment geometry / reticle (24 pts, multi-color (4 colors), 4 strokes)",
+    "tags": [
+      "density:low",
+      "stroke:segmented",
+      "color:multi",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -13851,8 +14062,13 @@
   },
   {
     "name": "043",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #043: multi-segment geometry / reticle (10 pts, multi-color (5 colors), 5 strokes)",
+    "tags": [
+      "density:low",
+      "stroke:segmented",
+      "color:multi",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -13940,8 +14156,13 @@
   },
   {
     "name": "044",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #044: point array / beam test (67 pts, multi-color (3 colors), single continuous stroke)",
+    "tags": [
+      "density:medium",
+      "stroke:single",
+      "color:multi",
+      "pattern:point_array"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -14485,8 +14706,13 @@
   },
   {
     "name": "045",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #045: point array / beam test (79 pts, multi-color (4 colors), single continuous stroke)",
+    "tags": [
+      "density:medium",
+      "stroke:single",
+      "color:multi",
+      "pattern:point_array"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -15126,8 +15352,13 @@
   },
   {
     "name": "046",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #046: detailed artwork (201 pts, dual-color, single continuous stroke)",
+    "tags": [
+      "density:high",
+      "stroke:single",
+      "color:dual",
+      "pattern:artwork"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -16743,8 +16974,13 @@
   },
   {
     "name": "047",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #047: point array / beam test (55 pts, multi-color (5 colors), single continuous stroke)",
+    "tags": [
+      "density:medium",
+      "stroke:single",
+      "color:multi",
+      "pattern:point_array"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -17192,8 +17428,13 @@
   },
   {
     "name": "048",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #048: point array / beam test (25 pts, multi-color (7 colors), single continuous stroke)",
+    "tags": [
+      "density:low",
+      "stroke:single",
+      "color:multi",
+      "pattern:point_array"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -17401,8 +17642,13 @@
   },
   {
     "name": "049",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #049: point array / beam test (16 pts, multi-color (5 colors), single continuous stroke)",
+    "tags": [
+      "density:low",
+      "stroke:single",
+      "color:multi",
+      "pattern:point_array"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -17538,8 +17784,13 @@
   },
   {
     "name": "050",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #050: multi-segment geometry / reticle (12 pts, multi-color (4 colors), 4 strokes)",
+    "tags": [
+      "density:low",
+      "stroke:segmented",
+      "color:multi",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -17643,8 +17894,13 @@
   },
   {
     "name": "051",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #051: point array / beam test (9 pts, multi-color (4 colors), single continuous stroke)",
+    "tags": [
+      "density:low",
+      "stroke:single",
+      "color:multi",
+      "pattern:point_array"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -17724,8 +17980,13 @@
   },
   {
     "name": "052",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #052: closed geometric loop (22 pts, multi-color (5 colors), single continuous stroke)",
+    "tags": [
+      "density:low",
+      "stroke:single",
+      "color:multi",
+      "pattern:loop"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -17909,8 +18170,13 @@
   },
   {
     "name": "053",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #053: point array / beam test (16 pts, multi-color (5 colors), single continuous stroke)",
+    "tags": [
+      "density:low",
+      "stroke:single",
+      "color:multi",
+      "pattern:point_array"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -18046,8 +18312,14 @@
   },
   {
     "name": "054",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #054: point array / beam test (6 pts, monochrome, single continuous stroke)",
+    "tags": [
+      "density:low",
+      "stroke:single",
+      "color:mono",
+      "color:yellow",
+      "pattern:point_array"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -18103,8 +18375,13 @@
   },
   {
     "name": "055",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #055: point array / beam test (17 pts, multi-color (7 colors), single continuous stroke)",
+    "tags": [
+      "density:low",
+      "stroke:single",
+      "color:multi",
+      "pattern:point_array"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -18248,8 +18525,13 @@
   },
   {
     "name": "056",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #056: point array / beam test (25 pts, multi-color (6 colors), single continuous stroke)",
+    "tags": [
+      "density:low",
+      "stroke:single",
+      "color:multi",
+      "pattern:point_array"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -18457,8 +18739,13 @@
   },
   {
     "name": "057",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #057: multi-segment geometry / reticle (12 pts, multi-color (7 colors), 4 strokes)",
+    "tags": [
+      "density:low",
+      "stroke:segmented",
+      "color:multi",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -18562,8 +18849,13 @@
   },
   {
     "name": "058",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #058: point array / beam test (25 pts, multi-color (4 colors), single continuous stroke)",
+    "tags": [
+      "density:low",
+      "stroke:single",
+      "color:multi",
+      "pattern:point_array"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -18771,8 +19063,13 @@
   },
   {
     "name": "059",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #059: point array / beam test (10 pts, multi-color (3 colors), single continuous stroke)",
+    "tags": [
+      "density:low",
+      "stroke:single",
+      "color:multi",
+      "pattern:point_array"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -18860,8 +19157,13 @@
   },
   {
     "name": "060",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #060: multi-segment geometry / reticle (55 pts, dual-color, 5 strokes)",
+    "tags": [
+      "density:medium",
+      "stroke:segmented",
+      "color:dual",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -19309,8 +19611,13 @@
   },
   {
     "name": "061",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #061: point array / beam test (33 pts, multi-color (3 colors), 3 strokes)",
+    "tags": [
+      "density:medium",
+      "stroke:segmented",
+      "color:multi",
+      "pattern:point_array"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -19582,8 +19889,13 @@
   },
   {
     "name": "062",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #062: point array / beam test (13 pts, multi-color (4 colors), single continuous stroke)",
+    "tags": [
+      "density:low",
+      "stroke:single",
+      "color:multi",
+      "pattern:point_array"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -19695,8 +20007,13 @@
   },
   {
     "name": "063",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #063: point array / beam test (10 pts, dual-color, 2 strokes)",
+    "tags": [
+      "density:low",
+      "stroke:segmented",
+      "color:dual",
+      "pattern:point_array"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -19784,8 +20101,13 @@
   },
   {
     "name": "064",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #064: multi-segment geometry / reticle (20 pts, multi-color (4 colors), 4 strokes)",
+    "tags": [
+      "density:low",
+      "stroke:segmented",
+      "color:multi",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -19953,8 +20275,13 @@
   },
   {
     "name": "065",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #065: multi-segment geometry / reticle (45 pts, multi-color (4 colors), 9 multi-segment strokes)",
+    "tags": [
+      "density:medium",
+      "stroke:multi",
+      "color:multi",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -20322,8 +20649,13 @@
   },
   {
     "name": "066",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #066: point array / beam test (27 pts, multi-color (3 colors), single continuous stroke)",
+    "tags": [
+      "density:low",
+      "stroke:single",
+      "color:multi",
+      "pattern:point_array"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -20547,8 +20879,14 @@
   },
   {
     "name": "067",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #067: point array / beam test (80 pts, monochrome, 2 strokes)",
+    "tags": [
+      "density:medium",
+      "stroke:segmented",
+      "color:mono",
+      "color:white",
+      "pattern:point_array"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -21196,8 +21534,13 @@
   },
   {
     "name": "068",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #068: point array / beam test (9 pts, multi-color (4 colors), single continuous stroke)",
+    "tags": [
+      "density:low",
+      "stroke:single",
+      "color:multi",
+      "pattern:point_array"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -21277,8 +21620,13 @@
   },
   {
     "name": "069",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #069: point array / beam test (18 pts, multi-color (7 colors), single continuous stroke)",
+    "tags": [
+      "density:low",
+      "stroke:single",
+      "color:multi",
+      "pattern:point_array"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -21430,8 +21778,13 @@
   },
   {
     "name": "070",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #070: point array / beam test (89 pts, multi-color (7 colors), single continuous stroke)",
+    "tags": [
+      "density:medium",
+      "stroke:single",
+      "color:multi",
+      "pattern:point_array"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -22151,8 +22504,14 @@
   },
   {
     "name": "071",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #071: point array / beam test (26 pts, monochrome, single continuous stroke)",
+    "tags": [
+      "density:low",
+      "stroke:single",
+      "color:mono",
+      "color:cyan",
+      "pattern:point_array"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -22368,8 +22727,13 @@
   },
   {
     "name": "072",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #072: closed geometric loop (89 pts, multi-color (7 colors), single continuous stroke)",
+    "tags": [
+      "density:medium",
+      "stroke:single",
+      "color:multi",
+      "pattern:loop"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -23089,8 +23453,13 @@
   },
   {
     "name": "073",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #073: point array / beam test (52 pts, dual-color, 2 strokes)",
+    "tags": [
+      "density:medium",
+      "stroke:segmented",
+      "color:dual",
+      "pattern:point_array"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -23514,8 +23883,13 @@
   },
   {
     "name": "074",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #074: point array / beam test (52 pts, dual-color, single continuous stroke)",
+    "tags": [
+      "density:medium",
+      "stroke:single",
+      "color:dual",
+      "pattern:point_array"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -23939,8 +24313,13 @@
   },
   {
     "name": "075",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #075: point array / beam test (75 pts, multi-color (3 colors), 3 strokes)",
+    "tags": [
+      "density:medium",
+      "stroke:segmented",
+      "color:multi",
+      "pattern:point_array"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -24548,8 +24927,13 @@
   },
   {
     "name": "076",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #076: multi-segment geometry / reticle (100 pts, multi-color (4 colors), 4 strokes)",
+    "tags": [
+      "density:high",
+      "stroke:segmented",
+      "color:multi",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -25357,8 +25741,13 @@
   },
   {
     "name": "077",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #077: detailed artwork (150 pts, multi-color (6 colors), 6 multi-segment strokes)",
+    "tags": [
+      "density:high",
+      "stroke:multi",
+      "color:multi",
+      "pattern:artwork"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -26566,8 +26955,13 @@
   },
   {
     "name": "078",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #078: point array / beam test (39 pts, multi-color (3 colors), 3 strokes)",
+    "tags": [
+      "density:medium",
+      "stroke:segmented",
+      "color:multi",
+      "pattern:point_array"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -26887,8 +27281,14 @@
   },
   {
     "name": "079",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #079: multi-segment geometry / reticle (52 pts, monochrome, 4 strokes)",
+    "tags": [
+      "density:medium",
+      "stroke:segmented",
+      "color:mono",
+      "color:white",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -27312,8 +27712,13 @@
   },
   {
     "name": "080",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #080: multi-segment geometry / reticle (78 pts, multi-color (6 colors), 6 multi-segment strokes)",
+    "tags": [
+      "density:medium",
+      "stroke:multi",
+      "color:multi",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -27945,8 +28350,13 @@
   },
   {
     "name": "081",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #081: multi-segment geometry / reticle (48 pts, multi-color (7 colors), 12 multi-segment strokes)",
+    "tags": [
+      "density:medium",
+      "stroke:multi",
+      "color:multi",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -28338,8 +28748,13 @@
   },
   {
     "name": "082",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #082: point array / beam test (21 pts, multi-color (3 colors), 3 strokes)",
+    "tags": [
+      "density:low",
+      "stroke:segmented",
+      "color:multi",
+      "pattern:point_array"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -28515,8 +28930,13 @@
   },
   {
     "name": "083",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #083: multi-segment geometry / reticle (28 pts, dual-color, 4 strokes)",
+    "tags": [
+      "density:low",
+      "stroke:segmented",
+      "color:dual",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -28748,8 +29168,14 @@
   },
   {
     "name": "084",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #084: point array / beam test (26 pts, monochrome, 2 strokes)",
+    "tags": [
+      "density:low",
+      "stroke:segmented",
+      "color:mono",
+      "color:red",
+      "pattern:point_array"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -28965,8 +29391,13 @@
   },
   {
     "name": "085",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #085: point array / beam test (25 pts, multi-color (3 colors), single continuous stroke)",
+    "tags": [
+      "density:low",
+      "stroke:single",
+      "color:multi",
+      "pattern:point_array"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -29174,8 +29605,14 @@
   },
   {
     "name": "086",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #086: point array / beam test (13 pts, monochrome, single continuous stroke)",
+    "tags": [
+      "density:low",
+      "stroke:single",
+      "color:mono",
+      "color:blue",
+      "pattern:point_array"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -29287,8 +29724,13 @@
   },
   {
     "name": "087",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #087: point array / beam test (47 pts, multi-color (7 colors), single continuous stroke)",
+    "tags": [
+      "density:medium",
+      "stroke:single",
+      "color:multi",
+      "pattern:point_array"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -29672,8 +30114,13 @@
   },
   {
     "name": "088",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #088: point array / beam test (94 pts, multi-color (7 colors), 2 strokes)",
+    "tags": [
+      "density:medium",
+      "stroke:segmented",
+      "color:multi",
+      "pattern:point_array"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -30433,8 +30880,13 @@
   },
   {
     "name": "089",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #089: point array / beam test (103 pts, multi-color (5 colors), single continuous stroke)",
+    "tags": [
+      "density:high",
+      "stroke:single",
+      "color:multi",
+      "pattern:point_array"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -31266,8 +31718,13 @@
   },
   {
     "name": "090",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #090: detailed artwork (206 pts, multi-color (5 colors), 2 strokes)",
+    "tags": [
+      "density:high",
+      "stroke:segmented",
+      "color:multi",
+      "pattern:artwork"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -32923,8 +33380,13 @@
   },
   {
     "name": "091",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #091: detailed artwork (208 pts, multi-color (5 colors), 3 strokes)",
+    "tags": [
+      "density:high",
+      "stroke:segmented",
+      "color:multi",
+      "pattern:artwork"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -34596,8 +35058,13 @@
   },
   {
     "name": "092",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #092: detailed artwork (309 pts, multi-color (3 colors), 3 strokes)",
+    "tags": [
+      "density:very_high",
+      "stroke:segmented",
+      "color:multi",
+      "pattern:artwork"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -37077,8 +37544,13 @@
   },
   {
     "name": "093",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #093: detailed artwork (618 pts, multi-color (6 colors), 6 multi-segment strokes)",
+    "tags": [
+      "density:very_high",
+      "stroke:multi",
+      "color:multi",
+      "pattern:artwork"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -42030,8 +42502,13 @@
   },
   {
     "name": "094",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #094: detailed artwork (412 pts, multi-color (4 colors), 4 strokes)",
+    "tags": [
+      "density:very_high",
+      "stroke:segmented",
+      "color:multi",
+      "pattern:artwork"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -45335,8 +45812,14 @@
   },
   {
     "name": "095",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #095: point array / beam test (50 pts, monochrome, single continuous stroke)",
+    "tags": [
+      "density:medium",
+      "stroke:single",
+      "color:mono",
+      "color:blue",
+      "pattern:point_array"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -45744,8 +46227,13 @@
   },
   {
     "name": "096",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #096: point array / beam test (101 pts, multi-color (7 colors), single continuous stroke)",
+    "tags": [
+      "density:high",
+      "stroke:single",
+      "color:multi",
+      "pattern:point_array"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -46561,8 +47049,13 @@
   },
   {
     "name": "097",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #097: linear calibration scale (101 pts, multi-color (7 colors), single continuous stroke)",
+    "tags": [
+      "density:high",
+      "stroke:single",
+      "color:multi",
+      "pattern:calibration"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -47378,8 +47871,13 @@
   },
   {
     "name": "098",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #098: point array / beam test (55 pts, multi-color (5 colors), single continuous stroke)",
+    "tags": [
+      "density:medium",
+      "stroke:single",
+      "color:multi",
+      "pattern:point_array"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -47827,8 +48325,13 @@
   },
   {
     "name": "099",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #099: detailed artwork (165 pts, multi-color (6 colors), 3 strokes)",
+    "tags": [
+      "density:high",
+      "stroke:segmented",
+      "color:multi",
+      "pattern:artwork"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -49156,8 +49659,13 @@
   },
   {
     "name": "100",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #100: point array / beam test (15 pts, dual-color, 2 strokes)",
+    "tags": [
+      "density:low",
+      "stroke:segmented",
+      "color:dual",
+      "pattern:point_array"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -49285,8 +49793,13 @@
   },
   {
     "name": "101",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #101: multi-segment geometry / reticle (47 pts, dual-color, 5 strokes)",
+    "tags": [
+      "density:medium",
+      "stroke:segmented",
+      "color:dual",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -49670,8 +50183,13 @@
   },
   {
     "name": "102",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #102: multi-segment geometry / reticle (95 pts, multi-color (6 colors), 6 multi-segment strokes)",
+    "tags": [
+      "density:medium",
+      "stroke:multi",
+      "color:multi",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -50439,8 +50957,13 @@
   },
   {
     "name": "103",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #103: point array / beam test (53 pts, multi-color (4 colors), single continuous stroke)",
+    "tags": [
+      "density:medium",
+      "stroke:single",
+      "color:multi",
+      "pattern:point_array"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -50872,8 +51395,13 @@
   },
   {
     "name": "104",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #104: point array / beam test (21 pts, multi-color (7 colors), single continuous stroke)",
+    "tags": [
+      "density:low",
+      "stroke:single",
+      "color:multi",
+      "pattern:point_array"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -51049,8 +51577,13 @@
   },
   {
     "name": "105",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #105: multi-segment geometry / reticle (104 pts, multi-color (5 colors), 8 multi-segment strokes)",
+    "tags": [
+      "density:high",
+      "stroke:multi",
+      "color:multi",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -51890,8 +52423,14 @@
   },
   {
     "name": "106",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #106: point array / beam test (25 pts, monochrome, single continuous stroke)",
+    "tags": [
+      "density:low",
+      "stroke:single",
+      "color:mono",
+      "color:magenta",
+      "pattern:point_array"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -52099,8 +52638,13 @@
   },
   {
     "name": "107",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #107: point array / beam test (61 pts, multi-color (4 colors), single continuous stroke)",
+    "tags": [
+      "density:medium",
+      "stroke:single",
+      "color:multi",
+      "pattern:point_array"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -52596,8 +53140,13 @@
   },
   {
     "name": "108",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #108: multi-segment geometry / reticle (60 pts, multi-color (5 colors), 8 multi-segment strokes)",
+    "tags": [
+      "density:medium",
+      "stroke:multi",
+      "color:multi",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -53085,8 +53634,14 @@
   },
   {
     "name": "109",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #109: point array / beam test (41 pts, monochrome, single continuous stroke)",
+    "tags": [
+      "density:medium",
+      "stroke:single",
+      "color:mono",
+      "color:red",
+      "pattern:point_array"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -53422,8 +53977,13 @@
   },
   {
     "name": "110",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #110: multi-segment geometry / reticle (130 pts, multi-color (7 colors), 8 multi-segment strokes)",
+    "tags": [
+      "density:high",
+      "stroke:multi",
+      "color:multi",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -54471,8 +55031,14 @@
   },
   {
     "name": "111",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #111: detailed artwork (169 pts, monochrome, single continuous stroke)",
+    "tags": [
+      "density:high",
+      "stroke:single",
+      "color:mono",
+      "color:cyan",
+      "pattern:artwork"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -55832,8 +56398,13 @@
   },
   {
     "name": "112",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #112: point array / beam test (71 pts, dual-color, single continuous stroke)",
+    "tags": [
+      "density:medium",
+      "stroke:single",
+      "color:dual",
+      "pattern:point_array"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -56409,8 +56980,13 @@
   },
   {
     "name": "113",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #113: multi-segment geometry / reticle (48 pts, multi-color (7 colors), 12 multi-segment strokes)",
+    "tags": [
+      "density:medium",
+      "stroke:multi",
+      "color:multi",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -56802,8 +57378,14 @@
   },
   {
     "name": "114",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #114: closed geometric loop (54 pts, monochrome, single continuous stroke)",
+    "tags": [
+      "density:medium",
+      "stroke:single",
+      "color:mono",
+      "color:white",
+      "pattern:loop"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -57243,8 +57825,13 @@
   },
   {
     "name": "115",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #115: point array / beam test (54 pts, multi-color (3 colors), single continuous stroke)",
+    "tags": [
+      "density:medium",
+      "stroke:single",
+      "color:multi",
+      "pattern:point_array"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -57684,8 +58271,13 @@
   },
   {
     "name": "116",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #116: detailed artwork (194 pts, multi-color (7 colors), single continuous stroke)",
+    "tags": [
+      "density:high",
+      "stroke:single",
+      "color:multi",
+      "pattern:artwork"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -59245,8 +59837,13 @@
   },
   {
     "name": "117",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #117: point array / beam test (80 pts, dual-color, 2 strokes)",
+    "tags": [
+      "density:medium",
+      "stroke:segmented",
+      "color:dual",
+      "pattern:point_array"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -59894,8 +60491,13 @@
   },
   {
     "name": "118",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #118: multi-segment geometry / reticle (73 pts, multi-color (4 colors), 13 multi-segment strokes)",
+    "tags": [
+      "density:medium",
+      "stroke:multi",
+      "color:multi",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -60487,8 +61089,14 @@
   },
   {
     "name": "119",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #119: point array / beam test (13 pts, monochrome, single continuous stroke)",
+    "tags": [
+      "density:low",
+      "stroke:single",
+      "color:mono",
+      "color:white",
+      "pattern:point_array"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -60600,8 +61208,14 @@
   },
   {
     "name": "120",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #120: linear calibration scale (2 pts, monochrome, single continuous stroke)",
+    "tags": [
+      "density:low",
+      "stroke:single",
+      "color:mono",
+      "color:white",
+      "pattern:calibration"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -60625,8 +61239,13 @@
   },
   {
     "name": "121",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #121: multi-segment geometry / reticle (42 pts, dual-color, 14 multi-segment strokes)",
+    "tags": [
+      "density:medium",
+      "stroke:multi",
+      "color:dual",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -60970,8 +61589,13 @@
   },
   {
     "name": "122",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #122: linear calibration scale (33 pts, dual-color, single continuous stroke)",
+    "tags": [
+      "density:medium",
+      "stroke:single",
+      "color:dual",
+      "pattern:calibration"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -61243,8 +61867,13 @@
   },
   {
     "name": "123",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #123: linear calibration scale (33 pts, dual-color, single continuous stroke)",
+    "tags": [
+      "density:medium",
+      "stroke:single",
+      "color:dual",
+      "pattern:calibration"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -61516,8 +62145,13 @@
   },
   {
     "name": "124",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #124: linear calibration scale (42 pts, dual-color, single continuous stroke)",
+    "tags": [
+      "density:medium",
+      "stroke:single",
+      "color:dual",
+      "pattern:calibration"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -61861,8 +62495,13 @@
   },
   {
     "name": "125",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #125: linear calibration scale (16 pts, dual-color, 2 strokes)",
+    "tags": [
+      "density:low",
+      "stroke:segmented",
+      "color:dual",
+      "pattern:calibration"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -61998,8 +62637,13 @@
   },
   {
     "name": "126",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #126: point array / beam test (33 pts, multi-color (4 colors), 3 strokes)",
+    "tags": [
+      "density:medium",
+      "stroke:segmented",
+      "color:multi",
+      "pattern:point_array"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -62271,8 +62915,13 @@
   },
   {
     "name": "127",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #127: multi-segment geometry / reticle (40 pts, multi-color (3 colors), 4 strokes)",
+    "tags": [
+      "density:medium",
+      "stroke:segmented",
+      "color:multi",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -62600,8 +63249,13 @@
   },
   {
     "name": "128",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #128: multi-segment geometry / reticle (36 pts, multi-color (7 colors), 6 multi-segment strokes)",
+    "tags": [
+      "density:medium",
+      "stroke:multi",
+      "color:multi",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -62897,8 +63551,13 @@
   },
   {
     "name": "129",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #129: multi-segment geometry / reticle (48 pts, multi-color (7 colors), 8 multi-segment strokes)",
+    "tags": [
+      "density:medium",
+      "stroke:multi",
+      "color:multi",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -63290,8 +63949,13 @@
   },
   {
     "name": "130",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #130: multi-segment geometry / reticle (48 pts, multi-color (5 colors), 8 multi-segment strokes)",
+    "tags": [
+      "density:medium",
+      "stroke:multi",
+      "color:multi",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -63683,8 +64347,13 @@
   },
   {
     "name": "131",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #131: multi-segment geometry / reticle (60 pts, dual-color, 10 multi-segment strokes)",
+    "tags": [
+      "density:medium",
+      "stroke:multi",
+      "color:dual",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -64172,8 +64841,13 @@
   },
   {
     "name": "132",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #132: multi-segment geometry / reticle (60 pts, multi-color (3 colors), 12 multi-segment strokes)",
+    "tags": [
+      "density:medium",
+      "stroke:multi",
+      "color:multi",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -64661,8 +65335,13 @@
   },
   {
     "name": "133",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #133: linear calibration scale (44 pts, dual-color, single continuous stroke)",
+    "tags": [
+      "density:medium",
+      "stroke:single",
+      "color:dual",
+      "pattern:calibration"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -65022,8 +65701,13 @@
   },
   {
     "name": "134",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #134: multi-segment geometry / reticle (122 pts, multi-color (5 colors), 12 multi-segment strokes)",
+    "tags": [
+      "density:high",
+      "stroke:multi",
+      "color:multi",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -66007,8 +66691,13 @@
   },
   {
     "name": "135",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #135: point array / beam test (22 pts, dual-color, single continuous stroke)",
+    "tags": [
+      "density:low",
+      "stroke:single",
+      "color:dual",
+      "pattern:point_array"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -66192,8 +66881,13 @@
   },
   {
     "name": "136",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #136: point array / beam test (45 pts, dual-color, single continuous stroke)",
+    "tags": [
+      "density:medium",
+      "stroke:single",
+      "color:dual",
+      "pattern:point_array"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -66561,8 +67255,13 @@
   },
   {
     "name": "137",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #137: point array / beam test (11 pts, dual-color, single continuous stroke)",
+    "tags": [
+      "density:low",
+      "stroke:single",
+      "color:dual",
+      "pattern:point_array"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -66658,8 +67357,13 @@
   },
   {
     "name": "138",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #138: closed geometric loop (13 pts, dual-color, single continuous stroke)",
+    "tags": [
+      "density:low",
+      "stroke:single",
+      "color:dual",
+      "pattern:loop"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -66771,8 +67475,13 @@
   },
   {
     "name": "139",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #139: closed geometric loop (17 pts, dual-color, single continuous stroke)",
+    "tags": [
+      "density:low",
+      "stroke:single",
+      "color:dual",
+      "pattern:loop"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -66916,8 +67625,13 @@
   },
   {
     "name": "140",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #140: closed geometric loop (61 pts, multi-color (3 colors), single continuous stroke)",
+    "tags": [
+      "density:medium",
+      "stroke:single",
+      "color:multi",
+      "pattern:loop"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -67413,8 +68127,13 @@
   },
   {
     "name": "141",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #141: multi-segment geometry / reticle (56 pts, multi-color (3 colors), 8 multi-segment strokes)",
+    "tags": [
+      "density:medium",
+      "stroke:multi",
+      "color:multi",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -67870,8 +68589,13 @@
   },
   {
     "name": "142",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #142: multi-segment geometry / reticle (36 pts, multi-color (3 colors), 4 strokes)",
+    "tags": [
+      "density:medium",
+      "stroke:segmented",
+      "color:multi",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -68167,8 +68891,13 @@
   },
   {
     "name": "143",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #143: point array / beam test (40 pts, dual-color, 2 strokes)",
+    "tags": [
+      "density:medium",
+      "stroke:segmented",
+      "color:dual",
+      "pattern:point_array"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -68496,8 +69225,13 @@
   },
   {
     "name": "144",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #144: point array / beam test (38 pts, multi-color (4 colors), single continuous stroke)",
+    "tags": [
+      "density:medium",
+      "stroke:single",
+      "color:multi",
+      "pattern:point_array"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -68809,8 +69543,13 @@
   },
   {
     "name": "145",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #145: point array / beam test (20 pts, dual-color, single continuous stroke)",
+    "tags": [
+      "density:low",
+      "stroke:single",
+      "color:dual",
+      "pattern:point_array"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -68978,8 +69717,13 @@
   },
   {
     "name": "146",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #146: point array / beam test (27 pts, multi-color (4 colors), single continuous stroke)",
+    "tags": [
+      "density:low",
+      "stroke:single",
+      "color:multi",
+      "pattern:point_array"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -69203,8 +69947,13 @@
   },
   {
     "name": "147",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #147: point array / beam test (18 pts, multi-color (3 colors), single continuous stroke)",
+    "tags": [
+      "density:low",
+      "stroke:single",
+      "color:multi",
+      "pattern:point_array"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -69356,8 +70105,13 @@
   },
   {
     "name": "148",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #148: linear calibration scale (10 pts, dual-color, 2 strokes)",
+    "tags": [
+      "density:low",
+      "stroke:segmented",
+      "color:dual",
+      "pattern:calibration"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -69445,8 +70199,13 @@
   },
   {
     "name": "149",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #149: linear calibration scale (4 pts, dual-color, 2 strokes)",
+    "tags": [
+      "density:low",
+      "stroke:segmented",
+      "color:dual",
+      "pattern:calibration"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -69486,8 +70245,13 @@
   },
   {
     "name": "150",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #150: multi-segment geometry / reticle (12 pts, multi-color (4 colors), 4 strokes)",
+    "tags": [
+      "density:low",
+      "stroke:segmented",
+      "color:multi",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -69591,8 +70355,13 @@
   },
   {
     "name": "151",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #151: multi-segment geometry / reticle (12 pts, multi-color (6 colors), 6 multi-segment strokes)",
+    "tags": [
+      "density:low",
+      "stroke:multi",
+      "color:multi",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -69696,8 +70465,13 @@
   },
   {
     "name": "152",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #152: multi-segment geometry / reticle (16 pts, multi-color (7 colors), 8 multi-segment strokes)",
+    "tags": [
+      "density:low",
+      "stroke:multi",
+      "color:multi",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -69833,8 +70607,14 @@
   },
   {
     "name": "153",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #153: multi-segment geometry / reticle (24 pts, monochrome, 12 multi-segment strokes)",
+    "tags": [
+      "density:low",
+      "stroke:multi",
+      "color:mono",
+      "color:white",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -70034,8 +70814,13 @@
   },
   {
     "name": "154",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #154: multi-segment geometry / reticle (32 pts, multi-color (7 colors), 16 multi-segment strokes)",
+    "tags": [
+      "density:medium",
+      "stroke:multi",
+      "color:multi",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -70299,8 +71084,13 @@
   },
   {
     "name": "155",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #155: multi-segment geometry / reticle (40 pts, multi-color (7 colors), 20 multi-segment strokes)",
+    "tags": [
+      "density:medium",
+      "stroke:multi",
+      "color:multi",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -70628,8 +71418,13 @@
   },
   {
     "name": "156",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #156: multi-segment geometry / reticle (48 pts, multi-color (7 colors), 24 multi-segment strokes)",
+    "tags": [
+      "density:medium",
+      "stroke:multi",
+      "color:multi",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -71021,8 +71816,13 @@
   },
   {
     "name": "157",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #157: multi-segment geometry / reticle (64 pts, multi-color (7 colors), 24 multi-segment strokes)",
+    "tags": [
+      "density:medium",
+      "stroke:multi",
+      "color:multi",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -71542,8 +72342,13 @@
   },
   {
     "name": "158",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #158: point array / beam test (9 pts, multi-color (3 colors), 3 strokes)",
+    "tags": [
+      "density:low",
+      "stroke:segmented",
+      "color:multi",
+      "pattern:point_array"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -71623,8 +72428,13 @@
   },
   {
     "name": "159",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #159: multi-segment geometry / reticle (24 pts, multi-color (3 colors), 12 multi-segment strokes)",
+    "tags": [
+      "density:low",
+      "stroke:multi",
+      "color:multi",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -71824,8 +72634,13 @@
   },
   {
     "name": "160",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #160: multi-segment geometry / reticle (68 pts, multi-color (3 colors), 34 multi-segment strokes)",
+    "tags": [
+      "density:medium",
+      "stroke:multi",
+      "color:multi",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -72377,8 +73192,13 @@
   },
   {
     "name": "161",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #161: multi-segment geometry / reticle (12 pts, multi-color (4 colors), 4 strokes)",
+    "tags": [
+      "density:low",
+      "stroke:segmented",
+      "color:multi",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -72482,8 +73302,13 @@
   },
   {
     "name": "162",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #162: multi-segment geometry / reticle (82 pts, multi-color (4 colors), 41 multi-segment strokes)",
+    "tags": [
+      "density:medium",
+      "stroke:multi",
+      "color:multi",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -73147,8 +73972,14 @@
   },
   {
     "name": "163",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #163: multi-segment geometry / reticle (48 pts, monochrome, 24 multi-segment strokes)",
+    "tags": [
+      "density:medium",
+      "stroke:multi",
+      "color:mono",
+      "color:white",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -73540,8 +74371,13 @@
   },
   {
     "name": "164",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #164: multi-segment geometry / reticle (96 pts, dual-color, 48 multi-segment strokes)",
+    "tags": [
+      "density:medium",
+      "stroke:multi",
+      "color:dual",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -74317,8 +75153,13 @@
   },
   {
     "name": "165",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #165: multi-segment geometry / reticle (24 pts, multi-color (6 colors), 12 multi-segment strokes)",
+    "tags": [
+      "density:low",
+      "stroke:multi",
+      "color:multi",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -74518,8 +75359,13 @@
   },
   {
     "name": "166",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #166: multi-segment geometry / reticle (48 pts, multi-color (6 colors), 24 multi-segment strokes)",
+    "tags": [
+      "density:medium",
+      "stroke:multi",
+      "color:multi",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -74911,8 +75757,13 @@
   },
   {
     "name": "167",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #167: multi-segment geometry / reticle (48 pts, dual-color, 24 multi-segment strokes)",
+    "tags": [
+      "density:medium",
+      "stroke:multi",
+      "color:dual",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -75304,8 +76155,13 @@
   },
   {
     "name": "168",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #168: multi-segment geometry / reticle (26 pts, multi-color (5 colors), 13 multi-segment strokes)",
+    "tags": [
+      "density:low",
+      "stroke:multi",
+      "color:multi",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -75521,8 +76377,14 @@
   },
   {
     "name": "169",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #169: multi-segment geometry / reticle (48 pts, monochrome, 24 multi-segment strokes)",
+    "tags": [
+      "density:medium",
+      "stroke:multi",
+      "color:mono",
+      "color:white",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -75914,8 +76776,13 @@
   },
   {
     "name": "170",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #170: multi-segment geometry / reticle (90 pts, multi-color (45 colors), 45 multi-segment strokes)",
+    "tags": [
+      "density:medium",
+      "stroke:multi",
+      "color:multi",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -76643,8 +77510,13 @@
   },
   {
     "name": "171",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #171: multi-segment geometry / reticle (10 pts, multi-color (5 colors), 5 strokes)",
+    "tags": [
+      "density:low",
+      "stroke:segmented",
+      "color:multi",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -76732,8 +77604,13 @@
   },
   {
     "name": "172",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #172: multi-segment geometry / reticle (12 pts, multi-color (3 colors), 6 multi-segment strokes)",
+    "tags": [
+      "density:low",
+      "stroke:multi",
+      "color:multi",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -76837,8 +77714,13 @@
   },
   {
     "name": "173",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #173: multi-segment geometry / reticle (16 pts, multi-color (4 colors), 8 multi-segment strokes)",
+    "tags": [
+      "density:low",
+      "stroke:multi",
+      "color:multi",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -76974,8 +77856,14 @@
   },
   {
     "name": "174",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #174: detailed artwork (334 pts, monochrome, 3 strokes)",
+    "tags": [
+      "density:very_high",
+      "stroke:segmented",
+      "color:mono",
+      "color:yellow",
+      "pattern:artwork"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -79655,8 +80543,14 @@
   },
   {
     "name": "175",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #175: detailed artwork (227 pts, monochrome, 6 multi-segment strokes)",
+    "tags": [
+      "density:high",
+      "stroke:multi",
+      "color:mono",
+      "color:yellow",
+      "pattern:artwork"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -81480,8 +82374,13 @@
   },
   {
     "name": "176",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #176: detailed artwork (162 pts, multi-color (5 colors), 5 strokes)",
+    "tags": [
+      "density:high",
+      "stroke:segmented",
+      "color:multi",
+      "pattern:artwork"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -82785,8 +83684,13 @@
   },
   {
     "name": "177",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #177: point array / beam test (70 pts, multi-color (3 colors), 3 strokes)",
+    "tags": [
+      "density:medium",
+      "stroke:segmented",
+      "color:multi",
+      "pattern:point_array"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -83354,8 +84258,13 @@
   },
   {
     "name": "178",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #178: closed geometric loop (12 pts, dual-color, single continuous stroke)",
+    "tags": [
+      "density:low",
+      "stroke:single",
+      "color:dual",
+      "pattern:loop"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -83459,8 +84368,13 @@
   },
   {
     "name": "179",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #179: closed geometric loop (25 pts, dual-color, single continuous stroke)",
+    "tags": [
+      "density:low",
+      "stroke:single",
+      "color:dual",
+      "pattern:loop"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -83668,8 +84582,14 @@
   },
   {
     "name": "180",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #180: multi-segment geometry / reticle (32 pts, monochrome, 12 multi-segment strokes)",
+    "tags": [
+      "density:medium",
+      "stroke:multi",
+      "color:mono",
+      "color:white",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -83933,8 +84853,14 @@
   },
   {
     "name": "181",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #181: point array / beam test (67 pts, monochrome, single continuous stroke)",
+    "tags": [
+      "density:medium",
+      "stroke:single",
+      "color:mono",
+      "color:red",
+      "pattern:point_array"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -84478,8 +85404,13 @@
   },
   {
     "name": "182",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #182: multi-segment geometry / reticle (56 pts, multi-color (3 colors), 13 multi-segment strokes)",
+    "tags": [
+      "density:medium",
+      "stroke:multi",
+      "color:multi",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -84935,8 +85866,13 @@
   },
   {
     "name": "183",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #183: closed geometric loop (12 pts, dual-color, single continuous stroke)",
+    "tags": [
+      "density:low",
+      "stroke:single",
+      "color:dual",
+      "pattern:loop"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -85040,8 +85976,13 @@
   },
   {
     "name": "184",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #184: point array / beam test (81 pts, dual-color, 2 strokes)",
+    "tags": [
+      "density:medium",
+      "stroke:segmented",
+      "color:dual",
+      "pattern:point_array"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -85697,8 +86638,13 @@
   },
   {
     "name": "185",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #185: detailed artwork (156 pts, dual-color, 6 multi-segment strokes)",
+    "tags": [
+      "density:high",
+      "stroke:multi",
+      "color:dual",
+      "pattern:artwork"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -86954,8 +87900,13 @@
   },
   {
     "name": "186",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #186: detailed artwork (156 pts, dual-color, 6 multi-segment strokes)",
+    "tags": [
+      "density:high",
+      "stroke:multi",
+      "color:dual",
+      "pattern:artwork"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -88211,8 +89162,13 @@
   },
   {
     "name": "187",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #187: detailed artwork (415 pts, multi-color (6 colors), 17 multi-segment strokes)",
+    "tags": [
+      "density:very_high",
+      "stroke:multi",
+      "color:multi",
+      "pattern:artwork"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -91540,8 +92496,13 @@
   },
   {
     "name": "188",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #188: multi-segment geometry / reticle (103 pts, multi-color (3 colors), 4 strokes)",
+    "tags": [
+      "density:high",
+      "stroke:segmented",
+      "color:multi",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -92373,8 +93334,13 @@
   },
   {
     "name": "189",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #189: detailed artwork (216 pts, multi-color (5 colors), 14 multi-segment strokes)",
+    "tags": [
+      "density:high",
+      "stroke:multi",
+      "color:multi",
+      "pattern:artwork"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -94110,8 +95076,14 @@
   },
   {
     "name": "190",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #190: point array / beam test (18 pts, monochrome, 3 strokes)",
+    "tags": [
+      "density:low",
+      "stroke:segmented",
+      "color:mono",
+      "color:yellow",
+      "pattern:point_array"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -94263,8 +95235,13 @@
   },
   {
     "name": "191",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #191: closed geometric loop (12 pts, dual-color, single continuous stroke)",
+    "tags": [
+      "density:low",
+      "stroke:single",
+      "color:dual",
+      "pattern:loop"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -94368,8 +95345,14 @@
   },
   {
     "name": "192",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #192: multi-segment geometry / reticle (32 pts, monochrome, 12 multi-segment strokes)",
+    "tags": [
+      "density:medium",
+      "stroke:multi",
+      "color:mono",
+      "color:white",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -94633,8 +95616,14 @@
   },
   {
     "name": "193",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #193: multi-segment geometry / reticle (32 pts, monochrome, 12 multi-segment strokes)",
+    "tags": [
+      "density:medium",
+      "stroke:multi",
+      "color:mono",
+      "color:white",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -94898,8 +95887,13 @@
   },
   {
     "name": "194",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #194: detailed artwork (324 pts, multi-color (3 colors), 21 multi-segment strokes)",
+    "tags": [
+      "density:very_high",
+      "stroke:multi",
+      "color:multi",
+      "pattern:artwork"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -97499,8 +98493,13 @@
   },
   {
     "name": "195",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #195: detailed artwork (355 pts, multi-color (3 colors), 27 multi-segment strokes)",
+    "tags": [
+      "density:very_high",
+      "stroke:multi",
+      "color:multi",
+      "pattern:artwork"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -100348,8 +101347,13 @@
   },
   {
     "name": "196",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #196: detailed artwork (229 pts, multi-color (5 colors), 10 multi-segment strokes)",
+    "tags": [
+      "density:high",
+      "stroke:multi",
+      "color:multi",
+      "pattern:artwork"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -102189,8 +103193,13 @@
   },
   {
     "name": "197",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #197: detailed artwork (229 pts, multi-color (5 colors), 10 multi-segment strokes)",
+    "tags": [
+      "density:high",
+      "stroke:multi",
+      "color:multi",
+      "pattern:artwork"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -104030,8 +105039,13 @@
   },
   {
     "name": "198",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #198: detailed artwork (178 pts, dual-color, 11 multi-segment strokes)",
+    "tags": [
+      "density:high",
+      "stroke:multi",
+      "color:dual",
+      "pattern:artwork"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -105463,8 +106477,13 @@
   },
   {
     "name": "199",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #199: detailed artwork (186 pts, dual-color, 13 multi-segment strokes)",
+    "tags": [
+      "density:high",
+      "stroke:multi",
+      "color:dual",
+      "pattern:artwork"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -106960,8 +107979,13 @@
   },
   {
     "name": "200",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #200: detailed artwork (180 pts, dual-color, 14 multi-segment strokes)",
+    "tags": [
+      "density:high",
+      "stroke:multi",
+      "color:dual",
+      "pattern:artwork"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -108409,8 +109433,13 @@
   },
   {
     "name": "201",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #201: detailed artwork (327 pts, multi-color (4 colors), 25 multi-segment strokes)",
+    "tags": [
+      "density:very_high",
+      "stroke:multi",
+      "color:multi",
+      "pattern:artwork"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -111034,8 +112063,13 @@
   },
   {
     "name": "202",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #202: detailed artwork (302 pts, multi-color (4 colors), 20 multi-segment strokes)",
+    "tags": [
+      "density:very_high",
+      "stroke:multi",
+      "color:multi",
+      "pattern:artwork"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -113459,8 +114493,13 @@
   },
   {
     "name": "203",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #203: detailed artwork (326 pts, multi-color (5 colors), 21 multi-segment strokes)",
+    "tags": [
+      "density:very_high",
+      "stroke:multi",
+      "color:multi",
+      "pattern:artwork"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -116076,8 +117115,14 @@
   },
   {
     "name": "204",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #204: multi-segment geometry / reticle (24 pts, monochrome, 12 multi-segment strokes)",
+    "tags": [
+      "density:low",
+      "stroke:multi",
+      "color:mono",
+      "color:white",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -116277,8 +117322,14 @@
   },
   {
     "name": "205",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #205: multi-segment geometry / reticle (24 pts, monochrome, 12 multi-segment strokes)",
+    "tags": [
+      "density:low",
+      "stroke:multi",
+      "color:mono",
+      "color:white",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -116478,8 +117529,14 @@
   },
   {
     "name": "206",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #206: multi-segment geometry / reticle (24 pts, monochrome, 12 multi-segment strokes)",
+    "tags": [
+      "density:low",
+      "stroke:multi",
+      "color:mono",
+      "color:white",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -116679,8 +117736,14 @@
   },
   {
     "name": "207",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #207: multi-segment geometry / reticle (24 pts, monochrome, 12 multi-segment strokes)",
+    "tags": [
+      "density:low",
+      "stroke:multi",
+      "color:mono",
+      "color:white",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -116880,8 +117943,14 @@
   },
   {
     "name": "208",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #208: multi-segment geometry / reticle (24 pts, monochrome, 12 multi-segment strokes)",
+    "tags": [
+      "density:low",
+      "stroke:multi",
+      "color:mono",
+      "color:white",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -117081,8 +118150,14 @@
   },
   {
     "name": "209",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #209: multi-segment geometry / reticle (24 pts, monochrome, 12 multi-segment strokes)",
+    "tags": [
+      "density:low",
+      "stroke:multi",
+      "color:mono",
+      "color:white",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -117282,8 +118357,14 @@
   },
   {
     "name": "210",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #210: multi-segment geometry / reticle (24 pts, monochrome, 12 multi-segment strokes)",
+    "tags": [
+      "density:low",
+      "stroke:multi",
+      "color:mono",
+      "color:white",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -117483,8 +118564,14 @@
   },
   {
     "name": "211",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #211: multi-segment geometry / reticle (24 pts, monochrome, 12 multi-segment strokes)",
+    "tags": [
+      "density:low",
+      "stroke:multi",
+      "color:mono",
+      "color:white",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -117684,8 +118771,14 @@
   },
   {
     "name": "212",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #212: multi-segment geometry / reticle (24 pts, monochrome, 12 multi-segment strokes)",
+    "tags": [
+      "density:low",
+      "stroke:multi",
+      "color:mono",
+      "color:white",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -117885,8 +118978,14 @@
   },
   {
     "name": "213",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #213: multi-segment geometry / reticle (24 pts, monochrome, 12 multi-segment strokes)",
+    "tags": [
+      "density:low",
+      "stroke:multi",
+      "color:mono",
+      "color:white",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -118086,8 +119185,14 @@
   },
   {
     "name": "214",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #214: multi-segment geometry / reticle (24 pts, monochrome, 12 multi-segment strokes)",
+    "tags": [
+      "density:low",
+      "stroke:multi",
+      "color:mono",
+      "color:white",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -118287,8 +119392,14 @@
   },
   {
     "name": "215",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #215: multi-segment geometry / reticle (24 pts, monochrome, 12 multi-segment strokes)",
+    "tags": [
+      "density:low",
+      "stroke:multi",
+      "color:mono",
+      "color:white",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -118488,8 +119599,14 @@
   },
   {
     "name": "216",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #216: multi-segment geometry / reticle (24 pts, monochrome, 12 multi-segment strokes)",
+    "tags": [
+      "density:low",
+      "stroke:multi",
+      "color:mono",
+      "color:white",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -118689,8 +119806,14 @@
   },
   {
     "name": "217",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #217: multi-segment geometry / reticle (24 pts, monochrome, 12 multi-segment strokes)",
+    "tags": [
+      "density:low",
+      "stroke:multi",
+      "color:mono",
+      "color:white",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -118890,8 +120013,14 @@
   },
   {
     "name": "218",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #218: multi-segment geometry / reticle (24 pts, monochrome, 12 multi-segment strokes)",
+    "tags": [
+      "density:low",
+      "stroke:multi",
+      "color:mono",
+      "color:white",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -119091,8 +120220,14 @@
   },
   {
     "name": "219",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #219: multi-segment geometry / reticle (24 pts, monochrome, 12 multi-segment strokes)",
+    "tags": [
+      "density:low",
+      "stroke:multi",
+      "color:mono",
+      "color:white",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -119292,8 +120427,14 @@
   },
   {
     "name": "220",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #220: multi-segment geometry / reticle (24 pts, monochrome, 12 multi-segment strokes)",
+    "tags": [
+      "density:low",
+      "stroke:multi",
+      "color:mono",
+      "color:white",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -119493,8 +120634,14 @@
   },
   {
     "name": "221",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #221: multi-segment geometry / reticle (24 pts, monochrome, 12 multi-segment strokes)",
+    "tags": [
+      "density:low",
+      "stroke:multi",
+      "color:mono",
+      "color:white",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -119694,8 +120841,14 @@
   },
   {
     "name": "222",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #222: multi-segment geometry / reticle (24 pts, monochrome, 12 multi-segment strokes)",
+    "tags": [
+      "density:low",
+      "stroke:multi",
+      "color:mono",
+      "color:white",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -119895,8 +121048,14 @@
   },
   {
     "name": "223",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #223: multi-segment geometry / reticle (24 pts, monochrome, 12 multi-segment strokes)",
+    "tags": [
+      "density:low",
+      "stroke:multi",
+      "color:mono",
+      "color:white",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -120096,8 +121255,14 @@
   },
   {
     "name": "224",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #224: multi-segment geometry / reticle (24 pts, monochrome, 12 multi-segment strokes)",
+    "tags": [
+      "density:low",
+      "stroke:multi",
+      "color:mono",
+      "color:white",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -120297,8 +121462,14 @@
   },
   {
     "name": "225",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #225: multi-segment geometry / reticle (24 pts, monochrome, 12 multi-segment strokes)",
+    "tags": [
+      "density:low",
+      "stroke:multi",
+      "color:mono",
+      "color:white",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -120498,8 +121669,14 @@
   },
   {
     "name": "226",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #226: multi-segment geometry / reticle (24 pts, monochrome, 12 multi-segment strokes)",
+    "tags": [
+      "density:low",
+      "stroke:multi",
+      "color:mono",
+      "color:white",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -120699,8 +121876,14 @@
   },
   {
     "name": "227",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #227: multi-segment geometry / reticle (24 pts, monochrome, 12 multi-segment strokes)",
+    "tags": [
+      "density:low",
+      "stroke:multi",
+      "color:mono",
+      "color:white",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -120900,8 +122083,14 @@
   },
   {
     "name": "228",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #228: multi-segment geometry / reticle (24 pts, monochrome, 12 multi-segment strokes)",
+    "tags": [
+      "density:low",
+      "stroke:multi",
+      "color:mono",
+      "color:white",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -121101,8 +122290,14 @@
   },
   {
     "name": "229",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #229: multi-segment geometry / reticle (24 pts, monochrome, 12 multi-segment strokes)",
+    "tags": [
+      "density:low",
+      "stroke:multi",
+      "color:mono",
+      "color:white",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -121302,8 +122497,14 @@
   },
   {
     "name": "230",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #230: multi-segment geometry / reticle (24 pts, monochrome, 12 multi-segment strokes)",
+    "tags": [
+      "density:low",
+      "stroke:multi",
+      "color:mono",
+      "color:white",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -121503,8 +122704,14 @@
   },
   {
     "name": "231",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #231: multi-segment geometry / reticle (24 pts, monochrome, 12 multi-segment strokes)",
+    "tags": [
+      "density:low",
+      "stroke:multi",
+      "color:mono",
+      "color:white",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -121704,8 +122911,14 @@
   },
   {
     "name": "232",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #232: multi-segment geometry / reticle (24 pts, monochrome, 12 multi-segment strokes)",
+    "tags": [
+      "density:low",
+      "stroke:multi",
+      "color:mono",
+      "color:white",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -121905,8 +123118,14 @@
   },
   {
     "name": "233",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #233: multi-segment geometry / reticle (24 pts, monochrome, 12 multi-segment strokes)",
+    "tags": [
+      "density:low",
+      "stroke:multi",
+      "color:mono",
+      "color:white",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -122106,8 +123325,14 @@
   },
   {
     "name": "234",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #234: multi-segment geometry / reticle (24 pts, monochrome, 12 multi-segment strokes)",
+    "tags": [
+      "density:low",
+      "stroke:multi",
+      "color:mono",
+      "color:white",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -122307,8 +123532,14 @@
   },
   {
     "name": "235",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #235: multi-segment geometry / reticle (24 pts, monochrome, 12 multi-segment strokes)",
+    "tags": [
+      "density:low",
+      "stroke:multi",
+      "color:mono",
+      "color:white",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -122508,8 +123739,14 @@
   },
   {
     "name": "236",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #236: multi-segment geometry / reticle (24 pts, monochrome, 12 multi-segment strokes)",
+    "tags": [
+      "density:low",
+      "stroke:multi",
+      "color:mono",
+      "color:white",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -122709,8 +123946,14 @@
   },
   {
     "name": "237",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #237: multi-segment geometry / reticle (24 pts, monochrome, 12 multi-segment strokes)",
+    "tags": [
+      "density:low",
+      "stroke:multi",
+      "color:mono",
+      "color:white",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -122910,8 +124153,14 @@
   },
   {
     "name": "238",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #238: multi-segment geometry / reticle (24 pts, monochrome, 12 multi-segment strokes)",
+    "tags": [
+      "density:low",
+      "stroke:multi",
+      "color:mono",
+      "color:white",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -123111,8 +124360,14 @@
   },
   {
     "name": "239",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #239: multi-segment geometry / reticle (24 pts, monochrome, 12 multi-segment strokes)",
+    "tags": [
+      "density:low",
+      "stroke:multi",
+      "color:mono",
+      "color:white",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -123312,8 +124567,14 @@
   },
   {
     "name": "240",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #240: multi-segment geometry / reticle (24 pts, monochrome, 12 multi-segment strokes)",
+    "tags": [
+      "density:low",
+      "stroke:multi",
+      "color:mono",
+      "color:white",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -123513,8 +124774,14 @@
   },
   {
     "name": "241",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #241: multi-segment geometry / reticle (24 pts, monochrome, 12 multi-segment strokes)",
+    "tags": [
+      "density:low",
+      "stroke:multi",
+      "color:mono",
+      "color:white",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -123714,8 +124981,14 @@
   },
   {
     "name": "242",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #242: multi-segment geometry / reticle (24 pts, monochrome, 12 multi-segment strokes)",
+    "tags": [
+      "density:low",
+      "stroke:multi",
+      "color:mono",
+      "color:white",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -123915,8 +125188,14 @@
   },
   {
     "name": "243",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #243: multi-segment geometry / reticle (24 pts, monochrome, 12 multi-segment strokes)",
+    "tags": [
+      "density:low",
+      "stroke:multi",
+      "color:mono",
+      "color:white",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -124116,8 +125395,13 @@
   },
   {
     "name": "244",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #244: multi-segment geometry / reticle (136 pts, dual-color, 13 multi-segment strokes)",
+    "tags": [
+      "density:high",
+      "stroke:multi",
+      "color:dual",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -125213,8 +126497,13 @@
   },
   {
     "name": "245",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #245: detailed artwork (210 pts, multi-color (3 colors), 18 multi-segment strokes)",
+    "tags": [
+      "density:high",
+      "stroke:multi",
+      "color:multi",
+      "pattern:artwork"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -126902,8 +128191,13 @@
   },
   {
     "name": "246",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #246: detailed artwork (179 pts, multi-color (6 colors), 9 multi-segment strokes)",
+    "tags": [
+      "density:high",
+      "stroke:multi",
+      "color:multi",
+      "pattern:artwork"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -128343,8 +129637,13 @@
   },
   {
     "name": "247",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #247: multi-segment geometry / reticle (125 pts, multi-color (3 colors), 7 multi-segment strokes)",
+    "tags": [
+      "density:high",
+      "stroke:multi",
+      "color:multi",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -129352,8 +130651,13 @@
   },
   {
     "name": "248",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #248: multi-segment geometry / reticle (61 pts, dual-color, 8 multi-segment strokes)",
+    "tags": [
+      "density:medium",
+      "stroke:multi",
+      "color:dual",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -129849,8 +131153,13 @@
   },
   {
     "name": "249",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #249: closed geometric loop (26 pts, dual-color, single continuous stroke)",
+    "tags": [
+      "density:low",
+      "stroke:single",
+      "color:dual",
+      "pattern:loop"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -130066,8 +131375,13 @@
   },
   {
     "name": "250",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #250: multi-segment geometry / reticle (142 pts, multi-color (3 colors), 15 multi-segment strokes)",
+    "tags": [
+      "density:high",
+      "stroke:multi",
+      "color:multi",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [
@@ -131211,8 +132525,14 @@
   },
   {
     "name": "251",
-    "description": "",
-    "tags": [],
+    "description": "Unsorted #251: multi-segment geometry / reticle (89 pts, monochrome, 7 multi-segment strokes)",
+    "tags": [
+      "density:medium",
+      "stroke:multi",
+      "color:mono",
+      "color:green",
+      "pattern:geometric"
+    ],
     "author": "LaserTargets",
     "line_style": "Continuous",
     "points": [

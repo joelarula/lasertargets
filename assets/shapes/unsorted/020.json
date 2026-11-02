@@ -1,7 +1,12 @@
 {
   "name": "020",
-  "description": "",
-  "tags": [],
+  "description": "Unsorted #020: linear calibration scale (41 pts, multi-color (3 colors), single continuous stroke)",
+  "tags": [
+    "density:medium",
+    "stroke:single",
+    "color:multi",
+    "pattern:calibration"
+  ],
   "author": "LaserTargets",
   "line_style": "Continuous",
   "points": [

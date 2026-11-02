@@ -1,7 +1,12 @@
 {
   "name": "123",
-  "description": "",
-  "tags": [],
+  "description": "Unsorted #123: linear calibration scale (33 pts, dual-color, single continuous stroke)",
+  "tags": [
+    "density:medium",
+    "stroke:single",
+    "color:dual",
+    "pattern:calibration"
+  ],
   "author": "LaserTargets",
   "line_style": "Continuous",
   "points": [

@@ -1,7 +1,12 @@
 {
   "name": "039",
-  "description": "",
-  "tags": [],
+  "description": "Unsorted #039: closed geometric loop (32 pts, multi-color (3 colors), single continuous stroke)",
+  "tags": [
+    "density:medium",
+    "stroke:single",
+    "color:multi",
+    "pattern:loop"
+  ],
   "author": "LaserTargets",
   "line_style": "Continuous",
   "points": [

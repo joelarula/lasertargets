@@ -1,7 +1,12 @@
 {
   "name": "183",
-  "description": "",
-  "tags": [],
+  "description": "Unsorted #183: closed geometric loop (12 pts, dual-color, single continuous stroke)",
+  "tags": [
+    "density:low",
+    "stroke:single",
+    "color:dual",
+    "pattern:loop"
+  ],
   "author": "LaserTargets",
   "line_style": "Continuous",
   "points": [

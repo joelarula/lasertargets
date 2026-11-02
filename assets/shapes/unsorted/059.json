@@ -1,7 +1,12 @@
 {
   "name": "059",
-  "description": "",
-  "tags": [],
+  "description": "Unsorted #059: point array / beam test (10 pts, multi-color (3 colors), single continuous stroke)",
+  "tags": [
+    "density:low",
+    "stroke:single",
+    "color:multi",
+    "pattern:point_array"
+  ],
   "author": "LaserTargets",
   "line_style": "Continuous",
   "points": [

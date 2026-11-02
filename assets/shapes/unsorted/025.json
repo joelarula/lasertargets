@@ -1,7 +1,12 @@
 {
   "name": "025",
-  "description": "",
-  "tags": [],
+  "description": "Unsorted #025: linear calibration scale (16 pts, dual-color, 2 strokes)",
+  "tags": [
+    "density:low",
+    "stroke:segmented",
+    "color:dual",
+    "pattern:calibration"
+  ],
   "author": "LaserTargets",
   "line_style": "Continuous",
   "points": [

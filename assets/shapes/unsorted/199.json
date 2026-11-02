@@ -1,7 +1,12 @@
 {
   "name": "199",
-  "description": "",
-  "tags": [],
+  "description": "Unsorted #199: detailed artwork (186 pts, dual-color, 13 multi-segment strokes)",
+  "tags": [
+    "density:high",
+    "stroke:multi",
+    "color:dual",
+    "pattern:artwork"
+  ],
   "author": "LaserTargets",
   "line_style": "Continuous",
   "points": [

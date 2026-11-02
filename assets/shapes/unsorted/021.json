@@ -1,7 +1,12 @@
 {
   "name": "021",
-  "description": "",
-  "tags": [],
+  "description": "Unsorted #021: point array / beam test (41 pts, dual-color, single continuous stroke)",
+  "tags": [
+    "density:medium",
+    "stroke:single",
+    "color:dual",
+    "pattern:point_array"
+  ],
   "author": "LaserTargets",
   "line_style": "Continuous",
   "points": [

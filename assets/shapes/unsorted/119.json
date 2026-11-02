@@ -1,7 +1,13 @@
 {
   "name": "119",
-  "description": "",
-  "tags": [],
+  "description": "Unsorted #119: point array / beam test (13 pts, monochrome, single continuous stroke)",
+  "tags": [
+    "density:low",
+    "stroke:single",
+    "color:mono",
+    "color:white",
+    "pattern:point_array"
+  ],
   "author": "LaserTargets",
   "line_style": "Continuous",
   "points": [

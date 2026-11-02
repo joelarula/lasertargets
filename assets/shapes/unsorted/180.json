@@ -1,7 +1,13 @@
 {
   "name": "180",
-  "description": "",
-  "tags": [],
+  "description": "Unsorted #180: multi-segment geometry / reticle (32 pts, monochrome, 12 multi-segment strokes)",
+  "tags": [
+    "density:medium",
+    "stroke:multi",
+    "color:mono",
+    "color:white",
+    "pattern:geometric"
+  ],
   "author": "LaserTargets",
   "line_style": "Continuous",
   "points": [

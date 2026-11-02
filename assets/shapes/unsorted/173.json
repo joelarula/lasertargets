@@ -1,7 +1,12 @@
 {
   "name": "173",
-  "description": "",
-  "tags": [],
+  "description": "Unsorted #173: multi-segment geometry / reticle (16 pts, multi-color (4 colors), 8 multi-segment strokes)",
+  "tags": [
+    "density:low",
+    "stroke:multi",
+    "color:multi",
+    "pattern:geometric"
+  ],
   "author": "LaserTargets",
   "line_style": "Continuous",
   "points": [

@@ -10,6 +10,7 @@ pub mod session;
 pub mod settings;
 pub mod state;
 pub mod shapes;
+pub mod shape_v2;
 
 
 pub mod transport;

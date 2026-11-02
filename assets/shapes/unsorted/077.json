@@ -1,7 +1,12 @@
 {
   "name": "077",
-  "description": "",
-  "tags": [],
+  "description": "Unsorted #077: detailed artwork (150 pts, multi-color (6 colors), 6 multi-segment strokes)",
+  "tags": [
+    "density:high",
+    "stroke:multi",
+    "color:multi",
+    "pattern:artwork"
+  ],
   "author": "LaserTargets",
   "line_style": "Continuous",
   "points": [

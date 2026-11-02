@@ -1,7 +1,13 @@
 {
   "name": "111",
-  "description": "",
-  "tags": [],
+  "description": "Unsorted #111: detailed artwork (169 pts, monochrome, single continuous stroke)",
+  "tags": [
+    "density:high",
+    "stroke:single",
+    "color:mono",
+    "color:cyan",
+    "pattern:artwork"
+  ],
   "author": "LaserTargets",
   "line_style": "Continuous",
   "points": [

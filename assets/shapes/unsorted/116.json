@@ -1,7 +1,12 @@
 {
   "name": "116",
-  "description": "",
-  "tags": [],
+  "description": "Unsorted #116: detailed artwork (194 pts, multi-color (7 colors), single continuous stroke)",
+  "tags": [
+    "density:high",
+    "stroke:single",
+    "color:multi",
+    "pattern:artwork"
+  ],
   "author": "LaserTargets",
   "line_style": "Continuous",
   "points": [

@@ -1,7 +1,13 @@
 {
   "name": "175",
-  "description": "",
-  "tags": [],
+  "description": "Unsorted #175: detailed artwork (227 pts, monochrome, 6 multi-segment strokes)",
+  "tags": [
+    "density:high",
+    "stroke:multi",
+    "color:mono",
+    "color:yellow",
+    "pattern:artwork"
+  ],
   "author": "LaserTargets",
   "line_style": "Continuous",
   "points": [

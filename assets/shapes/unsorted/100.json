@@ -1,7 +1,12 @@
 {
   "name": "100",
-  "description": "",
-  "tags": [],
+  "description": "Unsorted #100: point array / beam test (15 pts, dual-color, 2 strokes)",
+  "tags": [
+    "density:low",
+    "stroke:segmented",
+    "color:dual",
+    "pattern:point_array"
+  ],
   "author": "LaserTargets",
   "line_style": "Continuous",
   "points": [

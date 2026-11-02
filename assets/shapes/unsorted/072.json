@@ -1,7 +1,12 @@
 {
   "name": "072",
-  "description": "",
-  "tags": [],
+  "description": "Unsorted #072: closed geometric loop (89 pts, multi-color (7 colors), single continuous stroke)",
+  "tags": [
+    "density:medium",
+    "stroke:single",
+    "color:multi",
+    "pattern:loop"
+  ],
   "author": "LaserTargets",
   "line_style": "Continuous",
   "points": [

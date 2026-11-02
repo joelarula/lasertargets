@@ -1,7 +1,12 @@
 {
   "name": "090",
-  "description": "",
-  "tags": [],
+  "description": "Unsorted #090: detailed artwork (206 pts, multi-color (5 colors), 2 strokes)",
+  "tags": [
+    "density:high",
+    "stroke:segmented",
+    "color:multi",
+    "pattern:artwork"
+  ],
   "author": "LaserTargets",
   "line_style": "Continuous",
   "points": [
