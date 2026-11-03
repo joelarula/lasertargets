@@ -50,6 +50,10 @@ impl LaserPoint {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct LaserSegment {
     pub points: Vec<LaserPoint>,
+    /// Optional per-point hold override (extra repeats); replaces the computed corner hold.
+    /// Empty means no overrides.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub holds: Vec<Option<u16>>,
 }
 
 impl LaserSegment {
@@ -62,12 +66,26 @@ impl LaserSegment {
         }
     }
     pub fn new(points: Vec<LaserPoint>) -> Self {
-        Self { points }
+        Self { points, holds: Vec::new() }
+    }
+
+    /// Segment with a hold override per point (`holds` is as long as `points`)
+    pub fn with_holds(points: Vec<LaserPoint>, holds: Vec<Option<u16>>) -> Self {
+        debug_assert_eq!(points.len(), holds.len());
+        Self { points, holds }
+    }
+
+    /// Hold override at point `i`, if any
+    pub fn hold(&self, i: usize) -> Option<u16> {
+        self.holds.get(i).copied().flatten()
     }
 }
 
-/// Configuration for laser path optimization. All values that were previously hardcoded
-/// in projector.rs are now exposed here with sensible defaults.
+/// Configuration for laser path optimization.
+///
+/// Shapes (general segments) use the galvo and diode models, set in physical units: metres per
+/// second on the scene plane and milliseconds. The point-count fields (`corner_dwell_points`,
+/// `start_dwell_points`, `end_dwell_points`, `blank_*`, `interp_*`) apply to the text pipeline only.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct OptimizeConfig {
     /// Extra repeated points at detected corners (default: 3)
@@ -100,6 +118,60 @@ pub struct OptimizeConfig {
     pub max_dwell: u8,
     /// Distance below which dwell is max_dwell, above which dwell is min_dwell
     pub dwell_distance_threshold: f32,
+    /// Galvo model: speed along lit lines on the scene plane. Sets the spacing of intermediate
+    /// points so the galvo moves linearly at constant speed.
+    pub lit_speed_m_s: f32,
+    /// Galvo model: largest lit step per point, from the galvo rating. Caps `lit_speed_m_s`.
+    pub max_lit_step_dac: f32,
+    /// Galvo model: slow-down before and speed-up after a sharp corner or stroke end; points get
+    /// denser towards it, matching mirror inertia.
+    pub corner_ramp_ms: f32,
+    /// Galvo model: hold at a 90 degree turn, scaled with the turn angle; gentle turns get none.
+    pub corner_hold_ms: f32,
+    /// Galvo model: travel speed of laser-off jumps between strokes.
+    pub blank_speed_m_s: f32,
+    /// Galvo model: largest step per point during a laser-off jump. Caps `blank_speed_m_s`.
+    pub max_blank_step_dac: f32,
+    /// Galvo model: laser-off hold at a stroke end before the galvo leaves.
+    pub depart_ms: f32,
+    /// Galvo model: hold after a jump before the laser turns on ...
+    pub settle_ms: f32,
+    /// ... plus this much per metre of jump.
+    pub settle_ms_per_m: f32,
+    /// Diode model: time from "on" command to visible light. Light is commanded this much earlier.
+    pub laser_on_delay_ms: f32,
+    /// Diode model: time from "off" command to dark. Light is cut this much earlier.
+    pub laser_off_delay_ms: f32,
+    /// Output point rate used to turn the millisecond values into point counts. Set at runtime
+    /// from the projector configuration, not read from the config file.
+    #[serde(skip, default = "default_pps")]
+    pub pps: u32,
+    /// DAC units per metre on the scene plane, used to turn metres into DAC units. Set at runtime
+    /// from the scene setup, not read from the config file.
+    #[serde(skip, default = "default_dac_per_m")]
+    pub dac_per_m: f32,
+}
+
+fn default_dac_per_m() -> f32 {
+    // A 60 degree projector 10 m from the scene
+    355.0
+}
+
+fn default_pps() -> u32 {
+    30000
+}
+
+impl OptimizeConfig {
+    /// Number of output points that last `ms` milliseconds at the current point rate
+    pub fn ms_to_points(&self, ms: f32) -> usize {
+        (ms.max(0.0) / 1000.0 * self.pps as f32).round() as usize
+    }
+
+    /// DAC distance covered per output point at `speed_m_s`, capped at `max_step_dac`
+    pub fn step_dac(&self, speed_m_s: f32, max_step_dac: f32) -> f32 {
+        let step = speed_m_s.max(0.0) / self.pps.max(1) as f32 * self.dac_per_m;
+        step.min(max_step_dac).max(1.0)
+    }
 }
 
 impl Default for OptimizeConfig {
@@ -120,6 +192,20 @@ impl Default for OptimizeConfig {
             min_dwell: 1,
             max_dwell: 8,
             dwell_distance_threshold: 20.0,
+            // ~0.33 m per point at 30 kpps, about 120 DAC units on a scene 10 m away
+            lit_speed_m_s: 10000.0,
+            max_lit_step_dac: 150.0,
+            corner_ramp_ms: 0.1,
+            corner_hold_ms: 0.2,
+            blank_speed_m_s: 20000.0,
+            max_blank_step_dac: 300.0,
+            depart_ms: 0.5,
+            settle_ms: 0.5,
+            settle_ms_per_m: 0.05,
+            laser_on_delay_ms: 0.0,
+            laser_off_delay_ms: 0.0,
+            pps: default_pps(),
+            dac_per_m: default_dac_per_m(),
         }
     }
 }

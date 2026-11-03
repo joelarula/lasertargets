@@ -106,14 +106,24 @@ All set in physical units; converted to point counts with the current PPS.
 
 ### 3a Galvo model
 
+Implemented in `laserlogic::optimize` (`Galvo`). Defaults in brackets.
+
 | Parameter | Unit | Meaning |
 |---|---|---|
-| `lit_speed_m_s` | m/s | Speed along lit lines on the scene plane. Sets the spacing of intermediate points on long lines, so the galvo moves linearly at constant speed. |
-| `max_step_dac` | DAC units | Hard cap per point from the galvo rating; guards against too-large steps when the scene is far away. |
-| `corner_ramp_ms` | ms | Slow-down before and speed-up after a direction change: points get denser towards the corner and sparser after it, matching mirror inertia. |
-| `corner_hold_ms` | ms | Hold at a 90° turn; scales with turn angle. Gentle turns (curves) get no hold. |
-| `blank_speed_m_s` | m/s | Travel speed of laser-off jumps between strokes. |
-| `settle_ms` + `settle_ms_per_m` | ms | Hold after a jump before the laser turns on; grows with jump length. |
+| `lit_speed_m_s` | m/s [10000] | Speed along lit lines on the scene plane. Sets the spacing of intermediate points on long lines, so the galvo moves linearly at constant speed. 10000 m/s is ~0.33 m per point at 30 kpps. |
+| `max_lit_step_dac` | DAC units [150] | Hard cap per lit point from the galvo rating; guards against too-large steps when the scene is far away. |
+| `corner_ramp_ms` | ms [0.1] | Slow-down before and speed-up after a sharp corner or stroke end: steps shrink towards it and grow after it, matching mirror inertia. Smooth vertices are passed at full speed. |
+| `corner_hold_ms` | ms [0.2] | Hold at a 90° turn; scales with turn angle. Gentle turns (curves) get no hold. Open stroke ends get this hold too. |
+| `blank_speed_m_s` | m/s [20000] | Travel speed of laser-off jumps between strokes, with the same ramps at both ends. |
+| `max_blank_step_dac` | DAC units [300] | Hard cap per point during a jump. |
+| `depart_ms` | ms [0.5] | Laser-off hold at a stroke end before the galvo leaves. |
+| `settle_ms` + `settle_ms_per_m` | ms [0.5 + 0.05/m] | Hold after a jump before the laser turns on; grows with jump length. |
+
+Metres become DAC units with the scale stage 2 measures each frame (DAC units spanned by one metre
+at the scene centre); milliseconds become points with the projector's PPS.
+
+The older point-count settings (`corner_dwell_points`, `start_dwell_points`, `end_dwell_points`,
+`blank_*`, `interp_*`) now apply to the text pipeline only.
 
 ### 3b Diode model
 

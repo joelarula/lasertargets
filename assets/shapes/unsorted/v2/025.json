@@ -1,0 +1,47 @@
+{
+  "name": "025",
+  "description": "Unsorted #025: linear calibration scale (16 pts, dual-color, 2 strokes)",
+  "tags": [
+    "density:low",
+    "stroke:segmented",
+    "color:dual",
+    "pattern:calibration"
+  ],
+  "author": "LaserTargets",
+  "version": 2,
+  "strokes": [
+    {
+      "points": [
+        {"x": -0.4375, "y": 0},
+        {"x": -0.375, "y": 0},
+        {"x": -0.3125, "y": 0},
+        {"x": -0.25, "y": 0},
+        {"x": -0.1875, "y": 0},
+        {"x": -0.125, "y": 0},
+        {"x": -0.0625, "y": 0, "dwell_ms": 0.033333},
+        {"x": 0.0625, "y": 0}
+      ],
+      "color": [
+        255,
+        255,
+        255
+      ]
+    },
+    {
+      "points": [
+        {"x": 0.125, "y": 0},
+        {"x": 0.1875, "y": 0},
+        {"x": 0.25, "y": 0},
+        {"x": 0.3125, "y": 0},
+        {"x": 0.375, "y": 0},
+        {"x": 0.4375, "y": 0},
+        {"x": 0.5, "y": 0, "dwell_ms": 0.033333}
+      ],
+      "color": [
+        0,
+        255,
+        0
+      ]
+    }
+  ]
+}

@@ -66,14 +66,13 @@ pub fn simplify_segment(segment: &LaserSegment, config: &OptimizeConfig) -> Lase
         }
     }
 
-    let result: Vec<LaserPoint> = pts
-        .iter()
-        .enumerate()
-        .filter(|(i, _)| keep[*i])
-        .map(|(_, p)| *p)
-        .collect();
-
-    LaserSegment::new(result)
+    let kept: Vec<usize> = (0..pts.len()).filter(|&i| keep[i]).collect();
+    let points = kept.iter().map(|&i| pts[i]).collect();
+    if segment.holds.is_empty() {
+        LaserSegment::new(points)
+    } else {
+        LaserSegment::with_holds(points, kept.iter().map(|&i| segment.hold(i)).collect())
+    }
 }
 
 #[cfg(test)]

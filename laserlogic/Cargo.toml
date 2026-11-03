@@ -12,7 +12,12 @@ crossterm = "0.28"
 bevy = { workspace = true }
 common = { path = "../common" }
 ttf-parser = { workspace = true }
+clap = { workspace = true }
 
 [[bin]]
 name = "dac-test"
 path = "src/bin/dac_test.rs"
+
+[[bin]]
+name = "transform-v2"
+path = "src/bin/transform_v2.rs"

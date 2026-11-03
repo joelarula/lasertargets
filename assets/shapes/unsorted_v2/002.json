@@ -1,0 +1,43 @@
+{
+  "name": "002",
+  "description": "Unsorted #002: linear calibration scale (21 pts, multi-color (7 colors), single continuous stroke)",
+  "tags": [
+    "density:low",
+    "stroke:single",
+    "color:multi",
+    "pattern:calibration"
+  ],
+  "author": "LaserTargets",
+  "version": 2,
+  "strokes": [
+    {
+      "points": [
+        {"x": 0, "y": -0.45},
+        {"x": 0, "y": -0.4},
+        {"x": 0, "y": -0.35},
+        {"x": 0, "y": -0.3, "color": [255, 255, 0]},
+        {"x": 0, "y": -0.25, "color": [255, 255, 0]},
+        {"x": 0, "y": -0.2, "color": [255, 255, 0]},
+        {"x": 0, "y": -0.15, "color": [0, 255, 0]},
+        {"x": 0, "y": -0.1, "color": [0, 255, 0]},
+        {"x": 0, "y": -0.05, "color": [0, 255, 0]},
+        {"x": 0, "y": 0, "color": [0, 255, 255]},
+        {"x": 0, "y": 0.05, "color": [0, 255, 255]},
+        {"x": 0, "y": 0.1, "color": [0, 255, 255]},
+        {"x": 0, "y": 0.15, "color": [255, 0, 255]},
+        {"x": 0, "y": 0.2, "color": [255, 0, 255]},
+        {"x": 0, "y": 0.25, "color": [255, 0, 255]},
+        {"x": 0, "y": 0.3, "color": [0, 0, 255]},
+        {"x": 0, "y": 0.35, "color": [0, 0, 255]},
+        {"x": 0, "y": 0.4, "color": [0, 0, 255]},
+        {"x": 0, "y": 0.45, "color": [255, 255, 255]},
+        {"x": 0, "y": 0.5, "color": [255, 255, 255], "dwell_ms": 0.033333}
+      ],
+      "color": [
+        255,
+        0,
+        0
+      ]
+    }
+  ]
+}

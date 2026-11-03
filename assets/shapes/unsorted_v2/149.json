@@ -1,0 +1,35 @@
+{
+  "name": "149",
+  "description": "Unsorted #149: linear calibration scale (4 pts, dual-color, 2 strokes)",
+  "tags": [
+    "density:low",
+    "stroke:segmented",
+    "color:dual",
+    "pattern:calibration"
+  ],
+  "author": "LaserTargets",
+  "version": 2,
+  "strokes": [
+    {
+      "points": [
+        {"x": -0.5, "y": 0, "dwell_ms": 0.266667},
+        {"x": 0.5, "y": 0}
+      ],
+      "color": [
+        255,
+        255,
+        255
+      ]
+    },
+    {
+      "points": [
+        {"x": 0.5, "y": 0, "dwell_ms": 0.266667}
+      ],
+      "color": [
+        255,
+        0,
+        255
+      ]
+    }
+  ]
+}

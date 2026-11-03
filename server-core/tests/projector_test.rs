@@ -152,13 +152,22 @@ fn point_dwell_repeats_points() {
 }
 
 #[test]
-#[ignore = "BUG: PathPoint.dwell is expanded into duplicate points before optimisation; duplicates make \
-            angle_at_point degenerate, so the automatic corner dwell is lost and a dwell hint yields fewer \
-            points than no hint"]
-fn point_dwell_adds_to_corner_dwell() {
+fn point_dwell_overrides_hold_and_keeps_automatic_corners() {
+    // Automatic hold at a 90 degree corner is corner_dwell_points = 6; the dwell hint of 5 on one
+    // corner replaces it there while the other corners keep theirs
     let plain = render(square(0.5), SCENE_CENTER);
     let dwelled = render(dwelled_square(), SCENE_CENTER);
-    assert!(lit_count(&dwelled) >= lit_count(&plain) + 4, "dwelled {} plain {}", lit_count(&dwelled), lit_count(&plain));
+    assert_eq!(lit_count(&dwelled), lit_count(&plain) - 1, "dwelled {} plain {}", lit_count(&dwelled), lit_count(&plain));
+}
+
+#[test]
+fn blank_points_are_fully_blank_and_split_strokes() {
+    // The crosshair carries blank lead points (r = g = b = 0) around each of its two lines
+    let frame = render(UniversalPath::crosshair(Vec2::ZERO, 1.0, Color::WHITE), SCENE_CENTER);
+    assert!(frame.iter().all(|p| is_lit(p) == (p.r != 0 || p.g != 0 || p.b != 0)), "a point with no colour has intensity");
+    let lit_runs = frame.windows(2).filter(|w| !is_lit(&w[0]) && is_lit(&w[1])).count()
+        + usize::from(is_lit(&frame[0]) && !is_lit(frame.last().unwrap()));
+    assert_eq!(lit_runs, 2, "one lit run per crosshair line");
 }
 
 #[test]

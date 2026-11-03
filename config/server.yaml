@@ -33,6 +33,20 @@ default:
       enabled: true
       reconnect_secs: 5.0
     optimize:
+      # Shapes: galvo model (metres per second on the scene, milliseconds)
+      lit_speed_m_s: 10000.0      # speed along lit lines (~0.33 m per point at 30 kpps)
+      max_lit_step_dac: 150.0     # cap per lit point
+      corner_ramp_ms: 0.1         # slow-down/speed-up around sharp corners and stroke ends
+      corner_hold_ms: 0.2         # hold at a 90 degree corner, scaled by turn angle
+      blank_speed_m_s: 20000.0    # laser-off jump speed
+      max_blank_step_dac: 300.0   # cap per jump point
+      depart_ms: 0.5              # laser-off hold before leaving a stroke
+      settle_ms: 0.5              # hold after a jump before the laser turns on ...
+      settle_ms_per_m: 0.05       # ... plus this much per metre of jump
+      # Shapes: diode model
+      laser_on_delay_ms: 0.0      # light commanded this much earlier
+      laser_off_delay_ms: 0.0     # light cut this much earlier
+      # Text pipeline only (point counts)
       start_dwell_points: 6
       end_dwell_points: 6
       blank_end_dwell: 20

@@ -2,7 +2,7 @@ use bevy::prelude::*;
 use common::config::ProjectorConfiguration;
 use common::scene::SceneEntity;
 use common::scene::SceneSetup;
-use common::path::UniversalPath;
+use common::path::{PathPoint, UniversalPath};
 use common::settings::{ConfigAppExt, ConfigSection};
 use common::state::CalibrationState;
 use crate::plugins::calibration::{CalibrationPath, DacSpacePath};
@@ -55,6 +55,7 @@ impl Default for LaserOptimizeConfig {
             min_dwell: 1,
             max_dwell: 8,
             dwell_distance_threshold: 18.0,
+            ..Default::default()
         })
     }
 }
@@ -692,75 +693,57 @@ fn update_point_buffer(
         debug!("Converting path with {} segments at {:?}",
               universal_path.segments.len(), global_transform.translation());
 
+        // Where a path point lands on the DAC after the scene and projector transforms
+        let land = |point: &PathPoint| -> Landing {
+            let transformed = global_transform.transform_point(Vec3::new(point.x, point.y, 0.0));
+            let is_inside_scene = !cull_to_scene
+                || (transformed.x >= min_x
+                    && transformed.x <= max_x
+                    && transformed.y >= min_y
+                    && transformed.y <= max_y);
+            if is_inside_scene {
+                match world_to_projector_coordinates(transformed, &projector_config) {
+                    Some((x, y)) => Landing::Inside(x, y),
+                    None => Landing::Skip,
+                }
+            } else {
+                // Out-of-scene point: a lit edge towards it is clipped at the scene border
+                let clamped_border = Vec3::new(
+                    transformed.x.clamp(min_x, max_x),
+                    transformed.y.clamp(min_y, max_y),
+                    transformed.z,
+                );
+                Landing::Outside(world_to_projector_coordinates(clamped_border, &projector_config))
+            }
+        };
+
         for segment in &universal_path.segments {
             let styled_points = segment.expand_line_style();
-            if styled_points.is_empty() {
-                continue;
-            }
-
-            let mut active_sub_segment: Vec<LaserPoint> = Vec::new();
-
-            for point in &styled_points {
-                let world_pos = Vec3::new(point.x, point.y, 0.0);
-                let transformed = global_transform.transform_point(world_pos);
-
-                // Automatic Scene Boundary Culling:
-                // Check if point is inside scene rectangle bounds
-                let is_inside_scene = !cull_to_scene
-                    || (transformed.x >= min_x
-                        && transformed.x <= max_x
-                        && transformed.y >= min_y
-                        && transformed.y <= max_y);
-
-                if is_inside_scene {
-                    if let Some((x, y)) = world_to_projector_coordinates(transformed, &projector_config) {
-                        let repeat_count = if point.dwell == 0 { 1 } else { point.dwell as usize };
-                        for _ in 0..repeat_count {
-                            active_sub_segment.push(LaserPoint::new(x, y, point.r, point.g, point.b, 255));
-                        }
-                    }
-                } else {
-                    // Out-of-scene point: finish current inside sub-segment
-                    if !active_sub_segment.is_empty() {
-                        let clamped_border = Vec3::new(
-                            transformed.x.clamp(min_x, max_x),
-                            transformed.y.clamp(min_y, max_y),
-                            transformed.z,
-                        );
-                        if let Some((x, y)) = world_to_projector_coordinates(clamped_border, &projector_config) {
-                            if let Some(last) = active_sub_segment.last() {
-                                active_sub_segment.push(LaserPoint::new(x, y, last.r, last.g, last.b, 255));
-                            }
-                        }
-                        let laser_seg = LaserSegment::new(active_sub_segment);
-                        if segment.hint == common::path::PathHint::Text {
-                            text_segments.push(laser_seg);
-                        } else {
-                            general_segments.push(laser_seg);
-                        }
-                        active_sub_segment = Vec::new();
-                    }
+            if segment.hint == common::path::PathHint::Text {
+                // Text keeps its own pipeline for now
+                text_segments.extend(text_sub_segments(styled_points.iter().map(|p| (land(p), p))));
+            } else {
+                let mut strokes = StrokeBuilder::default();
+                for point in &styled_points {
+                    strokes.add(land(point), point);
                 }
-            }
-
-            let is_text = segment.hint == common::path::PathHint::Text;
-
-            if !active_sub_segment.is_empty() {
-                let laser_seg = LaserSegment::new(active_sub_segment);
-                if is_text {
-                    text_segments.push(laser_seg);
-                } else {
-                    general_segments.push(laser_seg);
-                }
+                general_segments.extend(strokes.finish());
             }
         }
     }
 
-    let optimized = laserlogic::compose_frame(
-        &general_segments,
-        &text_segments,
-        &optimize_config.0,
-    );
+    let mut config = optimize_config.0.clone();
+    config.pps = projector_config.dac_pps;
+    // How many DAC units one metre at the scene centre spans, for the metre-based galvo values
+    let scene_center = scene_setup.scene.origin.translation;
+    let scene_right = scene_setup.scene.origin.rotation * Vec3::X;
+    if let (Some(a), Some(b)) = (
+        common::scene::projector_ndc(scene_center, &projector_config),
+        common::scene::projector_ndc(scene_center + scene_right, &projector_config),
+    ) {
+        config.dac_per_m = a.distance(b) * HELIOS_MAX_COORD as f32 / 2.0;
+    }
+    let optimized = laserlogic::compose_frame(&general_segments, &text_segments, &config);
 
     debug!("Total points after optimization: {}", optimized.len());
 
@@ -771,25 +754,149 @@ fn update_point_buffer(
     }
 }
 
-/// Raw DAC-coordinate path to laser segments: no transform, no culling, clamped to the DAC range.
+/// Raw DAC-coordinate path to strokes: no transform, no culling, clamped to the DAC range.
 fn dac_space_segments(path: &UniversalPath) -> Vec<LaserSegment> {
     let max = HELIOS_MAX_COORD as f32;
-    path.segments
-        .iter()
-        .map(|segment| {
-            let points: Vec<LaserPoint> = segment
-                .expand_line_style()
-                .iter()
-                .flat_map(|p| {
-                    let x = p.x.round().clamp(0.0, max) as u16;
-                    let y = p.y.round().clamp(0.0, max) as u16;
-                    std::iter::repeat_n(LaserPoint::new(x, y, p.r, p.g, p.b, 255), p.dwell.max(1) as usize)
-                })
-                .collect();
+    let mut strokes = StrokeBuilder::default();
+    for segment in &path.segments {
+        for p in &segment.expand_line_style() {
+            let landing = Landing::Inside(p.x.round().clamp(0.0, max) as u16, p.y.round().clamp(0.0, max) as u16);
+            strokes.add(landing, p);
+        }
+        strokes.end_segment();
+    }
+    strokes.finish()
+}
+
+/// Where a path point lands on the DAC.
+enum Landing {
+    Inside(u16, u16),
+    /// Outside the scene; carries the scene-border point an edge towards it is clipped at
+    Outside(Option<(u16, u16)>),
+    /// Behind the projector or outside its field of view: dropped
+    Skip,
+}
+
+/// Turns path points into strokes for the laser stage.
+///
+/// - Blank rule: a point with r = g = b = 0 is blank (intensity 0); any other colour is lit.
+/// - An edge is lit when the point it starts from is lit. Each run of lit edges becomes one
+///   stroke; blank points only separate strokes. Blanking, stroke starts and ends are added by
+///   the laser stage.
+/// - A lit point's `dwell` travels as the hold override for that point instead of being expanded
+///   into repeated points. Repeated positions are merged, keeping the longest hold.
+#[derive(Default)]
+struct StrokeBuilder {
+    points: Vec<LaserPoint>,
+    holds: Vec<Option<u16>>,
+    prev_lit: bool,
+    strokes: Vec<LaserSegment>,
+}
+
+impl StrokeBuilder {
+    fn add(&mut self, landing: Landing, p: &PathPoint) {
+        let lit = (p.r, p.g, p.b) != (0, 0, 0);
+        match landing {
+            Landing::Inside(x, y) => {
+                if lit {
+                    let hold = (p.dwell > 0).then_some(p.dwell as u16);
+                    self.push(LaserPoint::new(x, y, p.r, p.g, p.b, 255), hold);
+                } else if self.prev_lit {
+                    // End of the lit edge from the previous point
+                    self.push_end(x, y);
+                    self.flush();
+                }
+                self.prev_lit = lit;
+            }
+            Landing::Outside(border) => {
+                if self.prev_lit {
+                    if let Some((x, y)) = border {
+                        self.push_end(x, y);
+                    }
+                    self.flush();
+                }
+                self.prev_lit = false;
+            }
+            Landing::Skip => {}
+        }
+    }
+
+    /// A path segment ended: its last stroke ends too
+    fn end_segment(&mut self) {
+        self.flush();
+        self.prev_lit = false;
+    }
+
+    fn finish(mut self) -> Vec<LaserSegment> {
+        self.flush();
+        self.strokes
+    }
+
+    /// Adds the end point of a lit edge, in the colour of that edge
+    fn push_end(&mut self, x: u16, y: u16) {
+        if let Some(&last) = self.points.last() {
+            self.push(LaserPoint { x, y, ..last }, None);
+        }
+    }
+
+    fn push(&mut self, point: LaserPoint, hold: Option<u16>) {
+        if let Some(last) = self.points.last_mut() {
+            if (last.x, last.y) == (point.x, point.y) {
+                // Same position: the newer point's colour starts the next edge
+                *last = point;
+                let last_hold = self.holds.last_mut().unwrap();
+                *last_hold = match (*last_hold, hold) {
+                    (Some(a), Some(b)) => Some(a.max(b)),
+                    (a, b) => a.or(b),
+                };
+                return;
+            }
+        }
+        self.points.push(point);
+        self.holds.push(hold);
+    }
+
+    fn flush(&mut self) {
+        if self.points.is_empty() {
+            return;
+        }
+        let points = std::mem::take(&mut self.points);
+        let holds = std::mem::take(&mut self.holds);
+        self.strokes.push(if holds.iter().any(Option::is_some) {
+            LaserSegment::with_holds(points, holds)
+        } else {
             LaserSegment::new(points)
-        })
-        .filter(|segment| !segment.points.is_empty())
-        .collect()
+        });
+    }
+}
+
+/// Text segments as before the stroke rework: dwell expanded into repeated points, blank points
+/// kept inside the segment, split only at the scene border.
+fn text_sub_segments<'a>(points: impl Iterator<Item = (Landing, &'a PathPoint)>) -> Vec<LaserSegment> {
+    let mut segments = Vec::new();
+    let mut active: Vec<LaserPoint> = Vec::new();
+    for (landing, point) in points {
+        match landing {
+            Landing::Inside(x, y) => {
+                for _ in 0..point.dwell.max(1) {
+                    active.push(LaserPoint::new(x, y, point.r, point.g, point.b, 255));
+                }
+            }
+            Landing::Outside(border) => {
+                if let Some(&last) = active.last() {
+                    if let Some((x, y)) = border {
+                        active.push(LaserPoint { x, y, ..last });
+                    }
+                    segments.push(LaserSegment::new(std::mem::take(&mut active)));
+                }
+            }
+            Landing::Skip => {}
+        }
+    }
+    if !active.is_empty() {
+        segments.push(LaserSegment::new(active));
+    }
+    segments
 }
 
 /// Transform world coordinates to projector coordinates using perspective projection
