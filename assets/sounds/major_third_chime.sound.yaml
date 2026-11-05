@@ -1,0 +1,15 @@
+# Victory chime: root and major third.
+name: major_third_chime
+description: C5 + E5 (4:5), 70 ms
+
+layers:
+  # Left / X galvo: C5 (523 Hz) for 70 ms.
+  - source: { tone: { hz: 523.25, ms: 70, route: left } }
+    stages:
+      # Envelope: 5 ms fade-in and 8 ms fade-out, so the note starts and ends without a click.
+      - envelope: { attack_ms: 5, decay_ms: 10, sustain: 0.85, release_ms: 8 }
+  # Right / Y galvo: the major third E5 (654 Hz) at the same time.
+  - source: { tone: { hz: 654.06, ms: 70, route: right } }
+    stages:
+      # Envelope: 5 ms fade-in and 8 ms fade-out, so the note starts and ends without a click.
+      - envelope: { attack_ms: 5, decay_ms: 10, sustain: 0.85, release_ms: 8 }

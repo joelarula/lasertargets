@@ -1,0 +1,10 @@
+# Target hit: one crisp blip.
+name: target_hit
+description: A6 (1760 Hz), 35 ms
+
+layers:
+  # A6 for 35 ms.
+  - source: { tone: { hz: 1760, ms: 35 } }
+    stages:
+      # Envelope: 5 ms fade-in and 8 ms fade-out, so the note starts and ends without a click.
+      - envelope: { attack_ms: 5, decay_ms: 10, sustain: 0.85, release_ms: 8 }

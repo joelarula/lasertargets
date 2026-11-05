@@ -1,0 +1,16 @@
+# A target appears: a soft rising two-note pip.
+name: target_spawn
+description: C6 then E6, 60 ms
+
+layers:
+  # First note: C6 for 25 ms at 80%.
+  - source: { tone: { hz: 1046.5, ms: 25, gain: 0.8 } }
+    stages:
+      # Envelope: 5 ms fade-in and 8 ms fade-out, so the note starts and ends without a click.
+      - envelope: { attack_ms: 5, decay_ms: 10, sustain: 0.85, release_ms: 8 }
+  # Second note: E6 for 35 ms at 90%, right after the first.
+  - at_ms: 25
+    source: { tone: { hz: 1318.5, ms: 35, gain: 0.9 } }
+    stages:
+      # Envelope: 5 ms fade-in and 8 ms fade-out, so the note starts and ends without a click.
+      - envelope: { attack_ms: 5, decay_ms: 10, sustain: 0.85, release_ms: 8 }

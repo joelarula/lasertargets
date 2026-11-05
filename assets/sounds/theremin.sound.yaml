@@ -1,0 +1,21 @@
+# Laser theremin: an instrument, not a one-shot. It plays until stopped
+# (`StopSound::named("theremin")`), and its pitch and volume follow live signals.
+name: theremin
+description: Signal-driven tone, C3..C7 on the major pentatonic scale
+
+layers:
+  # Pitch follows gamepad.lx (0 = C3, 1 = C7, even in pitch), snapped to the major pentatonic
+  # scale and smoothed over 20 ms so it glides instead of stepping.
+  - source:
+      tone:
+        pitch: { signal: gamepad.lx, smooth_ms: 20 }
+        range_hz: [130.81, 2093]
+        scale: major_pentatonic
+    stages:
+      # Envelope: 10 ms fade-in when the instrument starts.
+      - envelope: { attack_ms: 10, decay_ms: 1, sustain: 1.0 }
+      # Vibrato-like shimmer: level wobbles 6 times a second, deeper as gamepad.rt is pressed.
+      - tremolo: { rate_hz: 6, depth: { signal: gamepad.rt, range: [0.0, 0.5] } }
+
+# Volume: silent at gamepad.ly = 0, up to 80% at 1, smoothed over 20 ms.
+gain: { signal: gamepad.ly, range: [0.0, 0.8], smooth_ms: 20 }

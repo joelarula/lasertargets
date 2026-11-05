@@ -1,0 +1,28 @@
+# Game over: a falling line.
+name: game_over
+description: G5 E5 C5 G4 (triangle), 60 ms each
+
+layers:
+  # Note 1: G5 for 60 ms.
+  - source: { tone: { hz: 784, ms: 60, wave: triangle } }
+    stages:
+      # Envelope: 5 ms fade-in and 8 ms fade-out, so the note starts and ends without a click.
+      - envelope: { attack_ms: 5, decay_ms: 10, sustain: 0.85, release_ms: 8 }
+  # Note 2: E5 for 60 ms, starting at 60 ms.
+  - at_ms: 60
+    source: { tone: { hz: 659, ms: 60, wave: triangle } }
+    stages:
+      # Envelope: 5 ms fade-in and 8 ms fade-out, so the note starts and ends without a click.
+      - envelope: { attack_ms: 5, decay_ms: 10, sustain: 0.85, release_ms: 8 }
+  # Note 3: C5 for 60 ms, starting at 120 ms.
+  - at_ms: 120
+    source: { tone: { hz: 523, ms: 60, wave: triangle } }
+    stages:
+      # Envelope: 5 ms fade-in and 8 ms fade-out, so the note starts and ends without a click.
+      - envelope: { attack_ms: 5, decay_ms: 10, sustain: 0.85, release_ms: 8 }
+  # Note 4: G4 for 60 ms, starting at 180 ms.
+  - at_ms: 180
+    source: { tone: { hz: 392, ms: 60, wave: triangle } }
+    stages:
+      # Envelope: 5 ms fade-in and 8 ms fade-out, so the note starts and ends without a click.
+      - envelope: { attack_ms: 5, decay_ms: 10, sustain: 0.85, release_ms: 8 }

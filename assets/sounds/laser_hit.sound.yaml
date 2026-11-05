@@ -1,0 +1,10 @@
+# Laser strike confirmed: a fast falling chirp.
+name: laser_hit
+description: Down-chirp 2800 → 1100 Hz in 45 ms
+
+layers:
+  # Sweep from 2800 Hz down to 1100 Hz over 45 ms, evenly in pitch.
+  - source: { chirp: { from_hz: 2800, to_hz: 1100, ms: 45 } }
+    stages:
+      # Envelope: 2 ms snap-in, 5 ms fade-out.
+      - envelope: { attack_ms: 2, decay_ms: 5, sustain: 0.9, release_ms: 5 }

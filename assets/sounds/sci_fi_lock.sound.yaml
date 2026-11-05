@@ -1,0 +1,16 @@
+# Lock-on: two sweeps crossing. On the galvos X sweeps up while Y sweeps down; on the
+# speakers left rises while right falls.
+name: sci_fi_lock
+description: Crossing sweeps 800 ↔ 2400 Hz, 60 ms
+
+layers:
+  # Left / X galvo: 800 Hz up to 2400 Hz over 60 ms.
+  - source: { chirp: { from_hz: 800, to_hz: 2400, ms: 60, route: left } }
+    stages:
+      # Envelope: 3 ms fade-in, 8 ms fade-out.
+      - envelope: { attack_ms: 3, decay_ms: 10, sustain: 0.85, release_ms: 8 }
+  # Right / Y galvo: 2400 Hz down to 800 Hz over the same 60 ms.
+  - source: { chirp: { from_hz: 2400, to_hz: 800, ms: 60, route: right } }
+    stages:
+      # Envelope: 3 ms fade-in, 8 ms fade-out.
+      - envelope: { attack_ms: 3, decay_ms: 10, sustain: 0.85, release_ms: 8 }

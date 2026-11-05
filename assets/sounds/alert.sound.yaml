@@ -1,0 +1,20 @@
+# Warning: two rounds of a two-tone warble.
+name: alert
+description: 1.8 / 2.4 kHz warble, 160 ms
+
+layers:
+  # Low tone: 1800 Hz soft square for 40 ms at 80%, again 80 ms later.
+  - source: { tone: { hz: 1800, ms: 40, wave: square, gain: 0.8 } }
+    repeat: 1
+    every_ms: 80
+    stages:
+      # Envelope: 5 ms fade-in and 8 ms fade-out, so the note starts and ends without a click.
+      - envelope: { attack_ms: 5, decay_ms: 10, sustain: 0.85, release_ms: 8 }
+  # High tone: 2400 Hz in the gaps, starting at 40 ms, again 80 ms later.
+  - at_ms: 40
+    source: { tone: { hz: 2400, ms: 40, wave: square, gain: 0.8 } }
+    repeat: 1
+    every_ms: 80
+    stages:
+      # Envelope: 5 ms fade-in and 8 ms fade-out, so the note starts and ends without a click.
+      - envelope: { attack_ms: 5, decay_ms: 10, sustain: 0.85, release_ms: 8 }

@@ -1,0 +1,10 @@
+# Countdown 3-2-1: a short high click.
+name: countdown_tick
+description: 2.2 kHz click, 15 ms
+
+layers:
+  # 2200 Hz for 15 ms.
+  - source: { tone: { hz: 2200, ms: 15 } }
+    stages:
+      # Envelope: 1 ms attack, quick decay to 40%: a percussive tick.
+      - envelope: { attack_ms: 1, decay_ms: 4, sustain: 0.4, release_ms: 5 }

@@ -2,6 +2,7 @@ pub use curator_core;
 
 
 use crate::plugins::audio::LaserAudioPlugin;
+use galvo_audio::GalvoAudioPlugin;
 use crate::plugins::calibration::CalibrationPlugin;
 use crate::plugins::camera::CameraPlugin;
 use crate::plugins::vision::VisionPlugin;
@@ -111,6 +112,8 @@ pub fn add_common_server_plugins(app: &mut App) {
         .add_plugins(SceneSetupPlugin)
         .add_plugins(ScenePlugin)
         .add_plugins(LaserAudioPlugin)
+        // Sound from the galvos themselves; samples reach the DAC through the projector thread
+        .add_plugins(GalvoAudioPlugin)
         .add_plugins(CalibrationPlugin)
         .add_plugins(ProjectorPlugin)
         .add_plugins(CameraPlugin)

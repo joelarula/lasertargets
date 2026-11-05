@@ -1,0 +1,10 @@
+# Target missed: a low buzz.
+name: target_miss
+description: 160 Hz saw buzz, 80 ms
+
+layers:
+  # 160 Hz rounded sawtooth for 80 ms at 85%.
+  - source: { tone: { hz: 160, ms: 80, wave: saw, gain: 0.85 } }
+    stages:
+      # Envelope: 4 ms fade-in, slow 15 ms fade-out so it doesn't thud.
+      - envelope: { attack_ms: 4, decay_ms: 10, sustain: 0.8, release_ms: 15 }

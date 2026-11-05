@@ -1,0 +1,28 @@
+# Go: a rising arpeggio.
+name: countdown_go
+description: C5 E5 G5 C6, 40 ms each
+
+layers:
+  # Note 1: C5 for 40 ms.
+  - source: { tone: { hz: 523.25, ms: 40 } }
+    stages:
+      # Envelope: 5 ms fade-in and 8 ms fade-out, so the note starts and ends without a click.
+      - envelope: { attack_ms: 5, decay_ms: 10, sustain: 0.85, release_ms: 8 }
+  # Note 2: E5 for 40 ms, starting at 40 ms.
+  - at_ms: 40
+    source: { tone: { hz: 659.25, ms: 40 } }
+    stages:
+      # Envelope: 5 ms fade-in and 8 ms fade-out, so the note starts and ends without a click.
+      - envelope: { attack_ms: 5, decay_ms: 10, sustain: 0.85, release_ms: 8 }
+  # Note 3: G5 for 40 ms, starting at 80 ms.
+  - at_ms: 80
+    source: { tone: { hz: 783.99, ms: 40 } }
+    stages:
+      # Envelope: 5 ms fade-in and 8 ms fade-out, so the note starts and ends without a click.
+      - envelope: { attack_ms: 5, decay_ms: 10, sustain: 0.85, release_ms: 8 }
+  # Note 4: C6 for 40 ms, starting at 120 ms.
+  - at_ms: 120
+    source: { tone: { hz: 1046.5, ms: 40 } }
+    stages:
+      # Envelope: 5 ms fade-in and 8 ms fade-out, so the note starts and ends without a click.
+      - envelope: { attack_ms: 5, decay_ms: 10, sustain: 0.85, release_ms: 8 }

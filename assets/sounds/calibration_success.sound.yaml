@@ -1,0 +1,22 @@
+# Calibration done: a short fanfare.
+name: calibration_success
+description: C6 E6 G6, 50 ms each
+
+layers:
+  # Note 1: C6 for 50 ms.
+  - source: { tone: { hz: 1046.5, ms: 50 } }
+    stages:
+      # Envelope: 5 ms fade-in and 8 ms fade-out, so the note starts and ends without a click.
+      - envelope: { attack_ms: 5, decay_ms: 10, sustain: 0.85, release_ms: 8 }
+  # Note 2: E6 for 50 ms, starting at 50 ms.
+  - at_ms: 50
+    source: { tone: { hz: 1318.5, ms: 50 } }
+    stages:
+      # Envelope: 5 ms fade-in and 8 ms fade-out, so the note starts and ends without a click.
+      - envelope: { attack_ms: 5, decay_ms: 10, sustain: 0.85, release_ms: 8 }
+  # Note 3: G6 for 50 ms, starting at 100 ms.
+  - at_ms: 100
+    source: { tone: { hz: 1568, ms: 50 } }
+    stages:
+      # Envelope: 5 ms fade-in and 8 ms fade-out, so the note starts and ends without a click.
+      - envelope: { attack_ms: 5, decay_ms: 10, sustain: 0.85, release_ms: 8 }

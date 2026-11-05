@@ -1,0 +1,23 @@
+# Audio oscilloscope. An entity with an `AudioScope` component gets the figure of the recent
+# galvo output (or live stream) written as its base every frame; the stages below style it.
+name: galvo/scope
+
+# Audio runs on wall time, so the scope keeps moving while a game is paused.
+clock: real
+
+stages:
+  # Brightness: 35% when silent, full once the galvos play loudly (galvo.level), so an idle
+  # scope is a dim dot instead of a bright burn spot.
+  - fade: { id: level, amount: { signal: galvo.level, range: [0.35, 1.0], smooth_ms: 30 } }
+
+  # Colour: drifts towards magenta as the pitch rises (galvo.pitch: 50 Hz = 0, 5.5 kHz = 1).
+  - color_lerp: { id: pitch, to: [255, 0, 200], amount: { signal: galvo.pitch, range: [0.0, 0.8], smooth_ms: 60 } }
+
+  # Size: kicks up to 1.3x while self.blip is up (laser-hit sound), otherwise normal size.
+  - scale: { id: blip, factor: { signal: self.blip, range: [1.0, 1.3] } }
+
+reactions:
+  # The laser_hit sound plays (on any output): self.blip jumps to 1 in 2 ms and falls back
+  # over 120 ms.
+  sound.laser_hit:
+    - envelope: { name: blip, attack_ms: 2, decay_ms: 120 }

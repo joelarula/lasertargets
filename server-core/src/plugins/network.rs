@@ -74,7 +74,19 @@ impl Plugin for NetworkingPlugin {
             .add_systems(Update, broadcast_state_on_change)
             .add_systems(Update, broadcast_curator_prompts)
             .add_systems(Update, broadcast_curator_envelopes)
-            .add_systems(Update, handle_curator_client_messages);
+            .add_systems(Update, handle_curator_client_messages)
+            .add_message::<common::audio_stream::LiveAudioFrame>()
+            .add_systems(Update, forward_audio_stream.after(receive_network_messages));
+    }
+}
+
+/// Live audio from a client → every audio output that `audio.routing.stream` lists, plus scopes
+/// and `audio.*` signals
+fn forward_audio_stream(mut messages: MessageReader<FromClientMessage>, mut frames: MessageWriter<common::audio_stream::LiveAudioFrame>) {
+    for msg in messages.read() {
+        if let NetworkMessage::AudioStreamFrame { samples, channels, sample_rate } = &msg.message {
+            frames.write(common::audio_stream::LiveAudioFrame { samples: samples.clone(), channels: *channels, sample_rate: *sample_rate });
+        }
     }
 }
 
@@ -170,7 +182,12 @@ fn receive_network_messages(
             while let Some(bytes) = endpoint.try_receive_payload(client_id, channel_id) {
                 match NetworkMessage::from_bytes(&bytes) {
                     Ok(message) => {
-                        info!("Received message from client {}: {:?}", client_id, message);
+                        if let NetworkMessage::AudioStreamFrame { samples, channels, sample_rate } = &message {
+                            // Arrives many times a second with thousands of samples: keep it out of the info log
+                            debug!("Received audio frame from client {}: {} samples, {} ch, {} Hz", client_id, samples.len(), channels, sample_rate);
+                        } else {
+                            info!("Received message from client {}: {:?}", client_id, message);
+                        }
                         message_writer.write(FromClientMessage {
                             client_id,
                             message,

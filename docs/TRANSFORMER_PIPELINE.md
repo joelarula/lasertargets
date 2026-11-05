@@ -152,7 +152,8 @@ pub trait SignalSource: Send + Sync + 'static {
 |---|---|---|
 | `lfo.*`, `timeline.*` | built-in (from `ModulatorSource`) | Declared in the asset's `signals:` block |
 | `gamepad.*` | gamepad plugin | `gamepad.rt`, `gamepad.lt`, sticks |
-| `audio.*` | `AudioAnalysisPlugin` | `audio.sub_bass`, `audio.bass`, `audio.mid`, `audio.high`, `audio.beat` |
+| `audio.*` | `AudioAnalysisPlugin` | `audio.sub_bass`, `audio.bass`, `audio.mid`, `audio.high`, `audio.beat` (today: `audio.level`, `audio.peak` from `GalvoAudioPlugin`) |
+| `galvo.*` | `GalvoAudioPlugin` | `galvo.level`, `galvo.x`, `galvo.y`, `galvo.pitch`, `galvo.playing` ([GALVO_AUDIO_PLAN.md](GALVO_AUDIO_PLAN.md)). Any routed sound also raises the trigger `sound.<name>` (`common::audio`) |
 | `game.*` | game code | e.g. `game.time_left`, `game.combo` |
 
 All signals are normalised to 0..1. A missing signal reads 0 and logs once.

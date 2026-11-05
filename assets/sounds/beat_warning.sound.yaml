@@ -1,0 +1,15 @@
+# Throbbing warning: 440 Hz against 447 Hz beats at 7 Hz (in the scanner block, or between the speakers).
+name: beat_warning
+description: 440 + 447 Hz triangle, 100 ms
+
+layers:
+  # Left / X galvo: 440 Hz for 100 ms.
+  - source: { tone: { hz: 440, ms: 100, route: left, wave: triangle } }
+    stages:
+      # Envelope: 5 ms fade-in and 8 ms fade-out, so the note starts and ends without a click.
+      - envelope: { attack_ms: 5, decay_ms: 10, sustain: 0.85, release_ms: 8 }
+  # Right / Y galvo: 447 Hz at the same time.
+  - source: { tone: { hz: 447, ms: 100, route: right, wave: triangle } }
+    stages:
+      # Envelope: 5 ms fade-in and 8 ms fade-out, so the note starts and ends without a click.
+      - envelope: { attack_ms: 5, decay_ms: 10, sustain: 0.85, release_ms: 8 }

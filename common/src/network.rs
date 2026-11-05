@@ -106,6 +106,15 @@ pub enum NetworkMessage {
         active: bool,
         source_name: Option<String>,
     },
+    /// Live audio stream frame sent to server (used in Receiver Mode or for in-game audio reactivity)
+    AudioStreamFrame {
+        /// PCM audio samples in range [-1.0, 1.0]
+        samples: Vec<f32>,
+        /// Number of channels: 1 = Mono, 2 = Stereo (Interleaved: L, R, L, R)
+        channels: u8,
+        /// Sampling rate in Hz (e.g. 44100, 48000, 30000)
+        sample_rate: u32,
+    },
 
     // Lifecycle
     /// Broadcast server instance ID on connection/restart

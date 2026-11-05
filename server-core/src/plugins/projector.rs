@@ -8,6 +8,7 @@ use common::state::CalibrationState;
 use crate::plugins::calibration::{CalibrationPath, DacSpacePath};
 use laserlogic::helios::{HeliosDacController, HeliosPoint, HELIOS_MAX_COORD, HELIOS_FLAGS_DEFAULT};
 use laserlogic::{LaserPoint, LaserSegment, OptimizeConfig};
+use galvo_audio::{apply_offset, GalvoAudioBus, GalvoAudioOutput};
 use serde::{Deserialize, Serialize};
 
 #[derive(Resource, Clone, Serialize, Deserialize)]
@@ -153,10 +154,11 @@ fn handle_gamepad_laser_toggle(
 fn initialize_projector_dac(
     mut dac_controller: ResMut<ProjectorDacController>,
     point_buffer: Res<LaserPointBuffer>,
+    galvo_audio: Option<Res<GalvoAudioBus>>,
     mut projector_config: ResMut<ProjectorConfiguration>,
 ) {
     info!("Initializing Helios DAC controller...");
-    if try_initialize_projector_dac(&mut dac_controller, &point_buffer, &mut projector_config) {
+    if try_initialize_projector_dac(&mut dac_controller, &point_buffer, galvo_audio.as_deref(), &mut projector_config) {
         info!("✓ Projector initialization complete");
     } else {
         projector_config.connected = false;
@@ -166,6 +168,7 @@ fn initialize_projector_dac(
 fn try_initialize_projector_dac(
     dac_controller: &mut ProjectorDacController,
     point_buffer: &LaserPointBuffer,
+    galvo_audio: Option<&GalvoAudioBus>,
     projector_config: &mut ProjectorConfiguration,
 ) -> bool {
     if !dac_controller.enabled {
@@ -186,6 +189,8 @@ fn try_initialize_projector_dac(
                 point_buffer.clone(),
                 dac_controller.switched_on_flag.clone(),
                 dac_controller.connected_flag.clone(),
+                // One audio sample per DAC point: the output runs on this thread's clock
+                galvo_audio.map(|bus| bus.output(projector_config.dac_pps)),
                 projector_config.dac_pps,
                 projector_config.dac_min_points,
             );
@@ -240,6 +245,7 @@ fn start_dac_output_thread(
     point_buffer: LaserPointBuffer,
     switched_on: Arc<AtomicBool>,
     connected: Arc<AtomicBool>,
+    mut galvo_audio: Option<GalvoAudioOutput>,
     dac_pps: u32,
     dac_min_points: usize,
 ) -> Sender<()> {
@@ -377,6 +383,10 @@ fn start_dac_output_thread(
 
         // Reusable frame buffer to avoid allocation per loop iteration
         let mut frame_buf: Vec<HeliosPoint> = Vec::with_capacity(dac_min_points * 2);
+        // Galvo audio offsets of the current frame. Kept when a write doesn't go out, so the
+        // retry plays the same samples instead of skipping them
+        let mut audio_offsets: Vec<(i16, i16)> = Vec::with_capacity(dac_min_points);
+        let mut audio_sent = true;
 
         loop {
             if recovery_grace_remaining > 0 {
@@ -441,8 +451,26 @@ fn start_dac_output_thread(
                 }
             }
 
+            // ── 3b. Galvo audio: add one guarded audio offset to every point ──
+            // frame_buf is rebuilt from the clean buffer every loop, so offsets never accumulate
+            if let Some(audio) = galvo_audio.as_mut() {
+                let play = !use_blank || audio.play_when_blank();
+                if audio_sent {
+                    audio_offsets.clear();
+                    audio_offsets.extend_from_slice(audio.render(frame_buf.len()));
+                }
+                if play {
+                    for (point, &(dx, dy)) in frame_buf.iter_mut().zip(&audio_offsets) {
+                        point.x = apply_offset(point.x, dx, HELIOS_MAX_COORD);
+                        point.y = apply_offset(point.y, dy, HELIOS_MAX_COORD);
+                    }
+                }
+            }
+
             // ── 4. Write frame to DAC ─
-            match controller.write_frame_ready(0, pps, flags, &frame_buf, dac_min_points) {
+            let write_result = controller.write_frame_ready(0, pps, flags, &frame_buf, dac_min_points);
+            audio_sent = matches!(write_result, Ok(true));
+            match write_result {
                 Ok(true) => {
                     consecutive_write_failures = 0;
                     // Frames are going out: connected, even if the start-up shutter/priming step failed
@@ -592,6 +620,7 @@ fn update_projector(
     scene_setup: Res<SceneSetup>,
     mut dac_controller: ResMut<ProjectorDacController>,
     point_buffer: Res<LaserPointBuffer>,
+    galvo_audio: Option<Res<GalvoAudioBus>>,
     time: Res<Time>,
     mut reconnect_timer: ResMut<DacReconnectTimer>,
 ) {
@@ -616,7 +645,7 @@ fn update_projector(
         reconnect_timer.0.tick(time.delta());
         if reconnect_timer.0.just_finished() {
             info!("Attempting DAC initialization...");
-            try_initialize_projector_dac(&mut dac_controller, &point_buffer, &mut projector_config);
+            try_initialize_projector_dac(&mut dac_controller, &point_buffer, galvo_audio.as_deref(), &mut projector_config);
         }
     } else {
         reconnect_timer.0.reset();

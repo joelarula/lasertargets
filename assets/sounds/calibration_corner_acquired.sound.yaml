@@ -1,0 +1,10 @@
+# Calibration corner found: a gentle bell.
+name: calibration_corner_acquired
+description: C7 (2093 Hz), 40 ms
+
+layers:
+  # C7 for 40 ms at 70%.
+  - source: { tone: { hz: 2093, ms: 40, gain: 0.7 } }
+    stages:
+      # Envelope: 5 ms fade-in and 8 ms fade-out, so the note starts and ends without a click.
+      - envelope: { attack_ms: 5, decay_ms: 10, sustain: 0.85, release_ms: 8 }

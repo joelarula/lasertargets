@@ -1,0 +1,15 @@
+# Power chord: root and fifth on separate channels / galvos.
+name: power_chord
+description: A4 + E5 (2:3), 50 ms
+
+layers:
+  # Left / X galvo: A4 (440 Hz) for 50 ms.
+  - source: { tone: { hz: 440, ms: 50, route: left } }
+    stages:
+      # Envelope: 5 ms fade-in and 8 ms fade-out, so the note starts and ends without a click.
+      - envelope: { attack_ms: 5, decay_ms: 10, sustain: 0.85, release_ms: 8 }
+  # Right / Y galvo: the fifth above (660 Hz) at the same time.
+  - source: { tone: { hz: 660, ms: 50, route: right } }
+    stages:
+      # Envelope: 5 ms fade-in and 8 ms fade-out, so the note starts and ends without a click.
+      - envelope: { attack_ms: 5, decay_ms: 10, sustain: 0.85, release_ms: 8 }

@@ -1,0 +1,17 @@
+# Snake crashed: a heavy falling sweep with a noise thump.
+name: snake_crash
+description: Down-sweep 400 → 90 Hz with filtered noise, 120 ms
+
+layers:
+  # Sweep 400 Hz down to 90 Hz over 120 ms.
+  - source: { chirp: { from_hz: 400, to_hz: 90, ms: 120 } }
+    stages:
+      # Envelope: 2 ms snap-in, 20 ms fade-out.
+      - envelope: { attack_ms: 2, decay_ms: 10, sustain: 0.9, release_ms: 20 }
+  # Thump: 40 ms of noise at 50%, darkened to below 600 Hz.
+  - source: { noise: { ms: 40, gain: 0.5 } }
+    stages:
+      # Low-pass at 600 Hz: keeps the thud, drops the hiss.
+      - lowpass: { cutoff_hz: 600 }
+      # Envelope: 1 ms attack, falls to 30% quickly.
+      - envelope: { attack_ms: 1, decay_ms: 10, sustain: 0.3, release_ms: 15 }

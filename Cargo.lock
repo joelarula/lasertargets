@@ -3274,6 +3274,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "galvo-audio"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "common",
+ "figment",
+ "log",
+ "serde",
+ "serde_json",
+ "test-harness",
+]
+
+[[package]]
 name = "gamepad"
 version = "0.1.0"
 dependencies = [
@@ -5918,6 +5931,7 @@ dependencies = [
  "common",
  "crossterm",
  "curator-core",
+ "galvo-audio",
  "gamepad",
  "laser-vision",
  "laserlogic",

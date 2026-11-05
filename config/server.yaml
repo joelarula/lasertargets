@@ -16,6 +16,8 @@
 #   vision              PhysicalCameraSettings   (server-core vision plugin)
 #   vision.calibration  CameraCalibrationSettings (server-core camera calibration plugin)
 #   audio               AudioConfiguration       (server-core audio plugin)
+#   audio.routing       AudioRouting             (common; which outputs play which sounds)
+#   audio.galvo         GalvoAudioConfig         (galvo-audio plugin)
 
 default:
   runtime:
@@ -83,6 +85,42 @@ default:
     enabled: true
     volume: 1.0
     spatial_panning: true
+    stream_volume: 1.0            # live stream on the speakers, on top of `volume`
+    # Which outputs play which sounds. Outputs: speakers, galvo (the scanners). Both play the
+    # compositions in assets/sounds/<name>.sound.yaml (docs/SOUND_COMPOSITION.md); the speakers
+    # use a recorded <name>.wav instead when one exists.
+    routing:
+      default: [speakers]         # sounds not listed under `sounds`
+      sounds:
+        countdown_tick: [speakers, galvo]
+        countdown_go: [speakers, galvo]
+      # Pipeline triggers that play a sound
+      on_trigger:
+        snake.gem_eaten: pellet_eat
+        snake.game_over: snake_crash
+      # Pipeline triggers that stop a sound that plays until stopped (instruments)
+      stop_on_trigger: {}
+      stream: [speakers]          # outputs for the live audio stream (receiver mode)
+      # Sounds play in parallel; this caps copies of one sound at once (the oldest stops)
+      max_parallel: 4
+      parallel:
+        laser_hit: 3
+        countdown_tick: 1
+    # Sound played by the galvos themselves (galvo-audio crate, docs/GALVO_AUDIO_PLAN.md).
+    # Off until tested on the rig: it adds load to the scanners.
+    galvo:
+      enabled: false
+      master_volume: 0.8
+      max_excursion_dac: 45       # offset of a full-scale sample; hard cap 80 (~2% of the DAC range)
+      route: orbit                # default for tones: x, y, both, orbit (circle, shares coil heat)
+      latency_ms: 80              # rendered ahead of the DAC
+      play_when_blank: true       # keep singing while nothing is lit
+      notch_min_hz: 3200          # scanner resonance band, cut by notch_db
+      notch_max_hz: 4200
+      notch_db: -10
+      stream:
+        gain: 0.8                 # live stream level when routed to galvo
+        duck: 0.4                 # stream level while sound effects play
 
 # Raspberry Pi rig
 rpi:

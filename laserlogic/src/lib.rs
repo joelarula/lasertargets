@@ -1,5 +1,4 @@
 pub mod corner;
-pub mod galvo_audio;
 pub mod optimize;
 pub mod simplify;
 pub mod text_optimize;

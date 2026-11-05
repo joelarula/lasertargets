@@ -1,0 +1,25 @@
+# Laser theremin cursor. The `theremin` sound (assets/sounds/theremin.sound.yaml) plays a tone
+# whose pitch and loudness follow its bound signals; this ring shows what the galvos play.
+# Nothing is drawn in code: the ring is a built-in circle reacting to the galvo.* signals.
+name: galvo/theremin
+
+# Audio runs on wall time, so the ring keeps reacting while a game is paused.
+clock: real
+
+source:
+  # A 12 cm teal ring around the entity's position.
+  shape: { builtin: circle, size_m: 0.12, color: [0, 255, 180] }
+
+stages:
+  # Size: 0.6x when silent, up to 1.6x at full volume (galvo.level).
+  - scale: { id: loudness, factor: { signal: galvo.level, range: [0.6, 1.6], smooth_ms: 40 } }
+
+  # Ripple: the rim waves (24 waves across, 3 per second); flat when silent, up to 1.5 cm deep
+  # at full volume (galvo.level).
+  - wave_displace: { id: ripple, axis: y, frequency: 24, speed_hz: 3, amplitude_m: { signal: galvo.level, range: [0.0, 0.015] } }
+
+  # Spin: turns with pitch, a quarter turn from lowest to highest note.
+  - rotate: { id: spin, deg: { signal: galvo.pitch, range: [0.0, 90.0], smooth_ms: 60 } }
+
+  # Colour: teal at low notes, fading to white at the top of the range.
+  - color_lerp: { id: brightness, to: [255, 255, 255], amount: { signal: galvo.pitch, range: [0.0, 0.7] } }

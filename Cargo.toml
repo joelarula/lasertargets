@@ -15,6 +15,7 @@ members = [
     "terminal-ui",
     "test-harness",
     "laser-vision",
+    "galvo-audio",
 ]
 exclude = ["xtask"]
 
