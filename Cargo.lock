@@ -4034,7 +4034,6 @@ name = "laser-vision"
 version = "0.1.0"
 dependencies = [
  "bevy",
- "common",
  "log",
  "serde",
  "serde_json",
@@ -5920,6 +5919,7 @@ dependencies = [
  "crossterm",
  "curator-core",
  "gamepad",
+ "laser-vision",
  "laserlogic",
  "libc",
  "log",

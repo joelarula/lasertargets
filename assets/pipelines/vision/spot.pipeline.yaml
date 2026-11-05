@@ -1,0 +1,19 @@
+# Reticle on a laser dot the camera is tracking. The vision plugin spawns one per dot, keeps it
+# on the dot, and removes it when the camera loses the dot.
+name: vision/spot
+
+# A small green crosshair, 3 cm across.
+source:
+  shape: { builtin: crosshair, size_m: 0.015, color: [40, 255, 80] }
+
+stages:
+  # Size: jumps to 1.6x when the dot is first seen and settles back to 1x (see reactions).
+  - scale: { id: acquire, factor: { signal: self.acquired, range: [1.0, 1.6] } }
+
+  # Brightness follows how sure the camera is: 30% for a faint dot, full for a strong one.
+  - fade: { id: confidence, amount: { signal: self.confidence, range: [0.3, 1.0] } }
+
+reactions:
+  # The dot is tracked: self.acquired jumps to 1 and falls back to 0 over 0.25 s.
+  bound:
+    - envelope: { name: acquired, decay_ms: 250 }

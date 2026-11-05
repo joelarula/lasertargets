@@ -323,6 +323,31 @@ impl SceneSetup {
         projector_ndc(world_pos, &self.projector)
     }
 
+    /// The inverse of [`Self::projector_ndc`]: where the projector ray through `ndc` meets the
+    /// scene plane. `None` when the ray runs parallel to or away from the plane.
+    pub fn projector_ndc_to_world(&self, ndc: Vec2) -> Option<Vec3> {
+        let projector = &self.projector;
+        let projector_transform = Mat4::from_scale_rotation_translation(
+            projector.origin.scale,
+            projector.origin.rotation,
+            projector.origin.translation,
+        );
+        let tan_half_fov = (projector.angle.to_radians() / 2.0).tan();
+        // A point one unit in front of the projector on the ray, in its local space (-Z forward, +Y up)
+        let on_ray = projector_transform.transform_point3(Vec3::new(ndc.x * tan_half_fov, -ndc.y * tan_half_fov, -1.0));
+        let start = projector.origin.translation;
+        let direction = on_ray - start;
+
+        let plane_point = self.scene.origin.translation;
+        let plane_normal = self.scene.origin.rotation * Vec3::Z;
+        let denominator = plane_normal.dot(direction);
+        if denominator.abs() < f32::EPSILON {
+            return None;
+        }
+        let t = plane_normal.dot(plane_point - start) / denominator;
+        (t > 0.0).then(|| start + direction * t)
+    }
+
     /// How far the scene reaches out in projector coordinates: the largest |x| or |y| of its four
     /// corners. At most 1.0 means the whole scene is inside the red DAC perimeter; infinite when a
     /// corner is behind the projector.
@@ -528,5 +553,16 @@ mod tests {
         // World up is DAC -Y
         assert!(projector_ndc(Vec3::new(0.0, 5.0, -10.0), &projector).unwrap().abs_diff_eq(Vec2::new(0.0, -0.5), 1e-5));
         assert_eq!(projector_ndc(Vec3::new(0.0, 0.0, 1.0), &projector), None);
+    }
+
+    #[test]
+    fn projector_ndc_to_world_inverts_projector_ndc_on_the_scene_plane() {
+        let setup = SceneSetup::default();
+        for uv in [Vec2::splat(0.5), Vec2::ZERO, Vec2::ONE, Vec2::new(0.2, 0.7)] {
+            let world = setup.billboard_point(uv);
+            let ndc = setup.projector_ndc(world).unwrap();
+            let back = setup.projector_ndc_to_world(ndc).unwrap();
+            assert!(back.abs_diff_eq(world, 1e-3), "{uv}: {world} -> {ndc} -> {back}");
+        }
     }
 }

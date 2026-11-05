@@ -13,6 +13,8 @@
 #   projector.dac       DacSettings              (server-core projector plugin)
 #   camera              CameraConfiguration      (common)
 #   scene               SceneConfiguration       (common)
+#   vision              PhysicalCameraSettings   (server-core vision plugin)
+#   audio               AudioConfiguration       (server-core audio plugin)
 
 default:
   runtime:
@@ -62,6 +64,17 @@ default:
 
   scene:
     scene_dimension: [10.0, 6.0]
+
+  vision:
+    enabled: false              # run the camera worker; what it sees drives pipelines (vision/*)
+    stream_width: 640
+    stream_height: 480
+    stream_fps: 30
+
+  audio:
+    enabled: true
+    volume: 1.0
+    spatial_panning: true
 
 # Raspberry Pi rig
 rpi:

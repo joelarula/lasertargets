@@ -1,0 +1,17 @@
+# Ring where a laser dot first lands. The vision plugin spawns one each time the camera starts
+# tracking a new dot; the entity is removed when the lifetime ends.
+name: vision/impact
+
+# self.life goes from 0 to 1 over these 300 ms.
+lifetime_ms: 300
+
+# A white circle, 2 cm across.
+source:
+  shape: { builtin: circle, size_m: 0.01 }
+
+stages:
+  # Size: grows from 1x to 8x (2 cm → 16 cm) over the lifetime.
+  - scale: { id: grow, factor: { signal: self.life, range: [1.0, 8.0] } }
+
+  # Brightness: fades from full to nothing over the lifetime.
+  - fade: { id: fade_out, amount: { signal: self.life, range: [1.0, 0.0] } }

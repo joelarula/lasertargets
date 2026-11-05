@@ -14,6 +14,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 bincode = { workspace = true }
 laserlogic = { path = "../laserlogic" }
+laser-vision = { path = "../laser-vision" }
 crossterm = "0.28"
 
 [target.'cfg(target_os = "linux")'.dependencies]

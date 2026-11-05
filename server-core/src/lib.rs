@@ -1,8 +1,10 @@
 pub use curator_core;
 
 
+use crate::plugins::audio::LaserAudioPlugin;
 use crate::plugins::calibration::CalibrationPlugin;
 use crate::plugins::camera::CameraPlugin;
+use crate::plugins::vision::VisionPlugin;
 use crate::plugins::session::SessionLifecyclePlugin;
 use crate::plugins::gamepad::GamepadInputPlugin;
 use crate::plugins::keyboard::KeyboardControlPlugin;
@@ -27,6 +29,7 @@ use serde::{Deserialize, Serialize};
 
 
 pub mod plugins;
+pub use crate::plugins::vision::{CalibrationQuad, VisionAnalyzerAppExt, VisionAnalyzers, VisionCalibration, VisionStreaming};
 
 /// Main loop, fixed timestep and logging settings.
 #[derive(Resource, Debug, Clone, Serialize, Deserialize)]
@@ -105,10 +108,11 @@ pub fn add_common_server_plugins(app: &mut App) {
         .init_state::<SessionState>()
         .add_plugins(SceneSetupPlugin)
         .add_plugins(ScenePlugin)
+        .add_plugins(LaserAudioPlugin)
         .add_plugins(CalibrationPlugin)
         .add_plugins(ProjectorPlugin)
         .add_plugins(CameraPlugin)
-
+        .add_plugins(VisionPlugin)
         .add_plugins(SessionPlugin)
         .add_plugins(QuinnetServerPlugin::default())
         .add_plugins(NetworkingPlugin)

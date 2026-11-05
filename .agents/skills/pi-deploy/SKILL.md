@@ -73,6 +73,16 @@ To ensure smooth 60 FPS DAC streaming and low network latency, tune system param
   ```
   *(Or via PowerShell: `.\scripts\pi.ps1 camera`)*
 
+- **Probe Audio Hardware & 3.5mm Headphone Jack**:
+  ```bash
+  cargo xtask audio
+  # For detailed ALSA PCMs and mixer controls:
+  cargo xtask audio --detailed
+  # Play a 1-second 440Hz test tone to verify output:
+  cargo xtask audio --test
+  ```
+  *(Or via PowerShell: `.\scripts\pi.ps1 audio`, `.\scripts\pi.ps1 audio -Detailed`, `.\scripts\pi.ps1 audio -TestAudio`)*
+
 - **Run Standalone DAC Hardware Test on Pi**:
   ```powershell
   .\scripts\pi.ps1 dac-test -TargetHost lasertargets@lasertargets.local -Scenario shapes

@@ -1,30 +1,29 @@
 //! # Laser-Vision
 //!
-//! A generic, cross-platform computer vision and optical tracking library for
-//! LaserTargets.
+//! Camera analysis for LaserTargets, as plain Rust with no ECS: frames come from a
+//! [`FrameSource`], pluggable [`VisionAnalyzer`]s turn them into detections and signals, a
+//! [`Tracker`] gives detections a stable identity, and a [`Homography`] maps them into projector
+//! coordinates. `server-core`'s vision plugin runs a [`VisionEngine`] on a worker thread and
+//! feeds the results into Bevy.
 //!
-//! ## Core Architecture
-//! - **Generic Platform Independence**: Operates on pure pixel buffers (`RawFrame`)
-//!   and abstract frame producers ([`FrameSource`]). Zero hard dependencies on Pi hardware,
-//!   compiling cleanly across Windows, macOS, and Linux (including ARM64 Docker builds).
-//! - **Spectral Spot Detection**: Wavelength isolation (Green 520–532nm, Red 635–650nm,
-//!   or high-contrast luminance) with sub-pixel centroid moment analysis.
-//! - **Homography & Perspective Calibration**: 3x3 Direct Linear Transformation (DLT) solver
-//!   mapping camera sensor coordinates into normalized galvo laser projector space `[-1.0, 1.0]`.
-//! - **End-to-End Pipeline**: Unified [`VisionEngine`] managing frame intake, optical
-//!   filtering, and event generation.
+//! - **Analyzers** are the extension point: a classic algorithm ([`SpotAnalyzer`] for laser dots,
+//!   [`MotionAnalyzer`] for scene motion) or a model (object detector). Each adds labelled
+//!   [`Detection`]s and/or frame-wide signals.
+//! - **Coordinates**: camera space is normalised (0, 0) top-left to (1, 1) bottom-right;
+//!   projector space is `common::scene::projector_ndc`, -1..1 with +Y down.
 
+pub mod analyzer;
 pub mod capture;
 pub mod detector;
+pub mod engine;
 pub mod homography;
-pub mod pipeline;
+pub mod tracker;
 
-// Re-export primary types for clean consumer ergonomics
+pub use analyzer::{AnalysisOutput, Detection, MotionAnalyzer, VisionAnalyzer};
 pub use capture::{FrameSource, MockFrameSource, RawFrame};
 #[cfg(target_os = "linux")]
 pub use capture::ProcessPipeFrameSource;
-
-pub use detector::{detect_laser_spots, DetectionConfig, DetectedSpot, LaserColor};
+pub use detector::{detect_laser_spots, DetectedSpot, DetectionConfig, LaserColor, SpotAnalyzer};
+pub use engine::{VisionEngine, VisionFrame, VisionObject};
 pub use homography::Homography;
-pub use pipeline::{VisionEngine, VisionFrameResult};
-
+pub use tracker::{LostTrack, TrackId, TrackedDetection, Tracker, TrackerConfig, TrackerUpdate};

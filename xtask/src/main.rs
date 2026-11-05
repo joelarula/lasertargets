@@ -60,6 +60,25 @@ enum Commands {
         detailed: bool,
     },
 
+    /// Probe and inspect audio devices (3.5mm jack, USB DACs, I2S, HDMI) on the Raspberry Pi
+    Audio {
+        /// Raspberry Pi host or IP
+        #[arg(long, default_value = "lasertargets.local")]
+        host: String,
+
+        /// SSH username
+        #[arg(long, default_value = "lasertargets")]
+        user: String,
+
+        /// Query detailed ALSA PCMs and mixer controls
+        #[arg(short = 'd', long)]
+        detailed: bool,
+
+        /// Play a 1-second 440Hz test tone to verify audio output
+        #[arg(short = 't', long)]
+        test: bool,
+    },
+
     /// Apply OS performance tweaks (CPU governor, disable USB autosuspend)
     Optimize {
         /// Raspberry Pi host or IP
@@ -426,7 +445,25 @@ fn check_pi(user: &str, host: &str) -> Result<(), String> {
         }
     }
 
-    // 9. LaserTargets Service Status
+    // 9. Audio Hardware & 3.5mm Jack
+    let mut audio_cmd = Command::new("ssh");
+    audio_cmd.args([
+        &target,
+        "aplay -l 2>/dev/null | grep -E '^card' || echo 'none'",
+    ]);
+    if let Ok(out) = cmd_output(audio_cmd) {
+        let trimmed = out.trim();
+        if trimmed.is_empty() || trimmed == "none" {
+            println!("  [WARN] No active audio playback cards in ALSA (run 'cargo xtask audio' to inspect)");
+        } else {
+            println!("  [PASS] Audio devices detected (run 'cargo xtask audio' for details):");
+            for line in trimmed.lines() {
+                println!("    {line}");
+            }
+        }
+    }
+
+    // 10. LaserTargets Service Status
     let mut svc_cmd = Command::new("ssh");
     svc_cmd.args([&target, "systemctl is-active lasertargets-server 2>/dev/null || echo inactive"]);
     if let Ok(status) = cmd_output(svc_cmd) {
@@ -518,6 +555,138 @@ done
     }
 
     println!("\nCamera probe complete.");
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Probe Audio
+// ---------------------------------------------------------------------------
+
+fn probe_audio(user: &str, host: &str, detailed: bool, test: bool) -> Result<(), String> {
+    let target = target_spec(user, host);
+    println!("=== Probing Audio Hardware on Raspberry Pi ({target}) ===");
+
+    // 1. ALSA Playback Cards & PCM Devices
+    println!("\n--- 1. ALSA Playback Cards & Devices (aplay -l) ---");
+    let mut aplay_cmd = Command::new("ssh");
+    aplay_cmd.args([&target, "aplay -l 2>&1"]);
+    match cmd_output(aplay_cmd) {
+        Ok(out) if !out.trim().is_empty() && !out.contains("no soundcards found") => {
+            println!("  [PASS] Playback soundcard(s) detected:");
+            for line in out.lines() {
+                println!("    {line}");
+            }
+        }
+        Ok(out) => {
+            println!("  [WARN] No soundcards detected via aplay ({})", out.trim());
+        }
+        Err(e) => {
+            println!("  [WARN] Failed to query aplay: {e}");
+        }
+    }
+
+    // 2. Built-in 3.5mm Headphone Jack Status
+    println!("\n--- 2. Built-in 3.5mm Headphone Jack Status ---");
+    let hp_script = r#"
+echo "--- Kernel Module (snd_bcm2835) ---"
+lsmod | grep -E 'snd_bcm2835|bcm2835_audio' || echo 'Module snd_bcm2835 NOT loaded (check dtparam=audio=on)'
+echo "--- Firmware config (dtparam=audio) ---"
+grep -E '^\s*dtparam=audio' /boot/firmware/config.txt /boot/config.txt 2>/dev/null || echo 'dtparam=audio setting not found in config.txt'
+echo "--- ALSA Card Identification ---"
+aplay -l 2>/dev/null | grep -iE 'headphone|bcm2835' || echo 'No bcm2835 headphone device listed in ALSA'
+"#;
+    let mut hp_cmd = Command::new("ssh");
+    hp_cmd.args([&target, hp_script]);
+    if let Ok(out) = cmd_output(hp_cmd) {
+        for line in out.lines() {
+            println!("  {line}");
+        }
+    }
+
+    // 3. USB Audio Hardware
+    println!("\n--- 3. USB Audio Hardware (DACs / Soundcards / Headsets) ---");
+    let mut usb_cmd = Command::new("ssh");
+    usb_cmd.args([
+        &target,
+        "lsusb 2>/dev/null | grep -iE 'audio|sound|c-media|pcm|dac|dac-|headset|speaker' || echo 'No dedicated USB audio devices in lsusb'",
+    ]);
+    if let Ok(out) = cmd_output(usb_cmd) {
+        for line in out.lines() {
+            println!("  {line}");
+        }
+    }
+
+    // 4. I2S Audio Overlays
+    println!("\n--- 4. I2S Audio Overlays in config.txt ---");
+    let mut i2s_cmd = Command::new("ssh");
+    i2s_cmd.args([
+        &target,
+        "grep -iE 'dtoverlay=.*(hifiberry|i2s|max98357|audio|dac|pcm5102)' /boot/firmware/config.txt /boot/config.txt 2>/dev/null || echo 'No active I2S audio overlays configured in config.txt'",
+    ]);
+    if let Ok(out) = cmd_output(i2s_cmd) {
+        for line in out.lines() {
+            println!("  {line}");
+        }
+    }
+
+    // 5. User Permissions
+    println!("\n--- 5. Linux User Permissions ('audio' group) ---");
+    let mut grp_cmd = Command::new("ssh");
+    grp_cmd.args([&target, "id -nG 2>/dev/null || true"]);
+    if let Ok(groups) = cmd_output(grp_cmd) {
+        if groups.split_whitespace().any(|g| g == "audio") {
+            println!("  [PASS] User '{user}' is a member of the 'audio' group.");
+        } else {
+            println!("  [WARN] User '{user}' is NOT in the 'audio' group! Run: sudo usermod -a -G audio {user}");
+        }
+    }
+
+    // 6. Detailed ALSA PCMs & Mixer Controls
+    if detailed {
+        println!("\n--- 6. Detailed ALSA PCMs & Mixer Controls ---");
+        let detail_script = r#"
+echo "=== ALSA PCM Definitions (aplay -L) ==="
+aplay -L 2>/dev/null | head -n 35 || true
+echo ""
+echo "=== Mixer Controls (amixer scontrols) ==="
+amixer scontrols 2>/dev/null || true
+echo ""
+echo "=== Headphone / Master Volume Levels ==="
+amixer sget Headphones 2>/dev/null || amixer sget Master 2>/dev/null || amixer 2>/dev/null | head -n 30 || true
+"#;
+        let mut detail_cmd = Command::new("ssh");
+        detail_cmd.args([&target, detail_script]);
+        if let Ok(out) = cmd_output(detail_cmd) {
+            println!("{out}");
+        }
+    } else {
+        println!("\n[TIP] Pass '--detailed' (-d) to inspect full ALSA PCM definitions and mixer volume levels.");
+    }
+
+    // 7. Optional Test Tone
+    if test {
+        println!("\n--- 7. Playing Audio Test Tone (1s Sine Wave) ---");
+        let test_script = r#"
+if command -v speaker-test >/dev/null 2>&1; then
+    echo "Running 1-second 440Hz test tone..."
+    speaker-test -D plughw:CARD=Headphones,DEV=0 -t sine -f 440 -c 2 -l 1 2>&1 || \
+    speaker-test -D default -t sine -f 440 -c 2 -l 1 2>&1
+else
+    echo "speaker-test not installed (run 'sudo apt install alsa-utils' on Pi)."
+fi
+"#;
+        let mut test_cmd = Command::new("ssh");
+        test_cmd.args([&target, test_script]);
+        if let Ok(out) = cmd_output(test_cmd) {
+            for line in out.lines() {
+                println!("  {line}");
+            }
+        }
+    } else {
+        println!("\n[TIP] Pass '--test' (-t) to play a 440Hz test tone through the 3.5mm jack or default audio output.");
+    }
+
+    println!("\nAudio probe complete.");
     Ok(())
 }
 
@@ -796,6 +965,12 @@ fn main() {
         } => build_arm64(profile, &remote, no_cache, no_export, dry_run),
         Commands::Check { host, user } => check_pi(&user, &host),
         Commands::Camera { host, user, detailed } => probe_camera(&user, &host, detailed),
+        Commands::Audio {
+            host,
+            user,
+            detailed,
+            test,
+        } => probe_audio(&user, &host, detailed, test),
         Commands::Optimize { host, user } => optimize_pi(&user, &host),
         Commands::Deploy {
             host,

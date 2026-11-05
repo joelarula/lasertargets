@@ -1,6 +1,9 @@
 use bevy::prelude::Vec2;
 use serde::{Deserialize, Serialize};
 
+use crate::analyzer::{AnalysisOutput, Detection, VisionAnalyzer};
+use crate::capture::RawFrame;
+
 /// Target wavelength color for optical isolation
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum LaserColor {
@@ -181,6 +184,37 @@ pub fn detect_laser_spots(
     // Sort spots by peak intensity descending (strongest laser dot first)
     spots.sort_by(|a, b| b.peak_intensity.partial_cmp(&a.peak_intensity).unwrap());
     spots
+}
+
+/// Laser dots as [`VisionAnalyzer`] detections, labelled `label` (default `laser`).
+pub struct SpotAnalyzer {
+    pub label: String,
+    pub config: DetectionConfig,
+}
+
+impl Default for SpotAnalyzer {
+    fn default() -> Self {
+        Self { label: "laser".into(), config: DetectionConfig::default() }
+    }
+}
+
+impl VisionAnalyzer for SpotAnalyzer {
+    fn name(&self) -> &str {
+        "spots"
+    }
+
+    fn analyze(&mut self, frame: &RawFrame, out: &mut AnalysisOutput) {
+        for spot in detect_laser_spots(frame.width, frame.height, &frame.rgb_data, &self.config) {
+            // Diameter of a round blob with this many pixels
+            let diameter = (spot.pixel_count as f32).sqrt();
+            out.detect(Detection {
+                label: self.label.clone(),
+                norm_pos: spot.norm_pos,
+                size: Vec2::new(diameter / frame.width as f32, diameter / frame.height as f32),
+                confidence: spot.peak_intensity,
+            });
+        }
+    }
 }
 
 #[cfg(test)]

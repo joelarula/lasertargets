@@ -11,6 +11,7 @@
     The action to execute:
       - check      : Ping, SSH, CPU governor, and USB DAC detection.
       - camera     : Probe CSI and USB camera hardware specifications.
+      - audio      : Probe 3.5mm jack, USB DACs, I2S, and ALSA playback devices.
       - check-sd   : Validate inserted SD card bootfs partition before first boot.
       - optimize   : Apply CPU performance governor & disable USB autosuspend.
       - deploy     : Copy binaries, libraries, assets, and systemd units to the Pi.
@@ -49,7 +50,7 @@
 #>
 param(
     [Parameter(Position = 0)]
-    [ValidateSet("check", "camera", "check-sd", "optimize", "deploy", "run", "dac-test", "logs")]
+    [ValidateSet("check", "camera", "audio", "check-sd", "optimize", "deploy", "run", "dac-test", "logs")]
     [string]$Action = "check",
 
     [string]$TargetHost = "lasertargets.local",
@@ -66,7 +67,11 @@ param(
 
     [switch]$StartService,
 
-    [switch]$Follow
+    [switch]$Follow,
+
+    [switch]$Detailed,
+
+    [switch]$TestAudio
 )
 
 $ErrorActionPreference = "Stop"
@@ -183,7 +188,18 @@ if ($Action -eq "check") {
         Write-Host "  [WARN] No active camera detected (run '.\scripts\pi.ps1 camera' for deep probe)" -ForegroundColor Yellow
     }
 
-    # 9. Service status
+    # 9. Audio hardware & 3.5mm jack
+    $audioCards = ssh $TargetHost "aplay -l 2>/dev/null | grep -E '^card' || echo 'none'" 2>$null
+    if ($audioCards -and $audioCards -ne "none") {
+        Write-Host "  [PASS] Audio playback devices detected (run '.\scripts\pi.ps1 audio' for details):" -ForegroundColor Green
+        foreach ($line in $audioCards) {
+            Write-Host "    $line" -ForegroundColor Gray
+        }
+    } else {
+        Write-Host "  [WARN] No active audio playback cards in ALSA (run '.\scripts\pi.ps1 audio' to inspect)" -ForegroundColor Yellow
+    }
+
+    # 10. Service status
     $svcStatus = ssh $TargetHost "systemctl is-active lasertargets-server 2>/dev/null || echo inactive" 2>$null
     Write-Host "  [INFO] lasertargets-server.service: $svcStatus" -ForegroundColor Gray
 
@@ -230,6 +246,73 @@ if ($Action -eq "camera") {
     }
 
     Write-Host "`nCamera probe complete." -ForegroundColor Cyan
+    exit 0
+}
+
+# ==============================================================================
+# ACTION: audio
+# ==============================================================================
+if ($Action -eq "audio") {
+    Write-Host "=== Probing Audio Hardware on Raspberry Pi ($TargetHost) ===" -ForegroundColor Cyan
+
+    Write-Host "`n--- 1. ALSA Playback Cards (aplay -l) ---" -ForegroundColor Yellow
+    $cards = ssh $TargetHost "aplay -l 2>&1" 2>$null
+    if ($cards -and $cards -notmatch "no soundcards found") {
+        Write-Host "  [PASS] Playback soundcard(s) detected:" -ForegroundColor Green
+        foreach ($line in $cards) { Write-Host "    $line" -ForegroundColor Gray }
+    } else {
+        Write-Host "  [WARN] No soundcards detected via aplay." -ForegroundColor Yellow
+    }
+
+    Write-Host "`n--- 2. Built-in 3.5mm Headphone Jack Status ---" -ForegroundColor Yellow
+    $hpCmd = "echo '--- Kernel Module (snd_bcm2835) ---'; lsmod | grep -E 'snd_bcm2835|bcm2835_audio' || echo 'Module snd_bcm2835 NOT loaded (check dtparam=audio=on)'; echo '--- Firmware config (dtparam=audio) ---'; grep -E '^\s*dtparam=audio' /boot/firmware/config.txt /boot/config.txt 2>/dev/null || echo 'dtparam=audio not found'; echo '--- ALSA Card Identification ---'; aplay -l 2>/dev/null | grep -iE 'headphone|bcm2835' || echo 'No bcm2835 headphone device listed in ALSA'"
+    $hpCheck = ssh $TargetHost $hpCmd 2>$null
+    if ($hpCheck) {
+        foreach ($line in $hpCheck) { Write-Host "  $line" -ForegroundColor Gray }
+    }
+
+    Write-Host "`n--- 3. USB Audio Hardware (DACs / Soundcards) ---" -ForegroundColor Yellow
+    $usbAudio = ssh $TargetHost "lsusb 2>/dev/null | grep -iE 'audio|sound|c-media|pcm|dac|dac-|headset|speaker' || echo 'No dedicated USB audio devices in lsusb'" 2>$null
+    if ($usbAudio) {
+        foreach ($line in $usbAudio) { Write-Host "  $line" -ForegroundColor Gray }
+    }
+
+    Write-Host "`n--- 4. I2S Audio Overlays ---" -ForegroundColor Yellow
+    $i2s = ssh $TargetHost "grep -iE 'dtoverlay=.*(hifiberry|i2s|max98357|audio|dac|pcm5102)' /boot/firmware/config.txt /boot/config.txt 2>/dev/null || echo 'No active I2S audio overlays configured in config.txt'" 2>$null
+    if ($i2s) {
+        foreach ($line in $i2s) { Write-Host "  $line" -ForegroundColor Gray }
+    }
+
+    Write-Host "`n--- 5. User Permissions ('audio' group) ---" -ForegroundColor Yellow
+    $groups = ssh $TargetHost "id -nG 2>/dev/null" 2>$null
+    if ($groups -match "\baudio\b") {
+        Write-Host "  [PASS] Target user is in the 'audio' group." -ForegroundColor Green
+    } else {
+        Write-Host "  [WARN] Target user is NOT in the 'audio' group (run: sudo usermod -a -G audio <user>)" -ForegroundColor Yellow
+    }
+
+    if ($Detailed) {
+        Write-Host "`n--- 6. Detailed ALSA PCMs & Mixer Controls ---" -ForegroundColor Yellow
+        $detailCmd = "echo '=== ALSA PCM Definitions ==='; aplay -L 2>/dev/null | head -n 35; echo ''; echo '=== Mixer Controls ==='; amixer scontrols 2>/dev/null; echo ''; echo '=== Headphone / Master Volume ==='; amixer sget Headphones 2>/dev/null || amixer sget Master 2>/dev/null || amixer 2>/dev/null | head -n 30"
+        $detail = ssh $TargetHost $detailCmd 2>$null
+        if ($detail) {
+            foreach ($line in $detail) { Write-Host "  $line" -ForegroundColor Gray }
+        }
+    } else {
+        Write-Host "`n[TIP] Pass '-Detailed' to view all ALSA PCM devices and mixer volume levels." -ForegroundColor DarkGray
+    }
+
+    if ($TestAudio) {
+        Write-Host "`n--- 7. Playing Audio Test Tone (1s Sine Wave) ---" -ForegroundColor Yellow
+        $tone = ssh $TargetHost "speaker-test -D plughw:CARD=Headphones,DEV=0 -t sine -f 440 -c 2 -l 1 2>&1 || speaker-test -D default -t sine -f 440 -c 2 -l 1 2>&1 || echo 'speaker-test failed or not installed'" 2>$null
+        if ($tone) {
+            foreach ($line in $tone) { Write-Host "  $line" -ForegroundColor Gray }
+        }
+    } else {
+        Write-Host "`n[TIP] Pass '-TestAudio' to play a 440Hz test tone through the 3.5mm jack or default audio output." -ForegroundColor DarkGray
+    }
+
+    Write-Host "`nAudio probe complete." -ForegroundColor Cyan
     exit 0
 }
 

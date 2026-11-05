@@ -1,4 +1,5 @@
 pub use session as actor;
+pub mod audio;
 pub mod calibration;
 pub mod camera;
 pub mod config;
@@ -12,10 +13,12 @@ pub mod settings;
 pub mod state;
 pub mod shapes;
 pub mod shape_v2;
+pub mod vision;
 
 
 pub mod transport;
 
+pub use audio::{AudioConfiguration, PlaySoundEvent, SoundId};
 pub use camera::{CameraStreamType, PhysicalCameraSettings};
 pub use curator_core;
 pub use session::{Actor, ActorLink, ActorMetaData, Session, SessionActors, SessionCreated, SessionState, SessionUpdate};
