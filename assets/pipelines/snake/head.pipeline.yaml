@@ -1,0 +1,19 @@
+# Snake head. The game writes a small circle in the head colour as the base and moves the
+# entity to the head cell. The stages below change those circle points, top to bottom.
+name: snake/head
+
+stages:
+  # Size: normal (1.0x) at rest, up to 1.8x while self.gulp is up, so the head gulps.
+  - scale: { id: gulp, factor: { signal: self.gulp, range: [1.0, 1.8] } }
+
+  # Brightness: full while alive, down to 30% as self.dead rises (game over).
+  - fade: { id: dim, amount: { signal: self.dead, range: [1.0, 0.3] } }
+
+reactions:
+  # Gem eaten: self.gulp rises to 1 in 30 ms, then falls back to 0 over 250 ms.
+  snake.gem_eaten:
+    - envelope: { name: gulp, attack_ms: 30, decay_ms: 250 }
+
+  # Game over: self.dead rises to 1 over 0.6 s and stays there until the game resets.
+  snake.game_over:
+    - envelope: { name: dead, attack_ms: 600, hold_ms: 60000, decay_ms: 0 }

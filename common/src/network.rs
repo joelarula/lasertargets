@@ -75,6 +75,13 @@ pub enum NetworkMessage {
     // Abstract Minimal Path Scene Stream
     BroadcastScenePaths(crate::path::VectorFrame),
 
+    // Live Camera Review Stream (Server -> Terminal)
+    CameraPreviewFrame(crate::camera::CameraStreamFrame),
+    SetCameraStreamState {
+        enabled: bool,
+        stream_type: crate::camera::CameraStreamType,
+    },
+
 
 
     // Curator Workflow & Session Channel Messages

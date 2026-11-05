@@ -1,5 +1,6 @@
 use bevy::prelude::*;
 use common::path::{PathRenderable, PathSegment, UniversalPath};
+use common::pipeline::plugin::{BasePath, DespawnOnFinish, UsePipeline};
 use laserlogic::{from_ttf_text, LaserTextOptions};
 use common::scene::SceneSetup;
 
@@ -52,8 +53,10 @@ pub fn spawn_head_entity(commands: &mut Commands, state: &SnakeState, scene_enti
             Transform::from_translation(pos),
             GlobalTransform::from(Transform::from_translation(pos)),
             Visibility::default(),
+            BasePath(path.clone()),
             path,
             PathRenderable::default(),
+            UsePipeline::new("snake/head"),
         ))
         .id();
     if let Some(scene) = scene_entity {
@@ -113,8 +116,10 @@ pub fn spawn_snake_body_entity(
             Transform::default(),
             GlobalTransform::default(),
             Visibility::default(),
+            BasePath(universal_path.clone()),
             universal_path,
             PathRenderable::default(),
+            UsePipeline::new("snake/body"),
         ))
         .id();
 
@@ -135,8 +140,10 @@ pub fn spawn_gem_entity(commands: &mut Commands, state: &SnakeState, scene_entit
             Transform::from_translation(pos),
             GlobalTransform::from(Transform::from_translation(pos)),
             Visibility::default(),
+            BasePath(path.clone()),
             path,
             PathRenderable::default(),
+            UsePipeline::new("snake/gem"),
         ))
         .id();
     if let Some(scene) = scene_entity {
@@ -166,13 +173,14 @@ pub fn spawn_border_entity(commands: &mut Commands, scene_entity: Option<Entity>
     }
 }
 
+/// Spawns laser text animated by `pipeline`, which also decides when it despawns
 pub fn spawn_snake_text_announcement(
     commands: &mut Commands,
     scene_setup: &SceneSetup,
     scene_entity: Option<Entity>,
     text: &str,
     color: Color,
-    duration_secs: f32,
+    pipeline: &str,
 ) {
     let scene_dim = scene_setup.scene.scene_dimension;
     let height_cap = scene_dim.y as f32 * 0.55;
@@ -226,11 +234,11 @@ pub fn spawn_snake_text_announcement(
             Transform::default(),
             GlobalTransform::default(),
             Visibility::default(),
-            SnakeTitleAnnouncement {
-                timer: Timer::from_seconds(duration_secs, TimerMode::Once),
-            },
+            SnakeTitleAnnouncement,
             title_path,
             PathRenderable::default(),
+            UsePipeline::new(pipeline),
+            DespawnOnFinish,
         )).id();
 
         if let Some(scene) = scene_entity {
@@ -242,20 +250,5 @@ pub fn spawn_snake_text_announcement(
 }
 
 pub fn spawn_snake_title_entity(commands: &mut Commands, scene_setup: &SceneSetup, scene_entity: Option<Entity>) {
-    spawn_snake_text_announcement(commands, scene_setup, scene_entity, "SNAKE", Color::srgb(0.2, 1.0, 0.4), 3.0);
-}
-
-/// System to tick and despawn text title announcement after its timer elapses
-pub fn animate_snake_title_announcement(
-    mut commands: Commands,
-    time: Res<Time>,
-    mut announcement_query: Query<(Entity, &mut SnakeTitleAnnouncement)>,
-) {
-    for (entity, mut announcement) in announcement_query.iter_mut() {
-        announcement.timer.tick(time.delta());
-        if announcement.timer.just_finished() {
-            info!("★ [Snake] Vector title announcement finished -> despawned");
-            commands.entity(entity).despawn();
-        }
-    }
+    spawn_snake_text_announcement(commands, scene_setup, scene_entity, "SNAKE", Color::srgb(0.2, 1.0, 0.4), "snake/title");
 }

@@ -56,6 +56,19 @@ impl PipelineRef {
     }
 }
 
+/// Names the pipeline an entity uses; resolved into a [`PipelineRef`] through [`Pipelines::get`]
+/// (asset file with embedded fallback). Changing it switches the pipeline.
+///
+/// `commands.spawn((path, UsePipeline::new("snake/head")))`
+#[derive(Component, Clone, Debug, PartialEq, Eq)]
+pub struct UsePipeline(pub String);
+
+impl UsePipeline {
+    pub fn new(name: impl Into<String>) -> Self {
+        Self(name.into())
+    }
+}
+
 /// Pipelines compiled into the binary, keyed by name, used when the asset file is unavailable.
 #[derive(Resource, Default)]
 pub struct PipelineLibrary {
@@ -148,11 +161,7 @@ pub struct PathPipelinePlugin;
 
 impl Plugin for PathPipelinePlugin {
     fn build(&self, app: &mut App) {
-        let mut registry = PipelineRegistry::default();
-        super::sources::register(&mut registry);
-        super::stages::register(&mut registry);
-
-        app.insert_resource(registry)
+        app.insert_resource(PipelineRegistry::with_builtins())
             .init_resource::<Signals>()
             .init_resource::<PipelineLibrary>()
             .init_resource::<EnvelopeTriggers>()
@@ -162,7 +171,7 @@ impl Plugin for PathPipelinePlugin {
                 Update,
                 (PathPipelineSet::Bind, PathPipelineSet::Signals, PathPipelineSet::React, PathPipelineSet::Stages).chain(),
             )
-            .add_systems(Update, bind_pipelines.in_set(PathPipelineSet::Bind))
+            .add_systems(Update, (resolve_pipeline_names, bind_pipelines).chain().in_set(PathPipelineSet::Bind))
             .add_systems(
                 Update,
                 (envelope_triggers, route_triggers, tick_pipelines).chain().in_set(PathPipelineSet::React),
@@ -219,7 +228,7 @@ impl ReactiveAppExt for App {
     }
 
     fn register_trigger_message<M: Message>(&mut self, key: &'static str, route: fn(&M) -> Option<(TriggerTarget, f32)>) -> &mut Self {
-        self.add_systems(
+        self.add_message::<ReactionTriggered>().add_systems(
             Update,
             (move |mut messages: MessageReader<M>, mut triggers: MessageWriter<ReactionTriggered>| {
                 for message in messages.read() {
@@ -266,6 +275,13 @@ impl AssetLoader for PipelineAssetLoader {
 
     fn extensions(&self) -> &[&str] {
         &["pipeline.yaml"]
+    }
+}
+
+/// `UsePipeline` names → `PipelineRef`s, on spawn and whenever the name changes
+fn resolve_pipeline_names(mut commands: Commands, pipelines: Pipelines, query: Query<(Entity, &UsePipeline), Changed<UsePipeline>>) {
+    for (entity, name) in &query {
+        commands.entity(entity).insert(pipelines.get(&name.0));
     }
 }
 

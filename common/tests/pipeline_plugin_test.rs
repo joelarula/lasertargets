@@ -159,3 +159,12 @@ fn invalid_reload_keeps_previous_version() {
     t.step();
     assert_eq!(first(&t, e).x, 6.0, "fixed version applied");
 }
+
+#[test]
+fn use_pipeline_resolves_embedded_spec_without_asset_server() {
+    let mut t = app();
+    t.app_mut().embed_pipeline("name: fx/shift\nstages:\n  - translate: { x: 4 }\n");
+    let e = t.world_mut().spawn((dot(1.0), UsePipeline::new("fx/shift"))).id();
+    t.step();
+    assert_eq!(first(&t, e).x, 5.0);
+}

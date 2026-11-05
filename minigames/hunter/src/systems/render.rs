@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use common::path::{PathRenderable, UniversalPath};
+use common::path::PathRenderable;
 use laserlogic::{from_ttf_text, LaserTextOptions};
 use common::scene::{SceneEntity, SceneSetup};
 use common::state::SessionState;

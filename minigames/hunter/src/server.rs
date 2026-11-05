@@ -1,4 +1,5 @@
 use bevy::prelude::*;
+use common::pipeline::plugin::ReactiveAppExt;
 use common::state::ServerState;
 
 use crate::events::{BroadcastStatsUpdateEvent, HunterClickEvent};

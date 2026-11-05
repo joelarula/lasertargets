@@ -15,6 +15,14 @@ pub struct PipelineRegistry {
 }
 
 impl PipelineRegistry {
+    /// A registry with every built-in stage and source
+    pub fn with_builtins() -> Self {
+        let mut registry = Self::default();
+        super::sources::register(&mut registry);
+        super::stages::register(&mut registry);
+        registry
+    }
+
     /// Registers stage `T` under `key`; its parameters are deserialized from the YAML entry
     pub fn register_stage<T: PathStage + DeserializeOwned>(&mut self, key: &str) -> &mut Self {
         self.stages.insert(

@@ -1,9 +1,10 @@
 use bevy::prelude::*;
 use common::path::UniversalPath;
+use common::pipeline::plugin::BasePath;
 use common::scene::{SceneEntity, SceneSetup};
 
 use crate::components::{DiamondFood, SnakeHead, SnakeSegment};
-use crate::events::{BroadcastSnakeStatsEvent, SnakeGameOverEvent};
+use crate::events::{BroadcastSnakeStatsEvent, SnakeGameOverEvent, SnakeGemEatenEvent};
 use crate::resources::{SnakeMoveTimer, SnakeState};
 use crate::systems::render::{
     build_snake_body_path, grid_to_local, random_color, random_gem_position,
@@ -19,12 +20,14 @@ pub fn snake_move_tick(
     timer_res: Option<ResMut<SnakeMoveTimer>>,
     snake_state: Option<ResMut<SnakeState>>,
     scene_query: Query<Entity, With<SceneEntity>>,
-    // queries to update entities in-place (avoiding despawn gaps that black out the laser)
-    mut head_query: Query<(Entity, &mut UniversalPath, &mut Transform), (With<SnakeHead>, Without<SnakeSegment>, Without<DiamondFood>)>,
-    mut seg_query: Query<(Entity, &mut UniversalPath), (With<SnakeSegment>, Without<SnakeHead>, Without<DiamondFood>)>,
-    mut gem_query: Query<(Entity, &mut UniversalPath, &mut Transform), (With<DiamondFood>, Without<SnakeHead>, Without<SnakeSegment>)>,
+    // queries to update entities in-place (avoiding despawn gaps that black out the laser); the
+    // game writes BasePath and each entity's pipeline turns it into the drawn UniversalPath
+    mut head_query: Query<(Entity, &mut BasePath, &mut Transform), (With<SnakeHead>, Without<SnakeSegment>, Without<DiamondFood>)>,
+    mut seg_query: Query<(Entity, &mut BasePath), (With<SnakeSegment>, Without<SnakeHead>, Without<DiamondFood>)>,
+    mut gem_query: Query<(Entity, &mut BasePath, &mut Transform), (With<DiamondFood>, Without<SnakeHead>, Without<SnakeSegment>)>,
     mut stats_events: MessageWriter<BroadcastSnakeStatsEvent>,
     mut game_over_events: MessageWriter<SnakeGameOverEvent>,
+    mut gem_events: MessageWriter<SnakeGemEatenEvent>,
 ) {
     let (Some(ref mut timer), Some(ref mut state)) = (timer_res, snake_state) else {
         return;
@@ -82,6 +85,9 @@ pub fn snake_move_tick(
 
     // Move snake and update segments
     advance_snake_segments(state, new_head, ate_gem, timer);
+    if ate_gem {
+        gem_events.write(SnakeGemEatenEvent { session_id: state.session_id, gems_eaten: state.gems_eaten });
+    }
 
     // Synchronize renderable entities in place
     sync_laser_entities(
@@ -133,7 +139,7 @@ fn trigger_game_over(
     info!("★ [Snake] Game over triggered! Score: {}. Showing GAME OVER announcement...", state.gems_eaten);
 
     let scene_entity = scene_query.single().ok();
-    spawn_snake_text_announcement(commands, scene_setup, scene_entity, "GAME OVER", Color::srgb(1.0, 0.2, 0.2), 2.5);
+    spawn_snake_text_announcement(commands, scene_setup, scene_entity, "GAME OVER", Color::srgb(1.0, 0.2, 0.2), "snake/game_over");
 
     game_over_events.write(SnakeGameOverEvent {
         session_id: state.session_id,
@@ -190,9 +196,9 @@ fn sync_laser_entities(
     commands: &mut Commands,
     state: &SnakeState,
     scene_query: &Query<Entity, With<SceneEntity>>,
-    head_query: &mut Query<(Entity, &mut UniversalPath, &mut Transform), (With<SnakeHead>, Without<SnakeSegment>, Without<DiamondFood>)>,
-    seg_query: &mut Query<(Entity, &mut UniversalPath), (With<SnakeSegment>, Without<SnakeHead>, Without<DiamondFood>)>,
-    gem_query: &mut Query<(Entity, &mut UniversalPath, &mut Transform), (With<DiamondFood>, Without<SnakeHead>, Without<SnakeSegment>)>,
+    head_query: &mut Query<(Entity, &mut BasePath, &mut Transform), (With<SnakeHead>, Without<SnakeSegment>, Without<DiamondFood>)>,
+    seg_query: &mut Query<(Entity, &mut BasePath), (With<SnakeSegment>, Without<SnakeHead>, Without<DiamondFood>)>,
+    gem_query: &mut Query<(Entity, &mut BasePath, &mut Transform), (With<DiamondFood>, Without<SnakeHead>, Without<SnakeSegment>)>,
 ) {
     let scene_entity = scene_query.single().ok();
 
@@ -206,7 +212,7 @@ fn sync_laser_entities(
             commands.entity(*e).despawn();
         }
         if let Some((_, mut head_path, mut head_transform)) = heads.into_iter().next() {
-            *head_path = UniversalPath::circle(Vec2::ZERO, SEGMENT_RADIUS, head_color);
+            head_path.0 = UniversalPath::circle(Vec2::ZERO, SEGMENT_RADIUS, head_color);
             *head_transform = Transform::from_translation(head_pos);
         } else {
             spawn_head_entity(commands, state, scene_entity);
@@ -221,7 +227,7 @@ fn sync_laser_entities(
             commands.entity(*e).despawn();
         }
         if let Some((_, mut seg_path)) = segs.into_iter().next() {
-            *seg_path = new_body;
+            seg_path.0 = new_body;
         } else {
             spawn_snake_body_entity(commands, state, scene_entity);
         }
@@ -237,7 +243,7 @@ fn sync_laser_entities(
             commands.entity(*e).despawn();
         }
         if let Some((_, mut gem_path, mut gem_transform)) = gems.into_iter().next() {
-            *gem_path = UniversalPath::diamond(Vec2::ZERO, GEM_HALF_SIZE, gem_color);
+            gem_path.0 = UniversalPath::diamond(Vec2::ZERO, GEM_HALF_SIZE, gem_color);
             *gem_transform = Transform::from_translation(gem_pos);
         } else {
             spawn_gem_entity(commands, state, scene_entity);
@@ -251,9 +257,9 @@ fn handle_game_over_reset(
     state: &mut SnakeState,
     timer: &mut SnakeMoveTimer,
     scene_query: &Query<Entity, With<SceneEntity>>,
-    head_query: &Query<(Entity, &mut UniversalPath, &mut Transform), (With<SnakeHead>, Without<SnakeSegment>, Without<DiamondFood>)>,
-    seg_query: &Query<(Entity, &mut UniversalPath), (With<SnakeSegment>, Without<SnakeHead>, Without<DiamondFood>)>,
-    gem_query: &Query<(Entity, &mut UniversalPath, &mut Transform), (With<DiamondFood>, Without<SnakeHead>, Without<SnakeSegment>)>,
+    head_query: &Query<(Entity, &mut BasePath, &mut Transform), (With<SnakeHead>, Without<SnakeSegment>, Without<DiamondFood>)>,
+    seg_query: &Query<(Entity, &mut BasePath), (With<SnakeSegment>, Without<SnakeHead>, Without<DiamondFood>)>,
+    gem_query: &Query<(Entity, &mut BasePath, &mut Transform), (With<DiamondFood>, Without<SnakeHead>, Without<SnakeSegment>)>,
 ) {
     if let Some(ref mut reset_timer) = state.game_over_reset_timer {
         reset_timer.tick(time.delta());

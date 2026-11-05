@@ -472,7 +472,14 @@ or `id`.
 
 ### 7.3 Binding to entities
 
-- **Explicitly:** game code inserts `PipelineRef(asset_server.load("pipelines/hunter/balloon.pipeline.yaml"))`.
+- **By name (implemented):** game code inserts `UsePipeline::new("snake/head")`. The plugin loads
+  `pipelines/snake/head.pipeline.yaml` from the asset folder (hot-reloadable) and uses the copy
+  embedded with `app.embed_pipeline(include_str!(...))` until the file loads, or for good when it
+  is missing. Changing the component switches the pipeline. A file's `name` must equal its path
+  under `assets/pipelines`; `common/tests/pipeline_assets_test.rs` checks this and compiles every
+  shipped file.
+- **Explicitly:** game code inserts a `PipelineRef` (asset handle with optional fallback, or an
+  inline spec).
 - **By shape tag:** a Shape v2 tag `pipeline:<name>` picks a default on spawn.
 - **At runtime:** the menu, keyboard or network sends a `SetPipeline { entity, name }` message.
 - **Scene pipeline:** a pipeline bound to the `SceneEntity` receives `Broadcast` and `At(..)`
@@ -482,11 +489,29 @@ or `id`.
 
 What a minigame does under this design:
 
-1. Spawn targets with a transform, game components (`TargetHealth`, `TargetState`) and a
-   `PipelineRef`. It no longer writes `UniversalPath` for its targets.
-2. Register its triggers, signal bindings and POIs in its plugin (§4.1–4.4).
-3. Raise events (`TargetHit`, `TargetPopped`) and update components as gameplay happens.
+1. Spawn targets with a transform, game components (`TargetHealth`, `TargetState`), a
+   `BasePath` and a `UsePipeline`. Game code updates `BasePath`, never `UniversalPath`, which the
+   pipeline owns.
+2. Register its triggers, signal bindings and POIs in its plugin (§4.1–4.4), and embed its
+   pipeline files.
+3. Raise domain events (`SnakeGemEatenEvent`, `TargetPopped`) and update components as gameplay
+   happens. Prefix trigger keys with the game (`snake.gem_eaten`), since broadcasts reach every
+   pipeline.
 4. Optionally wait for `VisualFinished` before despawning.
+
+### 8.1 Pilots
+
+| Game | Entity | Pipeline | Reacts to |
+|---|---|---|---|
+| Hunter | shot ripple | `hunter/ripple` | its own lifetime: grows 7× over 100 ms, then despawns (`DespawnOnFinish`). Replaced `HunterShotRipple` and its system |
+| Snake | head | `snake/head` | `snake.gem_eaten` → gulp (scale envelope); `snake.game_over` → dims |
+| Snake | body | `snake/body` | `snake.gem_eaten` → white flash; global `snake.speed` → slither ripple grows with game speed; `snake.game_over` → shakes and dims |
+| Snake | gem | `snake/gem` | local `spin`/`breathe` signals; `bound` and `snake.gem_eaten` → draws itself on at the new cell |
+| Snake | SNAKE / GAME OVER text | `snake/title`, `snake/game_over` | own lifetime: write-on, fade-out, despawn. Replaced the timer component and system |
+
+Snake publishes `snake.speed` (0 at the starting pace, 1 at top speed) as a global signal, and
+maps its `SnakeGemEatenEvent` / `SnakeGameOverEvent` messages to broadcast triggers with
+`register_trigger_message`. Its grid logic is unchanged.
 
 Hit testing stays in game logic, on the game's own shape (`Target.path` or a radius). An optional
 `HitShape::FromVisual` can test against the final `UniversalPath`, so a target that reacts by
@@ -557,7 +582,7 @@ YAML is parsed with `figment`, which is already in the workspace (§13). Hot rel
 | **P2: Registry + assets** | `AssetPlugin` on the headless server with a `runtime.assets_dir` setting, registries, `PipelineAsset` loader (figment) + validation, `PipelineRef`, hot reload via `file_watcher` dev feature | Editing a pipeline changes the projection live. A broken file keeps the last good version | done, except `xtask pipeline check` |
 | **P3: Signals** | `Signals`, `EntitySignals`, `Param` with `self.*`, `bind_signal`, built-in LFO/timeline/gamepad, `self.life`, `self.age_secs`. Port `PathModulator` to the morph source | `color_lerp` bound to `self.health` follows a component in a headless test | done, except gamepad signals and the morph source |
 | **P4: Reactions** | Triggers (`register_trigger`, `register_trigger_message`), envelopes, `set`, `emit`, `finished` | `TargetHit` makes the entity flash and decay within one frame of the event | done for message and envelope triggers; `EntityEvent` observers open |
-| **P5: States + effects** | `states:`, `state_from`, crossfade, `spawn` effects with `EffectOf` and lifetime, effect priority | The hunter balloon pops through a dying state and a ripple effect. `HunterShotRipple` code is deleted | ripple migrated (`DespawnOnFinish`); `states`, `spawn` open |
+| **P5: States + effects** | `states:`, `state_from`, crossfade, `spawn` effects with `EffectOf` and lifetime, effect priority | The hunter balloon pops through a dying state and a ripple effect. `HunterShotRipple` code is deleted | Hunter ripple and all Snake visuals migrated (§8.1); `states`, `spawn` open |
 | **P6: Spatial** | `PointsOfInterest`, `self.near`, `attract`/`repel` | A target wobbles when the reticle approaches | open |
 | **P7: Fill + path model** | Blank edges, fillets, dwell in ms, fill sources (FILL_STRATEGIES_PLAN) | Fills react, e.g. a raster drains with `self.health` | open |
 | **P8: Frame pipeline** | `LaserFrameSet` split, `Safety` with priority budget | Safety tests pass. 50 simultaneous effects stay within budget | open |

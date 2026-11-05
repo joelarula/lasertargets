@@ -1,0 +1,33 @@
+# Snake body. The game writes the body polyline (one point per cell) as the base every move.
+# Each stage below takes those points, changes them, and passes them on, top to bottom.
+name: snake/body
+
+stages:
+  # Blend every point's colour towards white by self.flash (0 = own colour, 1 = white).
+  # self.flash is 0 until a gem is eaten (see reactions).
+  - color_lerp: { id: flash, to: [255, 255, 255], amount: { signal: self.flash } }
+
+  # Move points up and down in a travelling sine wave, so the body slithers.
+  # Wave height follows the game speed: 0 cm at the starting pace, 1.5 cm at top speed.
+  - wave_displace:
+      id: slither
+      axis: y
+      frequency: 2.5        # waves per metre along the body
+      speed_hz: 3.0         # how fast the wave travels
+      amplitude_m: { signal: snake.speed, range: [0.0, 0.015], smooth_ms: 200 }
+
+  # Shake every point around its place by up to 3 cm, as self.dead rises (game over).
+  - wobble: { id: shake, amplitude_m: { signal: self.dead, range: [0.0, 0.03] } }
+
+  # Brightness: full while alive, down to 25% as self.dead rises (game over).
+  - fade: { id: dim, amount: { signal: self.dead, range: [1.0, 0.25] } }
+
+reactions:
+  # Gem eaten: self.flash jumps to 1 and falls back to 0 over 0.3 s, giving a white flash.
+  snake.gem_eaten:
+    - envelope: { name: flash, decay_ms: 300 }
+
+  # Game over: self.dead rises from 0 to 1 over 2.4 s and stays there until the game resets
+  # and respawns the body, so the body shakes and dims.
+  snake.game_over:
+    - envelope: { name: dead, attack_ms: 2400, hold_ms: 60000, decay_ms: 0 }

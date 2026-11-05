@@ -21,8 +21,6 @@ pub struct DiamondFood {
     pub color: Color,
 }
 
-/// Marker: title announcement text entity with auto-despawn timer
+/// Marker: title or GAME OVER text; its pipeline animates it and despawns it when done
 #[derive(Component, Debug, Clone)]
-pub struct SnakeTitleAnnouncement {
-    pub timer: Timer,
-}
+pub struct SnakeTitleAnnouncement;

@@ -1,0 +1,17 @@
+# GAME OVER text. The game writes the text outline (red) as the base; the entity is removed
+# when the lifetime ends, which is when the game resets.
+name: snake/game_over
+
+# self.life goes from 0 to 1 over these 2.5 s.
+lifetime_ms: 2500
+
+stages:
+  # Draw only part of the text: self.life × 6 of it, so it writes itself on in the first
+  # sixth (about 0.4 s) and stays complete after that.
+  - trim: { id: write_on, amount: { signal: self.life, range: [0.0, 6.0] } }
+
+  # Tremble: every point shakes by 1 cm, 9 times a second, the whole time.
+  - wobble: { id: tremble, amplitude_m: 0.01, frequency_hz: 9.0 }
+
+  # Brightness: from full to off over the lifetime, fading mostly at the end (EaseInQuad).
+  - fade: { id: fade_out, amount: { signal: self.life, range: [1.0, 0.0], curve: EaseInQuad } }

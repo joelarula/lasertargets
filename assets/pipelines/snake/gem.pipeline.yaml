@@ -1,0 +1,31 @@
+# Diamond gem. The game writes the diamond in the gem colour as the base and moves the entity
+# to each new cell. The stages below change the diamond's points, top to bottom.
+name: snake/gem
+
+# Signals this file makes itself (each goes 0 → 1):
+signals:
+  # Rises from 0 to 1 every 4 s, then starts again: one full turn.
+  spin: { ramp: { duration_secs: 4.0, repeat: true } }
+  # Swings smoothly between 0 and 1, 1.5 times a second.
+  breathe: { sine: { frequency_hz: 1.5 } }
+
+stages:
+  # Draw only part of the outline: none while self.appear is 1, all of it once it is 0.
+  # self.appear is set to 1 when the gem appears and falls to 0 (see reactions), so the
+  # diamond draws itself on.
+  - trim: { id: draw_on, amount: { signal: self.appear, range: [1.0, 0.0] } }
+
+  # Turn the diamond: 0° to 360° as `spin` goes 0 → 1.
+  - rotate: { id: spin, deg: { signal: spin, range: [0.0, 360.0] } }
+
+  # Size: between 0.9x and 1.1x following `breathe`, so it gently pulses.
+  - scale: { id: breathe, factor: { signal: breathe, range: [0.9, 1.1] } }
+
+reactions:
+  # The gem entity appears: self.appear jumps to 1 and falls to 0 over 0.3 s (draw on).
+  bound:
+    - envelope: { name: appear, decay_ms: 300 }
+
+  # A gem was eaten, so this gem has just moved to a new cell: draw it on again there.
+  snake.gem_eaten:
+    - envelope: { name: appear, decay_ms: 300 }

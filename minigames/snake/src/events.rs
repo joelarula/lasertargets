@@ -38,3 +38,10 @@ impl CuratorPayload for SnakeGameOverEvent {
         "snake_game_over"
     }
 }
+
+/// Raised on server when the snake eats a gem; pipelines react to it as `snake.gem_eaten`
+#[derive(Message, Debug, Clone, Serialize, Deserialize)]
+pub struct SnakeGemEatenEvent {
+    pub session_id: Uuid,
+    pub gems_eaten: u32,
+}

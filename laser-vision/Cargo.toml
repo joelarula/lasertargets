@@ -1,0 +1,12 @@
+[package]
+name = "laser-vision"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+bevy = { workspace = true }
+common = { path = "../common" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+log = { workspace = true }
+

@@ -1,7 +1,7 @@
 use bevy::math::Mat4;
 use bevy::prelude::*;
 use common::path::{PathRenderable, UniversalPath};
-use common::pipeline::plugin::{DespawnOnFinish, Pipelines};
+use common::pipeline::plugin::{DespawnOnFinish, UsePipeline};
 use common::scene::{SceneEntity, SceneSetup};
 use crate::types::HunterTarget;
 
@@ -20,7 +20,6 @@ pub fn handle_hunter_clicks(
     time: Res<Time>,
     mut stats_events: MessageWriter<BroadcastStatsUpdateEvent>,
     indicator_query: Query<Entity, With<CollisionIndicator>>,
-    pipelines: Pipelines,
 ) {
     for event in click_events.read() {
         let click_pos = event.click_position;
@@ -137,7 +136,7 @@ pub fn handle_hunter_clicks(
             let indicator_entity = commands.spawn((
                 CollisionIndicator,
                 // Grows and despawns through assets/pipelines/hunter/ripple.pipeline.yaml
-                pipelines.get("hunter/ripple"),
+                UsePipeline::new("hunter/ripple"),
                 DespawnOnFinish,
                 indicator_transform,
                 GlobalTransform::from(indicator_transform),

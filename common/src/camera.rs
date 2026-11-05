@@ -1,3 +1,4 @@
+use bevy::prelude::Vec2;
 use serde::{Deserialize, Serialize};
 
 /// Type of physical camera stream available on the platform
@@ -37,4 +38,41 @@ impl Default for PhysicalCameraSettings {
             stream_fps: 30,
         }
     }
+}
+
+/// Telemetry marker for detected visual events sent alongside preview frames
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct VisualEventMarker {
+    /// Normalized coordinates in camera sensor space [0.0, 1.0]
+    pub camera_norm_pos: Vec2,
+    /// Projected coordinates in laser galvo space [-1.0, 1.0]
+    pub galvo_pos: Vec2,
+    /// Event classification (e.g. PlayerLaserHit, CalibrationAnchor)
+    pub kind: VisualEventKind,
+    /// Optical energy / confidence score (0.0 to 1.0)
+    pub confidence: f32,
+    /// Timestamp in milliseconds
+    pub timestamp_ms: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum VisualEventKind {
+    PlayerLaserHit,
+    CalibrationAnchor(u8),
+    BeamVerification,
+    TargetOcclusion,
+}
+
+/// A compressed preview frame with overlaid detection markers for review in Terminal UI
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CameraStreamFrame {
+    pub timestamp_ms: u64,
+    pub width: u32,
+    pub height: u32,
+    /// Encoded JPEG/MJPEG buffer from bcm2835-codec or software compressor
+    pub jpeg_data: Vec<u8>,
+    /// Live visual event annotations detected in this specific frame
+    pub detected_events: Vec<VisualEventMarker>,
+    /// Current 4-point homography calibration quad in camera normalized space [0.0, 1.0]
+    pub calibration_quad: Option<[Vec2; 4]>,
 }
