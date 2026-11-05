@@ -43,6 +43,8 @@ pub struct VisionDetection {
     pub label: String,
     /// Centre on the scene plane, world space
     pub world_pos: Vec3,
+    /// Centre on the scene in metres from its centre, +Y up (`SceneSetup::world_to_billboard`)
+    pub scene_pos: Vec2,
     /// Width and height on the scene plane in metres
     pub size_m: Vec2,
     /// Normalised camera coordinates, (0, 0) top-left

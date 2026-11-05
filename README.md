@@ -6,7 +6,8 @@ Augmented reality laser game platform.
 > 🔌 **Hardware Wiring & Pinouts**: See [docs/ILDA_PINOUT.md](docs/ILDA_PINOUT.md) for DB25 to RJ45 (Cat5/Cat6) ILDA adapter pinout mapping.  
 > 🎯 **Scene-Filling Strategies Plan**: See [docs/FILL_STRATEGIES_PLAN.md](docs/FILL_STRATEGIES_PLAN.md) for hardware playback of raster, spiral, lissajous, and hilbert fill strategies.  
 > 🧩 **Transformer Pipeline Architecture**: See [docs/TRANSFORMER_PIPELINE.md](docs/TRANSFORMER_PIPELINE.md) for Bevy ECS plugin and component architecture.  
-> 📷 **Camera Stream & Vision Tracking Plan**: See [docs/CAMERA_STREAM_PLAN.md](docs/CAMERA_STREAM_PLAN.md) for Sony IMX219 (Pi Cam v2) capture pipeline and laser hit detection.
+> 📷 **Camera Stream & Vision Tracking Plan**: See [docs/CAMERA_STREAM_PLAN.md](docs/CAMERA_STREAM_PLAN.md) for Sony IMX219 (Pi Cam v2) capture pipeline and laser hit detection.  
+> 🔊 **Galvo Acoustic Audio & Synthesis Plan**: See [docs/GALVO_AUDIO_PLAN.md](docs/GALVO_AUDIO_PLAN.md) for galvo carrier injection, acoustic sound effects, harmonic shapes, and laser theremin.
 
 ![Official ILDA DB25 Pinout](docs/images/ilda_pinout_official.png)
 

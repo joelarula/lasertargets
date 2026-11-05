@@ -11,8 +11,11 @@
 //!   [`Detection`]s and/or frame-wide signals.
 //! - **Coordinates**: camera space is normalised (0, 0) top-left to (1, 1) bottom-right;
 //!   projector space is `common::scene::projector_ndc`, -1..1 with +Y down.
+//! - **Calibration** ([`calibration`]): projected dots seen by the camera give a least-squares
+//!   camera → projector [`Homography`].
 
 pub mod analyzer;
+pub mod calibration;
 pub mod capture;
 pub mod detector;
 pub mod engine;
@@ -20,6 +23,7 @@ pub mod homography;
 pub mod tracker;
 
 pub use analyzer::{AnalysisOutput, Detection, MotionAnalyzer, VisionAnalyzer};
+pub use calibration::{fit_calibration, grid_pattern, median, CalibrationFit, MIN_CALIBRATION_POINTS};
 pub use capture::{FrameSource, MockFrameSource, RawFrame};
 #[cfg(target_os = "linux")]
 pub use capture::ProcessPipeFrameSource;

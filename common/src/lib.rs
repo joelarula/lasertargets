@@ -18,7 +18,10 @@ pub mod vision;
 
 pub mod transport;
 
-pub use audio::{AudioConfiguration, PlaySoundEvent, SoundId};
+pub use audio::{
+    AudioConfiguration, GalvoAudioConfig, GalvoCarrierMode, GalvoWaveform, PlayGalvoChordEvent,
+    PlayGalvoToneEvent, PlaySoundEvent, SoundId,
+};
 pub use camera::{CameraStreamType, PhysicalCameraSettings};
 pub use curator_core;
 pub use session::{Actor, ActorLink, ActorMetaData, Session, SessionActors, SessionCreated, SessionState, SessionUpdate};

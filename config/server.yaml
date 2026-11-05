@@ -14,6 +14,7 @@
 #   camera              CameraConfiguration      (common)
 #   scene               SceneConfiguration       (common)
 #   vision              PhysicalCameraSettings   (server-core vision plugin)
+#   vision.calibration  CameraCalibrationSettings (server-core camera calibration plugin)
 #   audio               AudioConfiguration       (server-core audio plugin)
 
 default:
@@ -70,6 +71,13 @@ default:
     stream_width: 640
     stream_height: 480
     stream_fps: 30
+    calibration:                # camera ↔ projector calibration, started from the terminal
+      grid: [3, 3]              # dots across and down the scene
+      margin: 0.1               # share of the scene left free at each edge
+      settle_ms: 350            # wait after moving the dot before measuring it
+      measure_ms: 400           # how long each dot is measured
+      dot_color: [0, 255, 0]    # must be the colour the camera detects (green)
+      file: camera_calibration.json   # solved mapping, next to this file
 
   audio:
     enabled: true

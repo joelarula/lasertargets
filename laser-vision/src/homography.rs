@@ -85,6 +85,43 @@ impl Homography {
         })
     }
 
+    /// Least-squares homography over 4 or more point pairs (`src[i]` → `dst[i]`), e.g. measured
+    /// calibration dots. Points are normalised first (Hartley), so camera and projector scales
+    /// don't hurt the conditioning. `None` for fewer than 4 pairs or a degenerate layout.
+    pub fn fit(src: &[Vec2], dst: &[Vec2]) -> Option<Self> {
+        if src.len() != dst.len() || src.len() < 4 {
+            return None;
+        }
+        let (src_norm, src_t) = normalise(src)?;
+        let (dst_norm, dst_t) = normalise(dst)?;
+
+        // Normal equations (AᵀA) h = Aᵀb of the DLT rows, with h22 fixed to 1
+        let mut ata = [[0.0f64; 8]; 8];
+        let mut atb = [0.0f64; 8];
+        for (s, d) in src_norm.iter().zip(&dst_norm) {
+            let (x, y, u, v) = (s[0], s[1], d[0], d[1]);
+            let rows = [
+                ([x, y, 1.0, 0.0, 0.0, 0.0, -u * x, -u * y], u),
+                ([0.0, 0.0, 0.0, x, y, 1.0, -v * x, -v * y], v),
+            ];
+            for (row, rhs) in rows {
+                for i in 0..8 {
+                    for j in 0..8 {
+                        ata[i][j] += row[i] * row[j];
+                    }
+                    atb[i] += row[i] * rhs;
+                }
+            }
+        }
+        let h = solve_8x8(&mut ata, &mut atb)?;
+        let normalised = [h[0], h[1], h[2], h[3], h[4], h[5], h[6], h[7], 1.0];
+
+        // Undo the normalisation: H = T_dst⁻¹ · H' · T_src
+        let full = mul3(&mul3(&invert_similarity(&dst_t), &normalised), &src_t);
+        let scale = if full[8].abs() > 1e-12 { full[8] } else { 1.0 };
+        Some(Self { data: full.map(|v| (v / scale) as f32) })
+    }
+
     /// Transforms a point from source space into destination space
     pub fn transform_point(&self, p: Vec2) -> Vec2 {
         let x = p.x;
@@ -130,6 +167,37 @@ impl Homography {
             ],
         })
     }
+}
+
+/// Moves points to their centroid and scales them to a mean distance of √2. Returns the points
+/// and the 3x3 similarity that does it (row-major), or `None` when all points coincide.
+fn normalise(points: &[Vec2]) -> Option<(Vec<[f64; 2]>, [f64; 9])> {
+    let n = points.len() as f64;
+    let cx = points.iter().map(|p| p.x as f64).sum::<f64>() / n;
+    let cy = points.iter().map(|p| p.y as f64).sum::<f64>() / n;
+    let mean_distance = points.iter().map(|p| ((p.x as f64 - cx).powi(2) + (p.y as f64 - cy).powi(2)).sqrt()).sum::<f64>() / n;
+    if mean_distance < 1e-12 {
+        return None;
+    }
+    let s = std::f64::consts::SQRT_2 / mean_distance;
+    let normalised = points.iter().map(|p| [(p.x as f64 - cx) * s, (p.y as f64 - cy) * s]).collect();
+    Some((normalised, [s, 0.0, -s * cx, 0.0, s, -s * cy, 0.0, 0.0, 1.0]))
+}
+
+/// Inverse of a [`normalise`] similarity (uniform scale + translation)
+fn invert_similarity(t: &[f64; 9]) -> [f64; 9] {
+    let s = t[0];
+    [1.0 / s, 0.0, -t[2] / s, 0.0, 1.0 / s, -t[5] / s, 0.0, 0.0, 1.0]
+}
+
+fn mul3(a: &[f64; 9], b: &[f64; 9]) -> [f64; 9] {
+    let mut out = [0.0; 9];
+    for row in 0..3 {
+        for col in 0..3 {
+            out[row * 3 + col] = (0..3).map(|k| a[row * 3 + k] * b[k * 3 + col]).sum();
+        }
+    }
+    out
 }
 
 /// Solves Ax = b for an 8x8 matrix via Gaussian elimination with partial pivoting
@@ -221,6 +289,31 @@ mod tests {
         // Center should map to (0, 0)
         let center = h.transform_point(Vec2::new(320.0, 240.0));
         assert!(center.length() < 1e-3, "Center expected (0,0), got {:?}", center);
+    }
+
+    #[test]
+    fn fit_recovers_a_perspective_mapping_from_many_points() {
+        // A tilted, shifted camera view of the projector
+        let truth = Homography::from_four_points(
+            &[Vec2::new(0.1, 0.15), Vec2::new(0.85, 0.1), Vec2::new(0.9, 0.9), Vec2::new(0.15, 0.8)],
+            &[Vec2::new(-1.0, -1.0), Vec2::new(1.0, -1.0), Vec2::new(1.0, 1.0), Vec2::new(-1.0, 1.0)],
+        )
+        .unwrap();
+        let src: Vec<Vec2> = (0..5).flat_map(|i| (0..4).map(move |j| Vec2::new(0.2 + 0.15 * i as f32, 0.2 + 0.18 * j as f32))).collect();
+        let dst: Vec<Vec2> = src.iter().map(|p| truth.transform_point(*p)).collect();
+
+        let fitted = Homography::fit(&src, &dst).expect("fit");
+        for p in [Vec2::new(0.5, 0.5), Vec2::new(0.12, 0.88), Vec2::new(0.95, 0.05)] {
+            assert!(fitted.transform_point(p).distance(truth.transform_point(p)) < 1e-3, "{p}");
+        }
+    }
+
+    #[test]
+    fn fit_rejects_too_few_or_degenerate_points() {
+        let three = [Vec2::ZERO, Vec2::X, Vec2::Y];
+        assert!(Homography::fit(&three, &three).is_none());
+        let collinear: Vec<Vec2> = (0..5).map(|i| Vec2::new(i as f32, i as f32)).collect();
+        assert!(Homography::fit(&collinear, &collinear).is_none());
     }
 }
 

@@ -46,7 +46,7 @@ pub struct VisionEngine {
     analyzers: Vec<Box<dyn VisionAnalyzer>>,
     tracker: Tracker,
     homography: Homography,
-    calibration_quad: Option<[Vec2; 4]>,
+    calibrated: bool,
     scratch: AnalysisOutput,
 }
 
@@ -57,7 +57,7 @@ impl VisionEngine {
             analyzers,
             tracker: Tracker::default(),
             homography: default_homography(),
-            calibration_quad: None,
+            calibrated: false,
             scratch: AnalysisOutput::default(),
         }
     }
@@ -71,13 +71,20 @@ impl VisionEngine {
         self.analyzers.push(analyzer);
     }
 
+    /// Normalised camera → projector mapping in use
     pub fn homography(&self) -> &Homography {
         &self.homography
     }
 
-    /// Camera corners of the calibration quad, if calibrated
-    pub fn calibration_quad(&self) -> Option<[Vec2; 4]> {
-        self.calibration_quad
+    pub fn is_calibrated(&self) -> bool {
+        self.calibrated
+    }
+
+    /// Uses a measured camera → projector mapping (see [`crate::calibration`]), or the
+    /// uncalibrated default with `None`
+    pub fn set_calibration(&mut self, homography: Option<Homography>) {
+        self.calibrated = homography.is_some();
+        self.homography = homography.unwrap_or_else(default_homography);
     }
 
     /// Maps 4 normalised camera points onto 4 projector points, ordered top-left, top-right,
@@ -85,17 +92,21 @@ impl VisionEngine {
     pub fn set_calibration_quad(&mut self, camera_pts: [Vec2; 4], galvo_pts: [Vec2; 4]) -> bool {
         match Homography::from_four_points(&camera_pts, &galvo_pts) {
             Some(h) => {
-                self.homography = h;
-                self.calibration_quad = Some(camera_pts);
+                self.set_calibration(Some(h));
                 true
             }
             None => false,
         }
     }
 
-    pub fn reset_calibration(&mut self) {
-        self.homography = default_homography();
-        self.calibration_quad = None;
+    /// Where the projector's full range (the red DAC perimeter) appears in the camera image,
+    /// corners top-left, top-right, bottom-right, bottom-left. `None` until calibrated.
+    pub fn calibration_quad(&self) -> Option<[Vec2; 4]> {
+        if !self.calibrated {
+            return None;
+        }
+        let to_camera = self.homography.inverse()?;
+        Some([Vec2::new(-1.0, -1.0), Vec2::new(1.0, -1.0), Vec2::new(1.0, 1.0), Vec2::new(-1.0, 1.0)].map(|p| to_camera.transform_point(p)))
     }
 
     /// Takes the next camera frame and runs every analyzer and the tracker over it. `None` when
@@ -174,16 +185,20 @@ mod tests {
     }
 
     #[test]
-    fn calibration_quad_replaces_the_mapping() {
+    fn calibration_replaces_the_mapping_and_shows_the_projector_in_the_camera() {
         let mut engine = engine();
+        assert_eq!(engine.calibration_quad(), None);
+
         let camera = [Vec2::new(0.1, 0.1), Vec2::new(0.9, 0.1), Vec2::new(0.9, 0.9), Vec2::new(0.1, 0.9)];
         let galvo = [Vec2::new(-0.8, -0.8), Vec2::new(0.8, -0.8), Vec2::new(0.8, 0.8), Vec2::new(-0.8, 0.8)];
-
         assert!(engine.set_calibration_quad(camera, galvo));
-        assert_eq!(engine.calibration_quad(), Some(camera));
         assert!(engine.homography().transform_point(Vec2::new(0.1, 0.1)).distance(Vec2::new(-0.8, -0.8)) < 1e-3);
+        // The full projector range is wider than the measured quad: corners at 0.1 - 0.4 / 1.6 * 0.8
+        let quad = engine.calibration_quad().unwrap();
+        assert!(quad[0].distance(Vec2::splat(0.0)) < 1e-3, "{:?}", quad[0]);
 
-        engine.reset_calibration();
+        engine.set_calibration(None);
         assert_eq!(engine.calibration_quad(), None);
+        assert!(engine.homography().transform_point(Vec2::ZERO).distance(Vec2::new(-1.0, -1.0)) < 1e-4);
     }
 }

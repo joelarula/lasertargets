@@ -3,6 +3,7 @@ pub mod network;
 pub mod projector;
 pub mod camera;
 pub mod vision;
+pub mod camera_calibration;
 pub mod session;
 pub mod gamepad;
 pub mod scene;

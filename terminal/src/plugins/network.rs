@@ -61,6 +61,10 @@ struct ConnectionAttempt {
     last_connection_id: Option<u64>,
 }
 
+/// A server message no core handler takes, for feature plugins to read (camera calibration ...)
+#[derive(Message, Debug, Clone)]
+pub struct ServerMessage(pub NetworkMessage);
+
 impl Plugin for NetworkPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(QuinnetClientPlugin::default())
@@ -69,6 +73,7 @@ impl Plugin for NetworkPlugin {
             .init_resource::<ServerInstanceId>()
             .add_message::<GameSessionCreated>()
             .add_message::<GameSessionUpdate>()
+            .add_message::<ServerMessage>()
             .init_resource::<ReconnectTimer>()
             .add_systems(Startup, start_client)
             .add_systems(Startup, register_connection_toolbar_button)
@@ -217,6 +222,7 @@ fn receive_server_messages(
     mut local_instance_id: ResMut<ServerInstanceId>,
     mut prompt_request_writer: MessageWriter<curator_core::ActorPromptRequestEvent>,
     mut curator_envelope_writer: MessageWriter<curator_core::CuratorEventEnvelope>,
+    mut server_message_writer: MessageWriter<ServerMessage>,
 ) {
     if !client.is_connected() {
         return;
@@ -233,7 +239,10 @@ fn receive_server_messages(
             for bytes in messages {
                 match NetworkMessage::from_bytes(&bytes) {
                     Ok(msg) => {
-                        info!("[Network] Incoming message: {:?}", msg);
+                        // Camera review frames arrive many times a second
+                        if !matches!(msg, NetworkMessage::CameraPreviewFrame(_)) {
+                            info!("[Network] Incoming message: {:?}", msg);
+                        }
                         match msg {
                             NetworkMessage::ProjectorConfigUpdate(config)  => {
                                 if *projector_config != config {
@@ -382,8 +391,8 @@ fn receive_server_messages(
                                     local_instance_id.0 = Some(instance_id);
                                 }
                             }
-                            _ => {
-                                info!("Received unhandled message: {:?}", msg);
+                            other => {
+                                server_message_writer.write(ServerMessage(other));
                             }
                         }
                     }

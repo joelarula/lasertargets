@@ -52,6 +52,8 @@ pub struct VisualEventMarker {
     pub camera_norm_pos: Vec2,
     /// Projected coordinates in laser galvo space [-1.0, 1.0], +Y down
     pub galvo_pos: Vec2,
+    /// Position on the scene in metres from its centre, +Y up; `None` when it misses the scene plane
+    pub scene_pos: Option<Vec2>,
     /// What the analyzer found (`laser`, `person` ...)
     pub label: String,
     /// Stable id of the tracked object across frames
@@ -74,4 +76,48 @@ pub struct CameraStreamFrame {
     pub detected_events: Vec<VisualEventMarker>,
     /// Current 4-point homography calibration quad in camera normalized space [0.0, 1.0]
     pub calibration_quad: Option<[Vec2; 4]>,
+}
+
+/// Where camera calibration stands.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum CameraCalibrationPhase {
+    /// Not running
+    #[default]
+    Idle,
+    /// Projecting dots and measuring them
+    Running,
+    /// Finished; the new mapping is in use
+    Solved,
+    /// Finished without a usable mapping; the previous one is still in use
+    Failed,
+}
+
+/// Camera calibration progress and result, sent to terminals whenever it changes.
+///
+/// Calibration projects dots at `targets` one after another, finds each with the camera and fits
+/// the camera → projector mapping that puts detected objects on the scene.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct CameraCalibrationStatus {
+    pub phase: CameraCalibrationPhase,
+    /// A measured mapping is in use (from this run or loaded from disk)
+    pub calibrated: bool,
+    /// Dot positions in projector coordinates (-1..1, +Y down)
+    pub targets: Vec<Vec2>,
+    /// Where the camera saw each dot (normalised camera coordinates); `None` when not seen
+    pub measured: Vec<Option<Vec2>>,
+    /// Where each measured dot lands in projector coordinates under the solved mapping
+    pub predicted: Vec<Option<Vec2>>,
+    /// Index of the dot being measured while running
+    pub current: Option<usize>,
+    /// Root-mean-square and largest error of the mapping on the scene, metres
+    pub rms_error_m: Option<f32>,
+    pub max_error_m: Option<f32>,
+    /// Human-readable state, e.g. why calibration failed
+    pub message: String,
+}
+
+impl CameraCalibrationStatus {
+    pub fn measured_count(&self) -> usize {
+        self.measured.iter().filter(|m| m.is_some()).count()
+    }
 }

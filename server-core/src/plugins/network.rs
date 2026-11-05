@@ -79,7 +79,7 @@ impl Plugin for NetworkingPlugin {
 }
 
 /// Helper function to send a network message to a specific client and log any error.
-fn send_network_message(
+pub(crate) fn send_network_message(
     endpoint: &mut Endpoint,
     client_id: ClientId,
     message: &NetworkMessage,
@@ -105,7 +105,7 @@ fn send_network_message(
 }
 
 /// Helper function to broadcast a network message to all clients and log any error.
-fn broadcast_network_message(endpoint: &mut Endpoint, message: &NetworkMessage, error_context: &str) {
+pub(crate) fn broadcast_network_message(endpoint: &mut Endpoint, message: &NetworkMessage, error_context: &str) {
     debug!("Broadcasting message {:?} ({})", message, error_context);
     match message.to_bytes() {
         Ok(payload) => {

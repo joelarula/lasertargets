@@ -646,7 +646,7 @@ fn update_point_buffer(
     point_buffer: Res<LaserPointBuffer>,
     optimize_config: Res<LaserOptimizeConfig>,
     calibration_state: Option<Res<State<CalibrationState>>>,
-    path_query: Query<(&UniversalPath, &Transform, Option<&CalibrationPath>, Option<&DacSpacePath>, Option<&Visibility>)>,
+    path_query: Query<(&UniversalPath, &Transform, Option<&CalibrationPath>, Option<&DacSpacePath>, Option<&Visibility>, Has<ProjectorSolo>)>,
     scene_query: Query<&Transform, With<SceneEntity>>,
 ) {
     let is_calibration_on = calibration_state
@@ -675,8 +675,10 @@ fn update_point_buffer(
     let mut general_segments: Vec<LaserSegment> = Vec::new();
     let scene_transform = scene_query.single().ok();
 
-    for (universal_path, transform, calibration_path, dac_space, visibility) in path_query.iter() {
-        if visibility == Some(&Visibility::Hidden) {
+    let solo_only = path_query.iter().any(|(.., solo)| solo);
+
+    for (universal_path, transform, calibration_path, dac_space, visibility, solo) in path_query.iter() {
+        if visibility == Some(&Visibility::Hidden) || (solo_only && !solo) {
             continue;
         }
         if calibration_path.is_some() && !is_calibration_on {
@@ -903,6 +905,17 @@ fn text_sub_segments<'a>(points: impl Iterator<Item = (Landing, &'a PathPoint)>)
         segments.push(LaserSegment::new(active));
     }
     segments
+}
+
+/// While any entity has this, the projector draws only such entities (e.g. camera calibration
+/// dots, which the camera must see alone).
+#[derive(Component, Default)]
+pub struct ProjectorSolo;
+
+/// Projector coordinates (-1..1, +Y down, as [`common::scene::projector_ndc`]) to DAC units, for
+/// [`DacSpacePath`] points
+pub fn ndc_to_dac(ndc: Vec2) -> Vec2 {
+    (ndc + Vec2::ONE) * (HELIOS_MAX_COORD as f32 / 2.0)
 }
 
 /// Transform world coordinates to projector coordinates using perspective projection

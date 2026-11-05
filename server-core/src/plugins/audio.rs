@@ -68,7 +68,7 @@ fn handle_play_sound_events(
         if let Some(handle) = sound_bank.handles.get(&event.sound) {
             let volume = (config.volume * event.volume).clamp(0.0, 1.0);
             let mut settings = PlaybackSettings::DESPAWN;
-            settings.volume = bevy::audio::Volume::new(volume);
+            settings.volume = bevy::audio::Volume::Linear(volume);
 
             commands.spawn((
                 AudioPlayer::new(handle.clone()),

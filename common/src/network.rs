@@ -114,6 +114,16 @@ pub enum NetworkMessage {
     },
     /// Command to shutdown the server
     ShutdownServer,
+
+    // Camera ↔ projector calibration (Terminal -> Server, then status Server -> Terminals)
+    /// Projects the calibration dots and measures them with the camera
+    StartCameraCalibration,
+    /// Stops a running calibration; the previous mapping stays in use
+    CancelCameraCalibration,
+    /// Forgets the measured mapping and goes back to the uncalibrated default
+    ResetCameraCalibration,
+    QueryCameraCalibration,
+    CameraCalibrationStatus(crate::camera::CameraCalibrationStatus),
 }
 
 

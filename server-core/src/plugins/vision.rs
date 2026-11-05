@@ -3,6 +3,10 @@
 //! into `common::vision` messages on the scene plane. `common::vision::VisionReactivePlugin` makes
 //! them reactive visuals; games read the same messages for gameplay.
 //!
+//! The camera → projector mapping is [`VisionCalibration`], measured by the camera calibration
+//! plugin. While [`VisionMuted`] is set (during calibration) detections only reach
+//! [`CameraObservation`], not the reactive pipeline or games.
+//!
 //! Analyzers are pluggable: `app.add_vision_analyzer(|| Box::new(MyModel::load()))` adds one to the
 //! worker (applied on its next start). Each produces labelled detections and/or `vision.<name>`
 //! signals.
@@ -18,7 +22,7 @@ use common::pipeline::plugin::ReactiveAppExt;
 use common::scene::SceneSetup;
 use common::settings::ConfigAppExt;
 use common::vision::{VisionAppExt, VisionDetection, VisionLost, VisionReactivePlugin, VisionSet, VisionSignal};
-use laser_vision::{FrameSource, LostTrack, MotionAnalyzer, SpotAnalyzer, VisionAnalyzer, VisionEngine, VisionObject};
+use laser_vision::{FrameSource, Homography, LostTrack, MotionAnalyzer, SpotAnalyzer, VisionAnalyzer, VisionEngine, VisionObject};
 
 /// Results of one camera frame, sent from the worker (no pixels)
 struct VisionUpdate {
@@ -52,16 +56,21 @@ impl VisionAnalyzerAppExt for App {
     }
 }
 
-/// Camera → projector mapping: 4 normalised camera points and the projector points they show,
-/// ordered top-left, top-right, bottom-right, bottom-left. `None` uses the uncalibrated default.
-/// Changing it recalibrates the running worker.
+/// Normalised camera → projector mapping; `None` uses the uncalibrated default (the camera sees
+/// exactly the projector range). Changing it recalibrates the running worker.
 #[derive(Resource, Default, Debug, Clone, PartialEq)]
-pub struct VisionCalibration(pub Option<CalibrationQuad>);
+pub struct VisionCalibration(pub Option<Homography>);
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct CalibrationQuad {
-    pub camera_pts: [Vec2; 4],
-    pub galvo_pts: [Vec2; 4],
+/// While set, camera results only reach [`CameraObservation`]: nothing reacts to them
+#[derive(Resource, Default, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VisionMuted(pub bool);
+
+/// Everything the camera tracked in one frame, in camera and projector coordinates, written
+/// whether or not vision is muted (calibration reads it)
+#[derive(Message, Debug, Clone)]
+pub struct CameraObservation {
+    pub timestamp_ms: u64,
+    pub objects: Vec<VisionObject>,
 }
 
 /// Whether review frames are broadcast to terminals
@@ -69,7 +78,7 @@ pub struct CalibrationQuad {
 pub struct VisionStreaming(pub bool);
 
 enum VisionCommand {
-    SetCalibration(Option<CalibrationQuad>),
+    SetCalibration(Option<Homography>),
 }
 
 /// Channels to the running worker. Removing it stops the worker.
@@ -89,7 +98,9 @@ impl Plugin for VisionPlugin {
     fn build(&self, app: &mut App) {
         app.init_config::<PhysicalCameraSettings>()
             .init_resource::<VisionCalibration>()
+            .init_resource::<VisionMuted>()
             .init_resource::<VisionStreaming>()
+            .add_message::<CameraObservation>()
             .init_resource::<LatestVisionUpdate>()
             .add_plugins(VisionReactivePlugin)
             .add_vision_analyzer(|| Box::new(SpotAnalyzer::default()))
@@ -127,10 +138,10 @@ fn run_vision_worker(
             let started = format!("{}x{} @ {} fps, analyzers: {}",
                 settings.stream_width, settings.stream_height, settings.stream_fps, names.join(", "));
             let worker_settings = settings.clone();
-            let quad = calibration.0;
+            let calibration = calibration.0;
             let spawned = std::thread::Builder::new()
                 .name("laser-vision-worker".into())
-                .spawn(move || run_worker(&worker_settings, analyzers, quad, update_tx, command_rx));
+                .spawn(move || run_worker(&worker_settings, analyzers, calibration, update_tx, command_rx));
             match spawned {
                 Ok(_) => {
                     info!("Vision: camera worker started ({started})");
@@ -172,31 +183,28 @@ fn open_frame_source(settings: &PhysicalCameraSettings) -> Box<dyn FrameSource> 
     Box::new(laser_vision::MockFrameSource::new(width, height, fps))
 }
 
-fn apply_calibration(engine: &mut VisionEngine, quad: Option<CalibrationQuad>) {
-    match quad {
-        Some(q) if engine.set_calibration_quad(q.camera_pts, q.galvo_pts) => info!("Vision: calibration updated"),
-        Some(_) => warn!("Vision: calibration quad is degenerate, keeping the previous mapping"),
-        None => engine.reset_calibration(),
-    }
+fn apply_calibration(engine: &mut VisionEngine, calibration: Option<Homography>) {
+    info!("Vision: {}", if calibration.is_some() { "using the measured camera calibration" } else { "camera uncalibrated" });
+    engine.set_calibration(calibration);
 }
 
 /// Worker thread: analyses frames until Bevy drops its end of the channels
 fn run_worker(
     settings: &PhysicalCameraSettings,
     analyzers: Vec<Box<dyn VisionAnalyzer>>,
-    quad: Option<CalibrationQuad>,
+    calibration: Option<Homography>,
     updates: SyncSender<VisionUpdate>,
     commands: Receiver<VisionCommand>,
 ) {
     let mut engine = VisionEngine::new(open_frame_source(settings), analyzers);
-    if quad.is_some() {
-        apply_calibration(&mut engine, quad);
+    if calibration.is_some() {
+        apply_calibration(&mut engine, calibration);
     }
 
     loop {
         loop {
             match commands.try_recv() {
-                Ok(VisionCommand::SetCalibration(quad)) => apply_calibration(&mut engine, quad),
+                Ok(VisionCommand::SetCalibration(calibration)) => apply_calibration(&mut engine, calibration),
                 Err(TryRecvError::Empty) => break,
                 Err(TryRecvError::Disconnected) => return,
             }
@@ -224,7 +232,9 @@ fn run_worker(
 fn ingest_vision(
     bridge: Option<Res<VisionBridge>>,
     scene: Res<SceneSetup>,
+    muted: Res<VisionMuted>,
     mut latest: ResMut<LatestVisionUpdate>,
+    mut observations: MessageWriter<CameraObservation>,
     mut detections: MessageWriter<VisionDetection>,
     mut lost: MessageWriter<VisionLost>,
     mut signals: MessageWriter<VisionSignal>,
@@ -233,6 +243,11 @@ fn ingest_vision(
     let Ok(updates) = bridge.updates.lock() else { return };
 
     while let Ok(update) = updates.try_recv() {
+        observations.write(CameraObservation { timestamp_ms: update.timestamp_ms, objects: update.objects.clone() });
+        if muted.0 {
+            latest.0 = Some(update);
+            continue;
+        }
         for object in &update.objects {
             // A projector ray that misses the scene plane can't be placed in the world
             let Some(world_pos) = scene.projector_ndc_to_world(object.galvo_pos) else { continue };
@@ -245,6 +260,7 @@ fn ingest_vision(
                 appeared: object.appeared,
                 label: object.label.clone(),
                 world_pos,
+                scene_pos: scene.world_to_billboard(world_pos),
                 size_m,
                 camera_pos: object.camera_pos,
                 galvo_pos: object.galvo_pos,
@@ -280,6 +296,7 @@ fn handle_camera_network_requests(
 fn broadcast_vision_preview(
     streaming: Res<VisionStreaming>,
     settings: Res<PhysicalCameraSettings>,
+    scene: Res<SceneSetup>,
     mut latest: ResMut<LatestVisionUpdate>,
     server: Option<ResMut<QuinnetServer>>,
 ) {
@@ -301,6 +318,7 @@ fn broadcast_vision_preview(
             .map(|o| VisualEventMarker {
                 camera_norm_pos: o.camera_pos,
                 galvo_pos: o.galvo_pos,
+                scene_pos: scene.projector_ndc_to_world(o.galvo_pos).map(|world| scene.world_to_billboard(world)),
                 label: o.label.clone(),
                 track: o.track,
                 confidence: o.confidence,

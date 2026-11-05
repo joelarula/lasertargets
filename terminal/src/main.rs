@@ -13,6 +13,7 @@ use crate::plugins::instructions::InstructionsPlugin;
 use crate::plugins::config::ConfigPlugin;
 use crate::plugins::camera::CameraPlugin;
 use crate::plugins::calibration::CalibrationPlugin;
+use crate::plugins::camera_calibration::CameraCalibrationPlugin as CameraCalibrationPanelPlugin;
 use crate::plugins::projector::ProjectorPlugin;
 use crate::plugins::scene::ScenePlugin;
 use crate::plugins::toolbar::ToolbarPlugin;
@@ -57,6 +58,7 @@ fn main() {
     .add_plugins(ScenePlugin)
     .add_plugins(CameraPlugin)
     .add_plugins(CalibrationPlugin)
+    .add_plugins(CameraCalibrationPanelPlugin)
     .add_plugins(ProjectorPlugin)
     .add_plugins(ToolbarPlugin)
     .add_plugins(SettingsPlugin)

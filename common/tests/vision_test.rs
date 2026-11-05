@@ -30,6 +30,7 @@ fn seen(track: TrackId, x: f32, timestamp_ms: u64) -> VisionDetection {
         appeared: false,
         label: "laser".into(),
         world_pos: Vec3::new(x, 1.0, 0.0),
+        scene_pos: Vec2::new(x, 1.0),
         size_m: Vec2::splat(0.01),
         camera_pos: Vec2::splat(0.5),
         galvo_pos: Vec2::ZERO,

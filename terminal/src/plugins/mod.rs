@@ -2,6 +2,7 @@ pub mod instructions;
 pub mod config;
 pub mod camera;
 pub mod calibration;
+pub mod camera_calibration;
 pub mod scene;
 pub mod toolbar;
 pub mod projector;
