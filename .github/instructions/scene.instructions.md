@@ -5,6 +5,8 @@
 ## Context
 You are working with the LaserTargets scene system. The scene defines the physical AR space where the laser game takes place, including dimensions, position, entities, and configuration.
 
+**Billboard = scene plane.** The billboard is the physical canvas on the wall the laser draws on. In code it is the `SceneEntity`, placed by `SceneConfiguration.origin` and sized by `scene_dimension`. Scene content (calibration overlays, mouse crosshairs, game shapes) are children of it, positioned in billboard x, y metres from its centre. `SceneSetup::world_to_billboard` / `billboard_point` convert to and from world space.
+
 ## Architecture
 
 ### Common (`common/src/scene.rs`)

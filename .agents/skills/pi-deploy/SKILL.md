@@ -65,14 +65,23 @@ To ensure smooth 60 FPS DAC streaming and low network latency, tune system param
 
 ## 5. Hardware Diagnostics & Testing
 
+- **Probe Camera Specifications (CSI & USB)**:
+  ```bash
+  cargo xtask camera
+  # For detailed pixel formats, resolutions, and controls:
+  cargo xtask camera --detailed
+  ```
+  *(Or via PowerShell: `.\scripts\pi.ps1 camera`)*
+
 - **Run Standalone DAC Hardware Test on Pi**:
   ```powershell
   .\scripts\pi.ps1 dac-test -TargetHost lasertargets@lasertargets.local -Scenario shapes
   ```
-- **Check Pi Network Interface & Latency**:
-  ```powershell
-  .\scripts\pi.ps1 check -TargetHost lasertargets@lasertargets.local
+- **Check Pi Network Interface, Hardware & Camera Status**:
+  ```bash
+  cargo xtask check
   ```
+  *(Or via PowerShell: `.\scripts\pi.ps1 check`)*
 - **Check SD Card Read/Write Health**:
   ```powershell
   .\scripts\pi.ps1 check-sd -BootDrive D:

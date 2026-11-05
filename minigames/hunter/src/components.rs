@@ -43,11 +43,3 @@ pub struct TargetSpawnImmunity {
     pub radius: f32,
 }
 
-/// Component tracking an expanding shot ripple animation for Hunter game clicks
-#[derive(Component, Debug, Clone)]
-pub struct HunterShotRipple {
-    pub current_radius: f32,
-    pub max_radius: f32,
-    pub growth_rate: f32,
-    pub color: Color,
-}

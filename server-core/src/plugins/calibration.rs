@@ -5,10 +5,13 @@ use common::network::MousePositionEvent;
 use common::path::{PathSegment, UniversalPath};
 use common::scene::SceneEntity;
 use common::scene::{SceneSetup, SceneSystemSet};
-use common::calibration::{log_calibration_status, nudge, CalibrationAction, CalibrationMode};
+use common::calibration::{nudge, CalibrationAction, CalibrationMode, CalibrationOverlays};
+use common::shape_v2::Shape;
 use common::state::CalibrationState;
 use laserlogic::helios::HELIOS_MAX_COORD;
 use gamepad::{Btn, GamepadButtonEvent, GamepadState, PrevGamepadState, GAMEPAD_STICK_DEADZONE};
+use crate::plugins::projector::LaserOptimizeConfig;
+use laserlogic::OptimizeConfig;
 
 /// Target entity currently being calibrated by the gamepad in calibration mode.
 #[derive(Resource, Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -25,6 +28,11 @@ fn apply_calibration_actions(
     calibration_state: Res<State<CalibrationState>>,
     mut next_calibration_state: ResMut<NextState<CalibrationState>>,
     mut mode: ResMut<CalibrationMode>,
+    mut overlays: ResMut<CalibrationOverlays>,
+    mut center_shape: ResMut<CenterShape>,
+    center_shapes: Res<CenterShapes>,
+    mut selected_timing: ResMut<SelectedTimingValue>,
+    mut laser_config: Option<ResMut<LaserOptimizeConfig>>,
     mut scene_config: ResMut<SceneConfiguration>,
     mut projector_config: ResMut<ProjectorConfiguration>,
     mut camera_config: ResMut<CameraConfiguration>,
@@ -39,27 +47,43 @@ fn apply_calibration_actions(
         // Built from the configs, which stay the source of truth (the SceneSetup resource lags a frame)
         let mut setup = SceneSetup::new(scene_config.clone(), camera_config.clone(), projector_config.clone());
         match *action {
-            CalibrationAction::ToggleCalibration => {
-                calibration_on = !calibration_on;
-                let next = if calibration_on { CalibrationState::On } else { CalibrationState::Off };
-                info!("[Calibration] {:?}", next);
-                if calibration_on {
+            CalibrationAction::CycleCalibration => {
+                let current = if calibration_on { *overlays } else { CalibrationOverlays::Off };
+                let next = current.next();
+                *overlays = next;
+                info!("[Calibration] Overlays: {}", next.label());
+                if next.calibration_on() != calibration_on {
+                    calibration_on = next.calibration_on();
+                    next_calibration_state.set(if calibration_on { CalibrationState::On } else { CalibrationState::Off });
+                }
+                if next == CalibrationOverlays::All {
+                    // All back on starts again from the crosshair
+                    center_shape.set_if_neq(CenterShape(0));
                     info!("[Calibration] Mode {}", mode.help());
                 }
-                next_calibration_state.set(next);
+            }
+            CalibrationAction::NextShape if calibration_on => {
+                center_shape.0 = (center_shape.0 + 1) % center_shapes.0.len();
             }
             CalibrationAction::ToggleLaser => {
                 projector_config.switched_on = !projector_config.switched_on;
-                info!("[Calibration] Laser {}", if projector_config.switched_on { "ON" } else { "OFF" });
             }
             CalibrationAction::NextMode if calibration_on => {
                 *mode = mode.next();
                 info!("[Calibration] Mode {}", mode.help());
-                log_calibration_status(*mode, &setup);
+                if *mode == CalibrationMode::LaserTiming {
+                    if let Some(laser) = laser_config.as_mut() {
+                        log_all_timing(&mut laser.0);
+                    }
+                }
+            }
+            CalibrationAction::Nudge { dir, fine } if calibration_on && *mode == CalibrationMode::LaserTiming => {
+                if let Some(laser) = laser_config.as_mut() {
+                    nudge_timing(dir, fine, &mut selected_timing, &mut laser.0);
+                }
             }
             CalibrationAction::Nudge { dir, fine } if calibration_on => {
                 if nudge(*mode, dir, fine, &mut setup) {
-                    log_calibration_status(*mode, &setup);
                     scene_config.set_if_neq(setup.scene);
                     projector_config.set_if_neq(setup.projector);
                     camera_config.set_if_neq(setup.camera);
@@ -94,7 +118,9 @@ pub struct CalibrationPlugin;
 /// Resource to track calibration data (server singleton)
 #[derive(Resource)]
 pub struct CalibrationData {
-    pub mouse_positions: std::collections::HashMap<u64, Vec3>, // Per-client mouse tracking
+    /// Per-client mouse position in billboard x, y (metres from the billboard centre). The mouse
+    /// crosshair is a child of the billboard (scene entity), so it moves with it.
+    pub mouse_positions: std::collections::HashMap<u64, Vec2>,
 }
 
 impl Default for CalibrationData {
@@ -133,6 +159,191 @@ pub struct DacSpacePath;
 #[derive(Component)]
 pub struct DacPerimeter;
 
+/// Shapes the shape key cycles through in place of the centre crosshair, as (name, path).
+/// The first one is the calibration crosshair; the rest are the built-in v2 templates.
+#[derive(Resource)]
+pub struct CenterShapes(pub Vec<(String, UniversalPath)>);
+
+impl CenterShapes {
+    fn new() -> Self {
+        let crosshair = ("crosshair".to_string(), crosshair_strokes(0.5, Color::srgb(1.0, 1.0, 0.0)));
+        let templates = Shape::builtin()
+            .into_iter()
+            .filter(|shape| shape.name != "crosshair")
+            .map(|shape| (shape.name.clone(), shape.to_universal_path()));
+        Self(std::iter::once(crosshair).chain(templates).collect())
+    }
+}
+
+/// One laser stage value the LASER TIMING mode can change live
+pub struct TimingValue {
+    pub name: &'static str,
+    /// Label in the overview line
+    pub short: &'static str,
+    pub unit: &'static str,
+    /// Change per Left/Right press; Shift uses a fifth of it
+    pub step: f32,
+    pub min: f32,
+    pub max: f32,
+    pub field: fn(&mut OptimizeConfig) -> &mut f32,
+}
+
+/// The values in the order Up/Down walks through them: the ones that decide whether strokes
+/// start, end and turn where they should come first
+pub const TIMING_VALUES: [TimingValue; 11] = [
+    TimingValue { name: "laser_on_delay_ms", short: "ON", unit: "ms", step: 0.02, min: -2.0, max: 2.0, field: |c| &mut c.laser_on_delay_ms },
+    TimingValue { name: "laser_off_delay_ms", short: "OFF", unit: "ms", step: 0.02, min: -2.0, max: 2.0, field: |c| &mut c.laser_off_delay_ms },
+    TimingValue { name: "corner_hold_ms", short: "CH", unit: "ms", step: 0.05, min: 0.0, max: 3.0, field: |c| &mut c.corner_hold_ms },
+    TimingValue { name: "stroke_start_hold_ms", short: "SH", unit: "ms", step: 0.05, min: 0.0, max: 3.0, field: |c| &mut c.stroke_start_hold_ms },
+    TimingValue { name: "stroke_end_hold_ms", short: "EH", unit: "ms", step: 0.05, min: 0.0, max: 3.0, field: |c| &mut c.stroke_end_hold_ms },
+    TimingValue { name: "corner_ramp_ms", short: "CR", unit: "ms", step: 0.05, min: 0.0, max: 2.0, field: |c| &mut c.corner_ramp_ms },
+    TimingValue { name: "settle_ms", short: "ST", unit: "ms", step: 0.05, min: 0.0, max: 5.0, field: |c| &mut c.settle_ms },
+    TimingValue { name: "depart_ms", short: "DP", unit: "ms", step: 0.05, min: 0.0, max: 5.0, field: |c| &mut c.depart_ms },
+    TimingValue { name: "lit_speed_m_s", short: "LS", unit: "m/s", step: 500.0, min: 500.0, max: 50000.0, field: |c| &mut c.lit_speed_m_s },
+    TimingValue { name: "max_lit_step_dac", short: "MLS", unit: "DAC", step: 10.0, min: 10.0, max: 1000.0, field: |c| &mut c.max_lit_step_dac },
+    TimingValue { name: "blank_speed_m_s", short: "BS", unit: "m/s", step: 1000.0, min: 1000.0, max: 100000.0, field: |c| &mut c.blank_speed_m_s },
+];
+
+/// Index into [`TIMING_VALUES`] selected in the LASER TIMING mode
+#[derive(Resource, Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct SelectedTimingValue(pub usize);
+
+/// Applies one arrow press in the LASER TIMING mode: Up/Down select, Left/Right change
+pub fn nudge_timing(dir: IVec2, fine: bool, selected: &mut SelectedTimingValue, config: &mut OptimizeConfig) {
+    let count = TIMING_VALUES.len();
+    if dir.y != 0 {
+        // Up goes to the previous value, as in a list
+        selected.0 = (selected.0 + count - (dir.y.signum() + count as i32) as usize % count) % count;
+    }
+    if dir.x != 0 {
+        let value = &TIMING_VALUES[selected.0];
+        let step = if fine { value.step / 5.0 } else { value.step };
+        let field = (value.field)(config);
+        // Round to the step grid so repeated presses do not accumulate float noise
+        let next = *field + dir.x as f32 * step;
+        *field = ((next / (value.step / 5.0)).round() * (value.step / 5.0)).clamp(value.min, value.max);
+    }
+}
+
+/// Key to the abbreviations in the overview line
+pub const OVERVIEW_LEGEND: &str = "[CAL] key: W/H scene width/height m, MID scene middle height m, DST rig-to-scene distance m, \
+RIG rig height m, FOV projector field of view deg | ON/OFF light earlier (+) or later (-) at stroke start/end ms, \
+CH corner hold ms, SH/EH stroke start/end hold ms, CR corner ramp ms, \
+ST settle ms, DP depart ms, LS lit speed m/s, MLS max lit step DAC, BS blank speed m/s | LSR laser, DAC connected, \
+OVL overlays, SHP centre shape | [..] = values of the current mode, > = selected timing value";
+
+fn short_number(value: f32, unit: &str) -> String {
+    match unit {
+        "m/s" if value >= 1000.0 => {
+            let k = value / 1000.0;
+            if k.fract() == 0.0 { format!("{}k", k) } else { format!("{:.1}k", k) }
+        }
+        "DAC" | "m/s" => format!("{}", value.round()),
+        _ => format!("{:.2}", value),
+    }
+}
+
+/// One-line overview of the major settings; the current mode's values are in brackets
+pub fn overview(
+    mode: CalibrationMode,
+    overlays: CalibrationOverlays,
+    shape: &str,
+    selected: SelectedTimingValue,
+    setup: &SceneSetup,
+    laser: &OptimizeConfig,
+) -> String {
+    let section = |of: CalibrationMode, text: String| if of == mode { format!("[{}]", text) } else { text };
+    let (scene, projector) = (&setup.scene, &setup.projector);
+    let mut laser = laser.clone();
+    let timing: Vec<String> = TIMING_VALUES
+        .iter()
+        .enumerate()
+        .map(|(i, value)| {
+            let marker = if mode == CalibrationMode::LaserTiming && i == selected.0 { ">" } else { "" };
+            format!("{}{}{}", marker, value.short, short_number(*(value.field)(&mut laser), value.unit))
+        })
+        .collect();
+    let overlays = match overlays {
+        CalibrationOverlays::All => "all",
+        CalibrationOverlays::NoPerimeter => "no-red",
+        CalibrationOverlays::CrosshairOnly => "centre",
+        CalibrationOverlays::Off => "off",
+    };
+    format!(
+        "[CAL] {} | {} | {} | {} | LSR {} DAC {} | OVL {} | SHP {}",
+        section(CalibrationMode::SceneSize, format!("W{:.2} H{:.2}", scene.scene_dimension.x, scene.scene_dimension.y)),
+        section(
+            CalibrationMode::ScenePosition,
+            format!("MID{:.2} DST{:.2}", scene.origin.translation.y, projector.origin.translation.z - scene.origin.translation.z),
+        ),
+        section(CalibrationMode::Rig, format!("RIG{:.2} FOV{:.1}", projector.origin.translation.y, projector.angle)),
+        section(CalibrationMode::LaserTiming, timing.join(" ")),
+        if projector.switched_on { "on" } else { "off" },
+        if projector.connected { "ok" } else { "--" },
+        overlays,
+        shape,
+    )
+}
+
+/// Shortest time between two overview lines while values keep changing (held keys)
+const OVERVIEW_INTERVAL_SECS: f32 = 0.25;
+
+#[derive(Default)]
+struct OverviewThrottle {
+    since_last: f32,
+    pending: bool,
+    started: bool,
+}
+
+/// Logs the overview line whenever a major setting changes, from any source (keys, terminal,
+/// gamepad). Held keys print at most every OVERVIEW_INTERVAL_SECS; the final value always prints.
+#[allow(clippy::too_many_arguments)]
+fn log_overview_on_change(
+    time: Res<Time>,
+    mode: Res<CalibrationMode>,
+    overlays: Res<CalibrationOverlays>,
+    center_shape: Res<CenterShape>,
+    center_shapes: Res<CenterShapes>,
+    selected: Res<SelectedTimingValue>,
+    scene: Res<SceneConfiguration>,
+    camera: Res<CameraConfiguration>,
+    projector: Res<ProjectorConfiguration>,
+    laser: Option<Res<LaserOptimizeConfig>>,
+    mut throttle: Local<OverviewThrottle>,
+) {
+    if !throttle.started {
+        throttle.started = true;
+        info!("{}", OVERVIEW_LEGEND);
+    }
+    let laser_changed = laser.as_ref().is_some_and(|l| l.is_changed());
+    if mode.is_changed() || overlays.is_changed() || center_shape.is_changed() || selected.is_changed()
+        || scene.is_changed() || camera.is_changed() || projector.is_changed() || laser_changed
+    {
+        throttle.pending = true;
+    }
+    throttle.since_last += time.delta_secs();
+    if throttle.pending && throttle.since_last >= OVERVIEW_INTERVAL_SECS {
+        throttle.pending = false;
+        throttle.since_last = 0.0;
+        let setup = SceneSetup::new(scene.clone(), camera.clone(), projector.clone());
+        let laser = laser.map(|l| l.0.clone()).unwrap_or_default();
+        let shape = &center_shapes.0[center_shape.0].0;
+        info!("{}", overview(*mode, *overlays, shape, *selected, &setup, &laser));
+    }
+}
+
+/// All timing values as server.yaml lines, so tuned values can be copied into the config file
+fn log_all_timing(config: &mut OptimizeConfig) {
+    info!("[Laser timing] Current values (projector.optimize in server.yaml):");
+    for value in &TIMING_VALUES {
+        info!("[Laser timing]   {}: {}", value.name, *(value.field)(config));
+    }
+}
+
+/// Index into [`CenterShapes`] of the shape drawn at the scene centre
+#[derive(Resource, Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct CenterShape(pub usize);
+
 impl Plugin for CalibrationPlugin {
     fn build(&self, app: &mut App) {
         app
@@ -140,8 +351,22 @@ impl Plugin for CalibrationPlugin {
             .init_resource::<CalibrationGamepadCooldowns>()
             .init_resource::<CalibrationTargetMode>()
             .init_resource::<CalibrationMode>()
+            .init_resource::<CalibrationOverlays>()
+            .init_resource::<CenterShape>()
+            .init_resource::<SelectedTimingValue>()
+            .insert_resource(CenterShapes::new())
             .add_message::<CalibrationAction>()
+            // Calibration switched on or off from elsewhere (terminal, gamepad): overlays follow
+            .add_systems(OnEnter(CalibrationState::On), |mut overlays: ResMut<CalibrationOverlays>| {
+                if *overlays == CalibrationOverlays::Off {
+                    *overlays = CalibrationOverlays::All;
+                }
+            })
+            .add_systems(OnEnter(CalibrationState::Off), |mut overlays: ResMut<CalibrationOverlays>| {
+                overlays.set_if_neq(CalibrationOverlays::Off);
+            })
             .add_systems(Update, apply_calibration_actions.before(SceneSystemSet))
+            .add_systems(Update, log_overview_on_change.after(apply_calibration_actions))
             .add_systems(OnExit(CalibrationState::On), despawn_calibration_overlays.after(SceneSystemSet))
             .add_systems(Update, handle_mouse_position_updates)
             .add_systems(Update, cleanup_disconnected_clients)
@@ -150,6 +375,9 @@ impl Plugin for CalibrationPlugin {
                 update_and_maintain_crosshair_positions,
             ).after(SceneSystemSet).run_if(in_state(CalibrationState::On)))
             .add_systems(Update, update_projection_area_rectangle.run_if(in_state(CalibrationState::On)))
+            .add_systems(Update, (apply_overlay_visibility, update_center_shape)
+                .after(spawn_calibration_overlays)
+                .run_if(in_state(CalibrationState::On)))
             .add_systems(Update, gamepad_toggle_calibration)
             .add_systems(Update, gamepad_calibration_controls.run_if(in_state(CalibrationState::On)));
     }
@@ -173,11 +401,13 @@ fn despawn_calibration_overlays(
 fn handle_mouse_position_updates(
     mut mouse_events: MessageReader<MousePositionEvent>,
     mut calibration_data: ResMut<CalibrationData>,
+    scene_config: Res<SceneConfiguration>,
 ) {
-    // Always track mouse positions from all clients
+    // Always track mouse positions from all clients, as x, y on the billboard
+    let setup = SceneSetup { scene: scene_config.clone(), ..Default::default() };
     for event in mouse_events.read() {
         if let Some(world_pos) = event.position {
-            calibration_data.mouse_positions.insert(event.client_id, world_pos);
+            calibration_data.mouse_positions.insert(event.client_id, setup.world_to_billboard(world_pos));
         } else {
             calibration_data.mouse_positions.remove(&event.client_id);
         }
@@ -185,36 +415,40 @@ fn handle_mouse_position_updates(
 }
 
 fn build_calibration_crosshair_path() -> UniversalPath {
-    let crosshair_size = 0.4;
-    let cyan = Color::srgb(0.0, 0.9, 1.0);
-    UniversalPath::crosshair(Vec2::ZERO, crosshair_size, cyan)
+    crosshair_strokes(0.4, Color::srgb(0.0, 0.9, 1.0))
 }
 
-#[inline]
-fn world_to_local(world_pos: Vec3, scene_inv_matrix: Option<&Mat4>) -> Vec3 {
-    if let Some(inv_mat) = scene_inv_matrix {
-        inv_mat.transform_point3(world_pos)
-    } else {
-        world_pos
+/// Calibration crosshair as two plain lit strokes (v2 style): no dwell overrides and no blank
+/// lead points, so its stroke ends get the laser stage's holds and delays and follow live tuning
+fn crosshair_strokes(size: f32, color: Color) -> UniversalPath {
+    let half = size / 2.0;
+    let stroke = |from: Vec2, to: Vec2| {
+        let mut segment = PathSegment::empty();
+        segment.push_vec2(from, color, 0);
+        segment.push_vec2(to, color, 0);
+        segment
+    };
+    UniversalPath {
+        segments: vec![
+            stroke(Vec2::new(-half, 0.0), Vec2::new(half, 0.0)),
+            stroke(Vec2::new(0.0, -half), Vec2::new(0.0, half)),
+        ],
     }
 }
+
 
 fn update_and_maintain_crosshair_positions(
     mut commands: Commands,
     calibration_data: Res<CalibrationData>,
-    scene_query: Query<(Entity, &Transform), (With<SceneEntity>, Without<CalibrationCrosshair>)>,
+    scene_query: Query<Entity, With<SceneEntity>>,
     mut crosshair_query: Query<(Entity, &mut Transform, &CalibrationCrosshair)>,
 ) {
-    let (scene_entity, scene_inv_matrix): (Option<Entity>, Option<Mat4>) = match scene_query.single() {
-        Ok((entity, transform)) => (Some(entity), Some(transform.to_matrix().inverse())),
-        Err(_) => (None, None),
-    };
-
+    let scene_entity = scene_query.single().ok();
     let mut existing_clients: std::collections::HashMap<u64, Entity> = std::collections::HashMap::new();
 
     for (entity, mut transform, crosshair) in crosshair_query.iter_mut() {
-        if let Some(&world_pos) = calibration_data.mouse_positions.get(&crosshair.client_id) {
-            transform.translation = world_to_local(world_pos, scene_inv_matrix.as_ref());
+        if let Some(&local) = calibration_data.mouse_positions.get(&crosshair.client_id) {
+            transform.translation = local.extend(0.0);
             existing_clients.insert(crosshair.client_id, entity);
         } else {
             commands.entity(entity).despawn();
@@ -222,10 +456,10 @@ fn update_and_maintain_crosshair_positions(
     }
 
     // Auto-respawn crosshair if client is actively tracking but entity was despawned
-    for (&client_id, &world_pos) in calibration_data.mouse_positions.iter() {
+    for (&client_id, &local) in calibration_data.mouse_positions.iter() {
         if !existing_clients.contains_key(&client_id) {
-            spawn_crosshair_at_position(&mut commands, client_id, world_pos, scene_entity, scene_inv_matrix.as_ref());
-            info!("✓ Auto-restored active crosshair for client {} at {:?}", client_id, world_pos);
+            spawn_crosshair_at_position(&mut commands, client_id, local, scene_entity);
+            info!("✓ Auto-restored active crosshair for client {} at scene {:?}", client_id, local);
         }
     }
 }
@@ -241,31 +475,27 @@ fn cleanup_disconnected_clients(
     }
 }
 
-/// Spawn crosshair at specific position, parented to SceneEntity if available
+/// Spawn a mouse crosshair at scene-local x, y as a child of the scene entity
 fn spawn_crosshair_at_position(
     commands: &mut Commands,
     client_id: u64,
-    world_position: Vec3,
+    local: Vec2,
     scene_entity: Option<Entity>,
-    scene_inv_matrix: Option<&Mat4>,
 ) {
-    let crosshair_universal_path = build_calibration_crosshair_path();
-    let local_pos = world_to_local(world_position, scene_inv_matrix);
-
     let child_entity = commands.spawn((
-        Transform::from_translation(local_pos),
+        Transform::from_translation(local.extend(0.0)),
         Visibility::default(),
         CalibrationPath,
         CalibrationCrosshair { client_id },
-        crosshair_universal_path,
+        build_calibration_crosshair_path(),
         common::path::PathRenderable::default(),
     )).id();
 
     if let Some(scene_e) = scene_entity {
         commands.entity(scene_e).add_child(child_entity);
     }
-    
-    info!("Spawned mouse crosshair for client {} in scene at local position {:?}", client_id, local_pos);
+
+    info!("Spawned mouse crosshair for client {} at scene {:?}", client_id, local);
 }
 
 /// Closed box through `corners` with a long dwell at every vertex for sharp 90 degree corners.
@@ -328,7 +558,7 @@ fn spawn_center_crosshair(
 ) {
     let crosshair_size = 0.5;
     let yellow = Color::srgb(1.0, 1.0, 0.0);
-    let crosshair_path = UniversalPath::crosshair(Vec2::ZERO, crosshair_size, yellow);
+    let crosshair_path = crosshair_strokes(crosshair_size, yellow);
     let child_entity = commands.spawn((
         Transform::IDENTITY,
         Visibility::default(),
@@ -403,6 +633,30 @@ fn spawn_calibration_overlays(
 }
 
 // --- Calibration overlay update systems ---
+/// Hides the red perimeter and green scene box according to [`CalibrationOverlays`]
+fn apply_overlay_visibility(
+    overlays: Res<CalibrationOverlays>,
+    mut query: Query<(&mut Visibility, Has<DacPerimeter>), Or<(With<DacPerimeter>, With<ProjectionAreaRectangle>)>>,
+) {
+    for (mut visibility, is_perimeter) in &mut query {
+        let shown = if is_perimeter { overlays.shows_perimeter() } else { overlays.shows_scene_box() };
+        visibility.set_if_neq(if shown { Visibility::Inherited } else { Visibility::Hidden });
+    }
+}
+
+/// Draws the selected [`CenterShape`] on the centre crosshair entity
+fn update_center_shape(
+    center_shape: Res<CenterShape>,
+    center_shapes: Res<CenterShapes>,
+    mut query: Query<(&mut UniversalPath, Ref<CalibrationCenterCrosshair>)>,
+) {
+    for (mut path, marker) in &mut query {
+        if center_shape.is_changed() || marker.is_added() {
+            *path = center_shapes.0[center_shape.0].1.clone();
+        }
+    }
+}
+
 fn update_projection_area_rectangle(
     scene_setup: Res<SceneSetup>,
     mut query: Query<&mut UniversalPath, With<ProjectionAreaRectangle>>,
@@ -617,6 +871,53 @@ fn gamepad_calibration_controls(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn overview_is_one_line_and_brackets_the_current_mode() {
+        let setup = SceneSetup::default();
+        let laser = OptimizeConfig::default();
+        let line = overview(CalibrationMode::SceneSize, CalibrationOverlays::All, "crosshair", SelectedTimingValue(2), &setup, &laser);
+        assert!(!line.contains('\n'));
+        assert!(line.contains("[W10.00 H6.00]"), "{}", line);
+        assert!(line.contains("MID3.00 DST10.00 |"), "{}", line);
+        assert!(line.contains("LS10k") && line.contains("BS20k") && line.contains("MLS150"), "{}", line);
+        assert!(!line.contains('>'), "no selection marker outside LASER TIMING: {}", line);
+        assert!(line.ends_with("OVL all | SHP crosshair"), "{}", line);
+
+        let line = overview(CalibrationMode::LaserTiming, CalibrationOverlays::Off, "box", SelectedTimingValue(2), &setup, &laser);
+        assert!(line.contains("[ON0.00 OFF0.00 >CH0.20 SH0.20 EH0.20 CR0.10"), "{}", line);
+        assert!(line.contains("W10.00 H6.00 |") && !line.contains("[W"), "{}", line);
+    }
+
+    #[test]
+    fn timing_mode_selects_with_up_down_and_changes_with_left_right() {
+        let mut config = OptimizeConfig::default();
+        let mut selected = SelectedTimingValue::default();
+        assert_eq!(TIMING_VALUES[0].name, "laser_on_delay_ms");
+
+        nudge_timing(IVec2::X, false, &mut selected, &mut config);
+        assert!((config.laser_on_delay_ms - 0.02).abs() < 1e-6);
+        nudge_timing(IVec2::X, true, &mut selected, &mut config);
+        assert!((config.laser_on_delay_ms - 0.024).abs() < 1e-6, "{}", config.laser_on_delay_ms);
+        // Negative is allowed (light later), down to the minimum
+        for _ in 0..200 {
+            nudge_timing(IVec2::NEG_X, false, &mut selected, &mut config);
+        }
+        assert_eq!(config.laser_on_delay_ms, -2.0);
+
+        // Down moves to the next value, Up back, wrapping at both ends
+        nudge_timing(IVec2::NEG_Y, false, &mut selected, &mut config);
+        assert_eq!(TIMING_VALUES[selected.0].name, "laser_off_delay_ms");
+        nudge_timing(IVec2::Y, false, &mut selected, &mut config);
+        nudge_timing(IVec2::Y, false, &mut selected, &mut config);
+        assert_eq!(selected.0, TIMING_VALUES.len() - 1);
+
+        // Each entry edits its own field
+        let hold = config.corner_hold_ms;
+        selected.0 = 2;
+        nudge_timing(IVec2::X, false, &mut selected, &mut config);
+        assert!((config.corner_hold_ms - (hold + 0.05)).abs() < 1e-6);
+    }
 
     #[test]
     fn dac_perimeter_spans_full_dac_range() {

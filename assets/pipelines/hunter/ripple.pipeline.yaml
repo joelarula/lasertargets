@@ -1,0 +1,6 @@
+# Expanding ring where a shot lands. The game spawns a 5 cm circle in the hit or miss colour;
+# this pipeline grows it to 35 cm over 100 ms, and the entity despawns when the lifetime ends.
+name: hunter/ripple
+lifetime_ms: 100
+stages:
+  - scale: { id: grow, factor: { signal: self.life, range: [1.0, 7.0] } }

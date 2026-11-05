@@ -130,7 +130,8 @@ impl Plugin for ProjectorPlugin {
             .insert_resource(DacReconnectTimer(Timer::from_seconds(dac.reconnect_secs, TimerMode::Repeating)))
             .add_systems(Startup, initialize_projector_dac)
             .add_systems(Update, update_projector)
-            .add_systems(Update, update_point_buffer)
+            // Pipelines write their UniversalPath first, so reactions reach the DAC in the same frame
+            .add_systems(Update, update_point_buffer.after(common::pipeline::plugin::PathPipelineSet::Stages))
             .add_systems(Update, handle_gamepad_laser_toggle)
             .add_systems(Last, shutdown_projector_dac.run_if(on_message::<AppExit>));
     }
@@ -444,6 +445,8 @@ fn start_dac_output_thread(
             match controller.write_frame_ready(0, pps, flags, &frame_buf, dac_min_points) {
                 Ok(true) => {
                     consecutive_write_failures = 0;
+                    // Frames are going out: connected, even if the start-up shutter/priming step failed
+                    connected.store(true, Ordering::Release);
                     frame_count += 1;
                     if frame_count % 600 == 0 {
                         let fps = 600.0 / last_report.elapsed().as_secs_f32();
@@ -643,7 +646,7 @@ fn update_point_buffer(
     point_buffer: Res<LaserPointBuffer>,
     optimize_config: Res<LaserOptimizeConfig>,
     calibration_state: Option<Res<State<CalibrationState>>>,
-    path_query: Query<(&UniversalPath, &Transform, Option<&CalibrationPath>, Option<&DacSpacePath>)>,
+    path_query: Query<(&UniversalPath, &Transform, Option<&CalibrationPath>, Option<&DacSpacePath>, Option<&Visibility>)>,
     scene_query: Query<&Transform, With<SceneEntity>>,
 ) {
     let is_calibration_on = calibration_state
@@ -672,7 +675,10 @@ fn update_point_buffer(
     let mut general_segments: Vec<LaserSegment> = Vec::new();
     let scene_transform = scene_query.single().ok();
 
-    for (universal_path, transform, calibration_path, dac_space) in path_query.iter() {
+    for (universal_path, transform, calibration_path, dac_space, visibility) in path_query.iter() {
+        if visibility == Some(&Visibility::Hidden) {
+            continue;
+        }
         if calibration_path.is_some() && !is_calibration_on {
             // Calibration mode is OFF: skip all calibration paths (DAC perimeter, scene box, crosshairs)
             continue;

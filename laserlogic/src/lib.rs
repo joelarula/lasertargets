@@ -128,6 +128,11 @@ pub struct OptimizeConfig {
     pub corner_ramp_ms: f32,
     /// Galvo model: hold at a 90 degree turn, scaled with the turn angle; gentle turns get none.
     pub corner_hold_ms: f32,
+    /// Galvo model: lit hold at the first point of an open stroke.
+    pub stroke_start_hold_ms: f32,
+    /// Galvo model: lit hold at the last point of an open stroke, so the mirrors reach the end
+    /// before the light goes off.
+    pub stroke_end_hold_ms: f32,
     /// Galvo model: travel speed of laser-off jumps between strokes.
     pub blank_speed_m_s: f32,
     /// Galvo model: largest step per point during a laser-off jump. Caps `blank_speed_m_s`.
@@ -138,9 +143,11 @@ pub struct OptimizeConfig {
     pub settle_ms: f32,
     /// ... plus this much per metre of jump.
     pub settle_ms_per_m: f32,
-    /// Diode model: time from "on" command to visible light. Light is commanded this much earlier.
+    /// Light timing at stroke starts. Positive: light switched on this much earlier (diode
+    /// latency). Negative: switched on this much later (mirrors lagging behind).
     pub laser_on_delay_ms: f32,
-    /// Diode model: time from "off" command to dark. Light is cut this much earlier.
+    /// Light timing at stroke ends. Positive: light cut this much earlier (diode afterglow).
+    /// Negative: kept on this much longer, while lagging mirrors finish the stroke.
     pub laser_off_delay_ms: f32,
     /// Output point rate used to turn the millisecond values into point counts. Set at runtime
     /// from the projector configuration, not read from the config file.
@@ -165,6 +172,11 @@ impl OptimizeConfig {
     /// Number of output points that last `ms` milliseconds at the current point rate
     pub fn ms_to_points(&self, ms: f32) -> usize {
         (ms.max(0.0) / 1000.0 * self.pps as f32).round() as usize
+    }
+
+    /// [`Self::ms_to_points`] keeping the sign
+    pub fn ms_to_points_signed(&self, ms: f32) -> i32 {
+        (ms / 1000.0 * self.pps as f32).round() as i32
     }
 
     /// DAC distance covered per output point at `speed_m_s`, capped at `max_step_dac`
@@ -197,6 +209,8 @@ impl Default for OptimizeConfig {
             max_lit_step_dac: 150.0,
             corner_ramp_ms: 0.1,
             corner_hold_ms: 0.2,
+            stroke_start_hold_ms: 0.2,
+            stroke_end_hold_ms: 0.2,
             blank_speed_m_s: 20000.0,
             max_blank_step_dac: 300.0,
             depart_ms: 0.5,

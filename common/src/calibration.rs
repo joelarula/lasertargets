@@ -4,8 +4,9 @@
 //!
 //! | Key          | Action                               |
 //! |--------------|--------------------------------------|
-//! | F3           | calibration on/off                   |
-//! | F1           | laser on/off                         |
+//! | C or F3      | cycle calibration overlays ([`CalibrationOverlays`]) |
+//! | L or F1      | laser on/off                         |
+//! | S            | next centre shape                    |
 //! | Space        | next calibration mode                |
 //! | Arrows       | adjust (hold Shift for fine steps)   |
 
@@ -13,7 +14,7 @@ use crate::scene::SceneSetup;
 use bevy::prelude::*;
 
 pub const KEY_HELP: &str =
-    "Keys: [F3] calibration on/off  [F1] laser on/off  [Space] next mode  [Arrows] adjust ([Shift] fine)";
+    "Keys: [C]/[F3] calibration overlays  [L]/[F1] laser on/off  [S] next shape  [Space] next mode  [Arrows] adjust ([Shift] fine)";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ControlKey {
@@ -22,8 +23,12 @@ pub enum ControlKey {
     Left,
     Right,
     Space,
-    F1,
-    F3,
+    /// L or F1
+    Laser,
+    /// C or F3
+    Calibration,
+    /// S
+    Shape,
 }
 
 impl ControlKey {
@@ -35,8 +40,9 @@ impl ControlKey {
             "ArrowLeft" => Some(Self::Left),
             "ArrowRight" => Some(Self::Right),
             "Space" => Some(Self::Space),
-            "F1" => Some(Self::F1),
-            "F3" => Some(Self::F3),
+            "KeyL" | "F1" => Some(Self::Laser),
+            "KeyC" | "F3" => Some(Self::Calibration),
+            "KeyS" => Some(Self::Shape),
             _ => None,
         }
     }
@@ -48,8 +54,9 @@ impl ControlKey {
             Self::Left => CalibrationAction::Nudge { dir: IVec2::NEG_X, fine },
             Self::Right => CalibrationAction::Nudge { dir: IVec2::X, fine },
             Self::Space => CalibrationAction::NextMode,
-            Self::F1 => CalibrationAction::ToggleLaser,
-            Self::F3 => CalibrationAction::ToggleCalibration,
+            Self::Laser => CalibrationAction::ToggleLaser,
+            Self::Calibration => CalibrationAction::CycleCalibration,
+            Self::Shape => CalibrationAction::NextShape,
         }
     }
 
@@ -62,12 +69,61 @@ impl ControlKey {
 /// Calibration commands shared by every input source (local console, terminal keys, later the gamepad).
 #[derive(Message, Debug, Clone, Copy, PartialEq)]
 pub enum CalibrationAction {
-    ToggleCalibration,
+    /// Next step of [`CalibrationOverlays`]; the last step turns calibration off, the next one on
+    CycleCalibration,
     ToggleLaser,
+    /// Next shape in place of the centre crosshair
+    NextShape,
     /// Cycle to the next [`CalibrationMode`]
     NextMode,
     /// Arrow key: `dir` is (-1/0/1, -1/0/1), `fine` uses the small step
     Nudge { dir: IVec2, fine: bool },
+}
+
+/// Which calibration overlays are shown. The calibration key steps through them in order.
+#[derive(Resource, Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CalibrationOverlays {
+    /// Red DAC perimeter, green scene box, centre shape and mouse crosshairs
+    #[default]
+    All,
+    /// Red DAC perimeter hidden
+    NoPerimeter,
+    /// Only the centre shape and mouse crosshairs
+    CrosshairOnly,
+    /// Nothing; calibration is off
+    Off,
+}
+
+impl CalibrationOverlays {
+    pub fn next(self) -> Self {
+        match self {
+            Self::All => Self::NoPerimeter,
+            Self::NoPerimeter => Self::CrosshairOnly,
+            Self::CrosshairOnly => Self::Off,
+            Self::Off => Self::All,
+        }
+    }
+
+    pub fn calibration_on(self) -> bool {
+        self != Self::Off
+    }
+
+    pub fn shows_perimeter(self) -> bool {
+        self == Self::All
+    }
+
+    pub fn shows_scene_box(self) -> bool {
+        matches!(self, Self::All | Self::NoPerimeter)
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::All => "all on",
+            Self::NoPerimeter => "red DAC perimeter off",
+            Self::CrosshairOnly => "red perimeter and green scene box off",
+            Self::Off => "all off (calibration off)",
+        }
+    }
 }
 
 /// What the arrow keys adjust while calibration is on.
@@ -80,6 +136,9 @@ pub enum CalibrationMode {
     ScenePosition,
     /// Up/Down camera + projector rig height, Left/Right projector FOV
     Rig,
+    /// Up/Down choose a laser timing value, Left/Right change it. Applied by the server, which
+    /// owns the laser stage settings; not a physical setup change.
+    LaserTiming,
 }
 
 impl CalibrationMode {
@@ -87,7 +146,8 @@ impl CalibrationMode {
         match self {
             Self::SceneSize => Self::ScenePosition,
             Self::ScenePosition => Self::Rig,
-            Self::Rig => Self::SceneSize,
+            Self::Rig => Self::LaserTiming,
+            Self::LaserTiming => Self::SceneSize,
         }
     }
 
@@ -96,6 +156,7 @@ impl CalibrationMode {
             Self::SceneSize => "SCENE SIZE: Left/Right width, Up/Down height",
             Self::ScenePosition => "SCENE POSITION: Up/Down middle height from ground, Left/Right distance",
             Self::Rig => "RIG: Up/Down camera + projector height, Left/Right projector FOV",
+            Self::LaserTiming => "LASER TIMING: Up/Down choose value, Left/Right change it ([Shift] fine)",
         }
     }
 }
@@ -124,25 +185,8 @@ pub fn nudge(mode: CalibrationMode, dir: IVec2, fine: bool, setup: &mut SceneSet
             }
             accepted
         }
-    }
-}
-
-pub fn log_calibration_status(mode: CalibrationMode, setup: &SceneSetup) {
-    let (scene, projector, camera) = (&setup.scene, &setup.projector, &setup.camera);
-    match mode {
-        CalibrationMode::SceneSize => info!(
-            "[Calibration] SIZE      width {:.2} m  height {:.2} m",
-            scene.scene_dimension.x, scene.scene_dimension.y
-        ),
-        CalibrationMode::ScenePosition => info!(
-            "[Calibration] POSITION  middle height {:.2} m  distance {:.2} m",
-            scene.origin.translation.y,
-            projector.origin.translation.z - scene.origin.translation.z
-        ),
-        CalibrationMode::Rig => info!(
-            "[Calibration] RIG       projector height {:.2} m  camera height {:.2} m  projector FOV {:.1} deg",
-            projector.origin.translation.y, camera.origin.translation.y, projector.angle
-        ),
+        // Not a physical setup change; the server applies it to the laser stage settings
+        CalibrationMode::LaserTiming => false,
     }
 }
 
@@ -151,12 +195,25 @@ mod tests {
     use super::*;
 
     #[test]
-    fn modes_cycle_size_position_rig() {
+    fn overlays_cycle_off_one_by_one_then_all_on() {
+        let steps: Vec<CalibrationOverlays> =
+            std::iter::successors(Some(CalibrationOverlays::All), |o| Some(o.next())).take(5).collect();
+        use CalibrationOverlays::*;
+        assert_eq!(steps, vec![All, NoPerimeter, CrosshairOnly, Off, All]);
+        assert!(All.shows_perimeter() && All.shows_scene_box());
+        assert!(!NoPerimeter.shows_perimeter() && NoPerimeter.shows_scene_box());
+        assert!(!CrosshairOnly.shows_scene_box() && CrosshairOnly.calibration_on());
+        assert!(!Off.calibration_on());
+    }
+
+    #[test]
+    fn modes_cycle_size_position_rig_timing() {
         let mode = CalibrationMode::default();
         assert_eq!(mode, CalibrationMode::SceneSize);
         assert_eq!(mode.next(), CalibrationMode::ScenePosition);
         assert_eq!(mode.next().next(), CalibrationMode::Rig);
-        assert_eq!(mode.next().next().next(), CalibrationMode::SceneSize);
+        assert_eq!(mode.next().next().next(), CalibrationMode::LaserTiming);
+        assert_eq!(mode.next().next().next().next(), CalibrationMode::SceneSize);
     }
 
     /// Each mode drives the matching setup operation with the coarse or fine step
@@ -192,15 +249,20 @@ mod tests {
     fn terminal_key_names_map_to_control_keys() {
         assert_eq!(ControlKey::from_key_name("ArrowUp"), Some(ControlKey::Up));
         assert_eq!(ControlKey::from_key_name("Space"), Some(ControlKey::Space));
-        assert_eq!(ControlKey::from_key_name("F3"), Some(ControlKey::F3));
+        assert_eq!(ControlKey::from_key_name("F3"), Some(ControlKey::Calibration));
+        assert_eq!(ControlKey::from_key_name("KeyC"), Some(ControlKey::Calibration));
+        assert_eq!(ControlKey::from_key_name("F1"), Some(ControlKey::Laser));
+        assert_eq!(ControlKey::from_key_name("KeyL"), Some(ControlKey::Laser));
+        assert_eq!(ControlKey::from_key_name("KeyS"), Some(ControlKey::Shape));
         assert_eq!(ControlKey::from_key_name("KeyA"), None);
     }
 
     #[test]
     fn arrows_nudge_and_function_keys_toggle() {
         assert_eq!(ControlKey::Left.action(true), CalibrationAction::Nudge { dir: IVec2::NEG_X, fine: true });
-        assert_eq!(ControlKey::F1.action(false), CalibrationAction::ToggleLaser);
-        assert_eq!(ControlKey::F3.action(false), CalibrationAction::ToggleCalibration);
+        assert_eq!(ControlKey::Laser.action(false), CalibrationAction::ToggleLaser);
+        assert_eq!(ControlKey::Calibration.action(false), CalibrationAction::CycleCalibration);
+        assert_eq!(ControlKey::Shape.action(false), CalibrationAction::NextShape);
         assert_eq!(ControlKey::Space.action(false), CalibrationAction::NextMode);
     }
 }

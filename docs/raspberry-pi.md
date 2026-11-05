@@ -60,6 +60,30 @@ Complete guide for cross-compiling the LaserTargets server for Raspberry Pi 4, d
 | SSH enabled | See [Section 2.1](#21-enable-ssh). |
 | Connected to the same network | Ethernet or Wi-Fi. |
 
+### Connected Peripherals & Hardware Profile
+
+From live hardware probing (`cargo xtask check`, `cargo xtask camera --detailed`), the hardware topology on the Pi is:
+
+| Component | Hardware Specification | Interface / Bus | Kernel Node | Role |
+| :--- | :--- | :--- | :--- | :--- |
+| **Compute Board** | Raspberry Pi 4 Model B (Broadcom BCM2711, 4x Cortex-A72 @ 1.5 GHz, 4GB RAM) | Onboard | N/A | Server engine daemon & Bevy game logic |
+| **Primary Vision** | Sony IMX219 (Raspberry Pi Camera Module v2) | MIPI-CSI2 ribbon | `/dev/video0`, `unicam` | Laser hit detection (up to 200.16 FPS @ 640x480) & homography calibration |
+| **Laser DAC** | Helios Laser DAC (`1105:f001`) | USB 2.0 | `/dev/bus/usb/*` | Dual 12-bit differential galvos (X/Y) & RGB color modulation |
+| **Hardware ISP** | VideoCore VI Image Signal Processor (`bcm2835-isp`) | On-chip MMIO | `/dev/video13–16`, `/dev/media0` | Hardware debayering, scaling, auto-exposure |
+| **Hardware Encoders** | VideoCore VI H.264 / MJPEG Codec (`bcm2835-codec`) | On-chip MMIO | `/dev/video11`, `/dev/video31` | Low-CPU video compression for remote streaming |
+| **Secondary Camera** | Realtek USB Camera (`0bda:5830`) | USB 2.0 | `/dev/video1` | Auxiliary webcam feed |
+
+#### Validating Hardware with `xtask`
+
+You can verify all peripherals and hardware telemetry from your workstation:
+```bash
+# 1. Run the full 3-phase status cycle (Network -> Health/Temp -> DAC/Camera/Service)
+cargo xtask check
+
+# 2. Probe camera modes, resolutions, framerates, and exposure controls
+cargo xtask camera --detailed
+```
+
 ---
 
 ## 2. One-Time Raspberry Pi Setup

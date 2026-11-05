@@ -3,7 +3,10 @@
 Augmented reality laser game platform.
 
 > 📖 **Developer & Stability Guidelines**: See [INSTRUCTIONS.md](INSTRUCTIONS.md) for USB DAC hardware rules, Bevy ECS conventions, and network state invariants.  
-> 🔌 **Hardware Wiring & Pinouts**: See [docs/ILDA_PINOUT.md](docs/ILDA_PINOUT.md) for DB25 to RJ45 (Cat5/Cat6) ILDA adapter pinout mapping.
+> 🔌 **Hardware Wiring & Pinouts**: See [docs/ILDA_PINOUT.md](docs/ILDA_PINOUT.md) for DB25 to RJ45 (Cat5/Cat6) ILDA adapter pinout mapping.  
+> 🎯 **Scene-Filling Strategies Plan**: See [docs/FILL_STRATEGIES_PLAN.md](docs/FILL_STRATEGIES_PLAN.md) for hardware playback of raster, spiral, lissajous, and hilbert fill strategies.  
+> 🧩 **Transformer Pipeline Architecture**: See [docs/TRANSFORMER_PIPELINE.md](docs/TRANSFORMER_PIPELINE.md) for Bevy ECS plugin and component architecture.  
+> 📷 **Camera Stream & Vision Tracking Plan**: See [docs/CAMERA_STREAM_PLAN.md](docs/CAMERA_STREAM_PLAN.md) for Sony IMX219 (Pi Cam v2) capture pipeline and laser hit detection.
 
 ![Official ILDA DB25 Pinout](docs/images/ilda_pinout_official.png)
 
@@ -23,6 +26,17 @@ cargo run --package terminal --features bevy/dynamic_linking
 
 > **Full guide**: [docs/raspberry-pi.md](docs/raspberry-pi.md) — SSH setup, cross-compilation,
 > deploy, live output capture, and troubleshooting.
+
+### Hardware & Connected Peripherals Profile
+
+| Component | Hardware Specification | Interface & Driver | Role in Platform |
+| :--- | :--- | :--- | :--- |
+| **Compute Host** | Raspberry Pi 4 Model B (ARM Cortex-A72 @ 1.5 GHz, 4GB RAM) | `aarch64-unknown-linux-gnu` | Runs Bevy laser server daemon & network dispatch |
+| **Laser Projector DAC** | Helios Laser DAC (`1105:f001`) | USB 2.0 / `libHeliosLaserDAC.so` | Streams differential X/Y galvo signals & RGB ILDA |
+| **Vision Camera** | Sony IMX219 (Raspberry Pi Camera Module v2) | MIPI-CSI2 ribbon / Unicam (`libcamera`) | High-speed laser hit tracking (640x480 @ 200 FPS) & calibration |
+| **Hardware ISP** | VideoCore VI Image Signal Processor (`bcm2835-isp`) | `/dev/video13–16` | On-chip hardware demosaicing & color conversion |
+| **Hardware Codec** | VideoCore VI Codec (`bcm2835-codec`) | `/dev/video11` (H.264 / MJPEG) | Zero-CPU video compression for remote terminal stream |
+| **Secondary Camera** | Realtek USB Webcam (`0bda:5830`) | USB 2.0 / UVC (`/dev/video1`) | Auxiliary feed (`/dev/video1`) |
 
 ### Quick Start
 

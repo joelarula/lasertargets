@@ -4,16 +4,21 @@
 //! and become [`CalibrationAction`]s:
 //! - keys forwarded by terminals (`KeyboardInputEvent`), always on
 //! - the server's own console ([`ConsoleKeyboardPlugin`]), when stdin is an interactive terminal;
-//!   Ctrl+C quits there
+//!   Ctrl+C quits there. The console mouse acts as an actor mouse: the console window maps onto
+//!   the scene box and produces the same position and button events a terminal sends.
 
 use bevy::prelude::*;
 use bevy_quinnet::server::ConnectionLostEvent;
 use common::calibration::{CalibrationAction, ControlKey, KEY_HELP};
-use common::network::KeyboardInputEvent;
+use common::network::{KeyboardInputEvent, MouseButtonInputEvent, MousePositionEvent};
+use common::scene::SceneSetup;
 use std::collections::{HashMap, HashSet};
 use std::io::IsTerminal;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::Mutex;
+
+/// Client id of the server console's actor mouse (terminals use their connection ids)
+pub const CONSOLE_CLIENT_ID: u64 = u64::MAX;
 
 /// Terminals only send press/release, so held arrows are repeated here like OS key repeat.
 const REPEAT_DELAY_SECS: f32 = 0.35;
@@ -100,6 +105,8 @@ impl Plugin for ConsoleKeyboardPlugin {
 
 enum ConsoleInput {
     Key(ControlKey, bool),
+    /// `at` is the position in the console window: (0, 0) top-left, (1, 1) bottom-right
+    Mouse { at: Vec2, button: Option<(&'static str, bool)> },
     Quit,
 }
 
@@ -113,6 +120,9 @@ impl ConsoleKeyboard {
         crossterm::terminal::enable_raw_mode()?;
         #[cfg(target_os = "linux")]
         keep_output_newlines();
+        if let Err(e) = crossterm::execute!(std::io::stdout(), crossterm::event::EnableMouseCapture) {
+            warn!("Console mouse unavailable: {}", e);
+        }
 
         let (sender, receiver) = mpsc::channel();
         std::thread::Builder::new()
@@ -124,6 +134,7 @@ impl ConsoleKeyboard {
 
 impl Drop for ConsoleKeyboard {
     fn drop(&mut self) {
+        let _ = crossterm::execute!(std::io::stdout(), crossterm::event::DisableMouseCapture);
         let _ = crossterm::terminal::disable_raw_mode();
     }
 }
@@ -143,7 +154,7 @@ fn keep_output_newlines() {
 }
 
 fn console_reader(sender: Sender<ConsoleInput>) {
-    use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
+    use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers, MouseButton, MouseEventKind};
 
     loop {
         let input = match event::read() {
@@ -157,8 +168,9 @@ fn console_reader(sender: Sender<ConsoleInput>) {
                         KeyCode::Left => Some(ControlKey::Left),
                         KeyCode::Right => Some(ControlKey::Right),
                         KeyCode::Char(' ') => Some(ControlKey::Space),
-                        KeyCode::F(1) => Some(ControlKey::F1),
-                        KeyCode::F(3) => Some(ControlKey::F3),
+                        KeyCode::Char('l' | 'L') | KeyCode::F(1) => Some(ControlKey::Laser),
+                        KeyCode::Char('c' | 'C') | KeyCode::F(3) => Some(ControlKey::Calibration),
+                        KeyCode::Char('s' | 'S') => Some(ControlKey::Shape),
                         _ => None,
                     };
                     if control_key.is_none() {
@@ -166,6 +178,27 @@ fn console_reader(sender: Sender<ConsoleInput>) {
                     }
                     control_key.map(|k| ConsoleInput::Key(k, key.modifiers.contains(KeyModifiers::SHIFT)))
                 }
+            }
+            Ok(Event::Mouse(mouse)) => {
+                let button_name = |button: MouseButton| match button {
+                    MouseButton::Left => "Left",
+                    MouseButton::Right => "Right",
+                    MouseButton::Middle => "Middle",
+                };
+                let button = match mouse.kind {
+                    MouseEventKind::Moved | MouseEventKind::Drag(_) => Some(None),
+                    MouseEventKind::Down(b) => Some(Some((button_name(b), true))),
+                    MouseEventKind::Up(b) => Some(Some((button_name(b), false))),
+                    _ => None,
+                };
+                button.map(|button| {
+                    let (cols, rows) = crossterm::terminal::size().unwrap_or((80, 24));
+                    let at = Vec2::new(
+                        mouse.column as f32 / cols.saturating_sub(1).max(1) as f32,
+                        mouse.row as f32 / rows.saturating_sub(1).max(1) as f32,
+                    );
+                    ConsoleInput::Mouse { at, button }
+                })
             }
             Ok(_) => None,
             Err(e) => {
@@ -183,7 +216,10 @@ fn console_reader(sender: Sender<ConsoleInput>) {
 
 fn read_console_keys(
     keyboard: Res<ConsoleKeyboard>,
+    scene_setup: Res<SceneSetup>,
     mut actions: MessageWriter<CalibrationAction>,
+    mut mouse_positions: MessageWriter<MousePositionEvent>,
+    mut mouse_buttons: MessageWriter<MouseButtonInputEvent>,
     mut exit: MessageWriter<AppExit>,
 ) {
     let Ok(receiver) = keyboard.receiver.lock() else { return };
@@ -191,6 +227,19 @@ fn read_console_keys(
         match input {
             ConsoleInput::Key(key, fine) => {
                 actions.write(key.action(fine));
+            }
+            ConsoleInput::Mouse { at, button } => {
+                // The console window is the billboard
+                let position = Some(scene_setup.billboard_point(at.clamp(Vec2::ZERO, Vec2::ONE)));
+                mouse_positions.write(MousePositionEvent { client_id: CONSOLE_CLIENT_ID, position });
+                if let Some((button, pressed)) = button {
+                    mouse_buttons.write(MouseButtonInputEvent {
+                        client_id: CONSOLE_CLIENT_ID,
+                        button: button.to_string(),
+                        pressed,
+                        position,
+                    });
+                }
             }
             ConsoleInput::Quit => {
                 info!("Ctrl+C: shutting down");

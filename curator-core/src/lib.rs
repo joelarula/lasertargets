@@ -3,6 +3,7 @@ pub mod payload;
 pub mod prompt;
 pub mod sequencer;
 pub mod step;
+pub mod tree;
 
 pub use audit::{AuditEvent, AuditLog};
 pub use payload::{CuratorEventEnvelope, CuratorPayload};
@@ -16,6 +17,7 @@ pub use sequencer::{
     WorkflowStatus,
 };
 pub use step::CuratorStep;
+pub use tree::{Step, StepRunner, WaitSpec};
 
 use bevy::prelude::*;
 

@@ -19,6 +19,7 @@ default:
     tick_hz: 29.296875        # 30000 PPS / 1024 points
     fixed_hz: 50
     log_level: info
+    assets_dir: assets          # pipelines and shapes; relative to the working dir or the executable
 
   network:
     ip: 0.0.0.0
@@ -38,14 +39,16 @@ default:
       max_lit_step_dac: 150.0     # cap per lit point
       corner_ramp_ms: 0.1         # slow-down/speed-up around sharp corners and stroke ends
       corner_hold_ms: 0.2         # hold at a 90 degree corner, scaled by turn angle
+      stroke_start_hold_ms: 0.2   # lit hold at the start of an open stroke
+      stroke_end_hold_ms: 0.2     # lit hold at the end of an open stroke (mirrors reach the end)
       blank_speed_m_s: 20000.0    # laser-off jump speed
       max_blank_step_dac: 300.0   # cap per jump point
       depart_ms: 0.5              # laser-off hold before leaving a stroke
       settle_ms: 0.5              # hold after a jump before the laser turns on ...
       settle_ms_per_m: 0.05       # ... plus this much per metre of jump
       # Shapes: diode model
-      laser_on_delay_ms: 0.0      # light commanded this much earlier
-      laser_off_delay_ms: 0.0     # light cut this much earlier
+      laser_on_delay_ms: 0.0      # + light on earlier (slow diode), - later (lagging mirrors)
+      laser_off_delay_ms: 0.0     # + light off earlier (afterglow), - stays on longer (lagging mirrors)
       # Text pipeline only (point counts)
       start_dwell_points: 6
       end_dwell_points: 6

@@ -1,10 +1,9 @@
-//! Deterministic tests for the server path plugin: modulator morphing, modifier pipelines
-//! and the aggregated `BroadcastScenePaths` stream sent to terminals.
+//! Deterministic tests for the server path plugin: modulator morphing and the aggregated
+//! `BroadcastScenePaths` stream sent to terminals.
 
 use bevy::prelude::*;
 use common::path::*;
 use server_core::plugins::path::{PathNetworkPlugin, VectorFrameCounter};
-use std::sync::{Arc, Mutex};
 use test_harness::TestApp;
 
 fn path_app() -> TestApp {
@@ -23,23 +22,6 @@ fn horizontal(y: f32) -> UniversalPath {
 
 fn ys(path: &UniversalPath) -> Vec<f32> {
     path.segments[0].points.iter().map(|p| p.y).collect()
-}
-
-/// Records the modulation_t each time it runs, and shifts x by `dx`.
-#[derive(Clone, Default)]
-struct Probe {
-    dx: f32,
-    seen: Arc<Mutex<Vec<f32>>>,
-}
-
-impl PathModifier for Probe {
-    fn name(&self) -> &'static str { "Probe" }
-    fn type_id(&self) -> &'static str { "probe" }
-    fn apply(&mut self, path: &mut UniversalPath, ctx: &ModifierContext) {
-        self.seen.lock().unwrap().push(ctx.modulation_t);
-        path.segments.iter_mut().flat_map(|s| s.points.iter_mut()).for_each(|p| p.x += self.dx);
-    }
-    fn clone_box(&self) -> Box<dyn PathModifier> { Box::new(self.clone()) }
 }
 
 // --- modulators ---------------------------------------------------------------
@@ -95,56 +77,6 @@ fn timeline_modulator_advances_with_time() {
     t.step_n(50);
     assert_eq!(t.world().get::<PathModulator>(e).unwrap().current_t, 1.0);
     assert_eq!(ys(t.world().get::<UniversalPath>(e).unwrap()), vec![10.0, 10.0]);
-}
-
-// --- modifier pipelines ---------------------------------------------------------
-
-#[test]
-fn pipeline_runs_after_morph_with_modulation_t() {
-    let seen = Arc::new(Mutex::new(Vec::new()));
-    let mut t = path_app();
-    let e = t
-        .world_mut()
-        .spawn((
-            UniversalPath::empty(),
-            PathModulator::new(horizontal(0.0), horizontal(10.0), ModulatorSource::Manual(0.3), EasingFunction::Linear),
-            PathModifierPipeline::new().with_modifier(Probe { dx: 100.0, seen: seen.clone() }),
-        ))
-        .id();
-    t.step_n(3);
-
-    // The morph rewrites the path every frame, so the offset is applied once, not accumulated
-    let path = t.world().get::<UniversalPath>(e).unwrap();
-    assert_eq!(path.segments[0].points[0].x, 100.0);
-    assert_eq!(path.segments[0].points[1].x, 110.0);
-    assert_eq!(*seen.lock().unwrap(), vec![0.3, 0.3, 0.3]);
-}
-
-#[test]
-fn pipeline_without_modulator_sees_full_modulation() {
-    let seen = Arc::new(Mutex::new(Vec::new()));
-    let mut t = path_app();
-    t.world_mut().spawn((
-        horizontal(0.0),
-        PathModifierPipeline::new().with_modifier(Probe { dx: 0.0, seen: seen.clone() }),
-    ));
-    t.step();
-    assert_eq!(*seen.lock().unwrap(), vec![1.0]);
-}
-
-#[test]
-fn disabled_or_empty_pipeline_is_skipped() {
-    let seen = Arc::new(Mutex::new(Vec::new()));
-    let mut t = path_app();
-    let mut pipeline = PathModifierPipeline::new().with_modifier(Probe { dx: 5.0, seen: seen.clone() });
-    pipeline.enabled = false;
-    let disabled = t.world_mut().spawn((horizontal(0.0), pipeline)).id();
-    let empty = t.world_mut().spawn((horizontal(0.0), PathModifierPipeline::new())).id();
-    t.step_n(2);
-
-    assert!(seen.lock().unwrap().is_empty());
-    assert_eq!(*t.world().get::<UniversalPath>(disabled).unwrap(), horizontal(0.0));
-    assert_eq!(*t.world().get::<UniversalPath>(empty).unwrap(), horizontal(0.0));
 }
 
 // --- broadcast --------------------------------------------------------------------

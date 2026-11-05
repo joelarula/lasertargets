@@ -24,6 +24,7 @@ impl Default for ConfigTransform {
     }
 }
 
+/// The billboard: the physical canvas on the wall the laser draws on (size and pose).
 #[derive(Resource, Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SceneConfiguration {
     /// Defines the dimensions (width, height) of the scene in meters.

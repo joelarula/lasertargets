@@ -6,7 +6,7 @@
 //!
 //! v1 templates ([`ShapeTemplate`]) are converted with [`Shape::from_v1`].
 
-use crate::path::LineStyle;
+use crate::path::{LineStyle, PathPoint, PathSegment, UniversalPath};
 use crate::shapes::ShapeTemplate;
 use serde::{Deserialize, Serialize};
 
@@ -165,6 +165,46 @@ impl Shape {
             }
         }
         Ok(())
+    }
+
+    /// Path for today's rendering pipeline, until v2 placement (stage 2) is built: one path
+    /// segment per stroke, closed strokes end with a copy of their first point, `dwell_ms` becomes
+    /// a dwell count at [`V1_REFERENCE_PPS`].
+    ///
+    /// Not supported yet: rounded corners (`corner_radius_m > 0` is drawn sharp) and the v2
+    /// dash/dot lengths (dashed and dotted strokes use the path's fixed line styles).
+    pub fn to_universal_path(&self) -> UniversalPath {
+        let segments = self
+            .strokes
+            .iter()
+            .map(|stroke| {
+                let mut points: Vec<PathPoint> = stroke
+                    .points
+                    .iter()
+                    .map(|p| {
+                        let [r, g, b] = p.color.unwrap_or(stroke.color);
+                        let dwell = p.dwell_ms.map_or(0, |ms| (ms / 1000.0 * V1_REFERENCE_PPS).round().clamp(0.0, 255.0) as u8);
+                        PathPoint::new(p.x, p.y, r, g, b, dwell)
+                    })
+                    .collect();
+                if stroke.closed {
+                    // Closing copy: ends the last edge; the seam hold stays on the first point
+                    let mut closing = points[points.len() - 1].clone();
+                    closing.x = points[0].x;
+                    closing.y = points[0].y;
+                    closing.dwell = 0;
+                    points.push(closing);
+                }
+                let mut segment = PathSegment::new(points);
+                segment.line_style = match stroke.style {
+                    StrokeStyle::Solid => LineStyle::Continuous,
+                    StrokeStyle::Dashed { .. } => LineStyle::Dashed,
+                    StrokeStyle::Dotted { .. } => LineStyle::Dotted,
+                };
+                segment
+            })
+            .collect();
+        UniversalPath { segments }
     }
 
     /// Converts a v1 template. v1 coordinates are normalised (-1..1), so `size_m` gives the
@@ -340,6 +380,23 @@ mod tests {
     }
 
     #[test]
+    fn universal_path_has_one_segment_per_stroke_and_closes_loops() {
+        let target = Shape::builtin().into_iter().find(|s| s.name == "target").unwrap();
+        let path = target.to_universal_path();
+        assert_eq!(path.segments.len(), 3);
+        let ring = &path.segments[0].points;
+        assert_eq!(ring.len(), 33, "32 ring points plus the closing copy");
+        assert_eq!((ring[0].x, ring[0].y), (ring[32].x, ring[32].y));
+        assert_eq!((ring[0].r, ring[0].g, ring[0].b), (255, 0, 0));
+        assert_eq!(path.segments[2].points.len(), 1, "centre dot");
+
+        let cable = Shape::builtin().into_iter().find(|s| s.name == "cable_test").unwrap();
+        let border = &cable.to_universal_path().segments[0].points;
+        // Per-point colours: one per side
+        assert_eq!((border[1].r, border[1].g, border[1].b), (0, 255, 0));
+    }
+
+    #[test]
     fn v1_box_becomes_closed_stroke_with_dwell() {
         let s = Shape::from_v1(&v1("box"), 0.5);
         assert_eq!(s.strokes.len(), 1);
@@ -400,6 +457,9 @@ mod v1_collection_tests {
         let mut failures = Vec::new();
         for entry in std::fs::read_dir(&dir).unwrap().flatten() {
             let path = entry.path();
+            if path.extension().is_none_or(|ext| ext != "json") {
+                continue;
+            }
             let Ok(template) = ShapeTemplate::from_json(&std::fs::read_to_string(&path).unwrap()) else { continue };
             let shape = Shape::from_v1(&template, 1.0);
             if shape.strokes.is_empty() {

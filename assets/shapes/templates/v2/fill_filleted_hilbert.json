@@ -1,0 +1,344 @@
+{
+  "name": "fill_filleted_hilbert",
+  "description": "Method D: Filleted Hilbert Space-Filling Curve (Order 3 with 18mm corner fillets for non-stop galvo speed)",
+  "tags": [
+    "fill:hilbert",
+    "fill:fractal",
+    "pattern:space_filling",
+    "version:2"
+  ],
+  "author": "LaserTargets",
+  "version": 2,
+  "strokes": [
+    {
+      "closed": false,
+      "color": [
+        255,
+        80,
+        180
+      ],
+      "points": [
+        {
+          "x": -0.35,
+          "y": -0.35,
+          "corner_radius_m": 0.018
+        },
+        {
+          "x": -0.35,
+          "y": -0.25,
+          "corner_radius_m": 0.018
+        },
+        {
+          "x": -0.25,
+          "y": -0.25,
+          "corner_radius_m": 0.018
+        },
+        {
+          "x": -0.25,
+          "y": -0.35,
+          "corner_radius_m": 0.018
+        },
+        {
+          "x": -0.15,
+          "y": -0.35,
+          "corner_radius_m": 0.018
+        },
+        {
+          "x": -0.05,
+          "y": -0.35,
+          "corner_radius_m": 0.018
+        },
+        {
+          "x": -0.05,
+          "y": -0.25,
+          "corner_radius_m": 0.018
+        },
+        {
+          "x": -0.15,
+          "y": -0.25,
+          "corner_radius_m": 0.018
+        },
+        {
+          "x": -0.15,
+          "y": -0.15,
+          "corner_radius_m": 0.018
+        },
+        {
+          "x": -0.05,
+          "y": -0.15,
+          "corner_radius_m": 0.018
+        },
+        {
+          "x": -0.05,
+          "y": -0.05,
+          "corner_radius_m": 0.018
+        },
+        {
+          "x": -0.15,
+          "y": -0.05,
+          "corner_radius_m": 0.018
+        },
+        {
+          "x": -0.25,
+          "y": -0.05,
+          "corner_radius_m": 0.018
+        },
+        {
+          "x": -0.25,
+          "y": -0.15,
+          "corner_radius_m": 0.018
+        },
+        {
+          "x": -0.35,
+          "y": -0.15,
+          "corner_radius_m": 0.018
+        },
+        {
+          "x": -0.35,
+          "y": -0.05,
+          "corner_radius_m": 0.018
+        },
+        {
+          "x": -0.35,
+          "y": 0.05,
+          "corner_radius_m": 0.018
+        },
+        {
+          "x": -0.25,
+          "y": 0.05,
+          "corner_radius_m": 0.018
+        },
+        {
+          "x": -0.25,
+          "y": 0.15,
+          "corner_radius_m": 0.018
+        },
+        {
+          "x": -0.35,
+          "y": 0.15,
+          "corner_radius_m": 0.018
+        },
+        {
+          "x": -0.35,
+          "y": 0.25,
+          "corner_radius_m": 0.018
+        },
+        {
+          "x": -0.35,
+          "y": 0.35,
+          "corner_radius_m": 0.018
+        },
+        {
+          "x": -0.25,
+          "y": 0.35,
+          "corner_radius_m": 0.018
+        },
+        {
+          "x": -0.25,
+          "y": 0.25,
+          "corner_radius_m": 0.018
+        },
+        {
+          "x": -0.15,
+          "y": 0.25,
+          "corner_radius_m": 0.018
+        },
+        {
+          "x": -0.15,
+          "y": 0.35,
+          "corner_radius_m": 0.018
+        },
+        {
+          "x": -0.05,
+          "y": 0.35,
+          "corner_radius_m": 0.018
+        },
+        {
+          "x": -0.05,
+          "y": 0.25,
+          "corner_radius_m": 0.018
+        },
+        {
+          "x": -0.05,
+          "y": 0.15,
+          "corner_radius_m": 0.018
+        },
+        {
+          "x": -0.15,
+          "y": 0.15,
+          "corner_radius_m": 0.018
+        },
+        {
+          "x": -0.15,
+          "y": 0.05,
+          "corner_radius_m": 0.018
+        },
+        {
+          "x": -0.05,
+          "y": 0.05,
+          "corner_radius_m": 0.018
+        },
+        {
+          "x": 0.05,
+          "y": 0.05,
+          "corner_radius_m": 0.018
+        },
+        {
+          "x": 0.15,
+          "y": 0.05,
+          "corner_radius_m": 0.018
+        },
+        {
+          "x": 0.15,
+          "y": 0.15,
+          "corner_radius_m": 0.018
+        },
+        {
+          "x": 0.05,
+          "y": 0.15,
+          "corner_radius_m": 0.018
+        },
+        {
+          "x": 0.05,
+          "y": 0.25,
+          "corner_radius_m": 0.018
+        },
+        {
+          "x": 0.05,
+          "y": 0.35,
+          "corner_radius_m": 0.018
+        },
+        {
+          "x": 0.15,
+          "y": 0.35,
+          "corner_radius_m": 0.018
+        },
+        {
+          "x": 0.15,
+          "y": 0.25,
+          "corner_radius_m": 0.018
+        },
+        {
+          "x": 0.25,
+          "y": 0.25,
+          "corner_radius_m": 0.018
+        },
+        {
+          "x": 0.25,
+          "y": 0.35,
+          "corner_radius_m": 0.018
+        },
+        {
+          "x": 0.35,
+          "y": 0.35,
+          "corner_radius_m": 0.018
+        },
+        {
+          "x": 0.35,
+          "y": 0.25,
+          "corner_radius_m": 0.018
+        },
+        {
+          "x": 0.35,
+          "y": 0.15,
+          "corner_radius_m": 0.018
+        },
+        {
+          "x": 0.25,
+          "y": 0.15,
+          "corner_radius_m": 0.018
+        },
+        {
+          "x": 0.25,
+          "y": 0.05,
+          "corner_radius_m": 0.018
+        },
+        {
+          "x": 0.35,
+          "y": 0.05,
+          "corner_radius_m": 0.018
+        },
+        {
+          "x": 0.35,
+          "y": -0.05,
+          "corner_radius_m": 0.018
+        },
+        {
+          "x": 0.35,
+          "y": -0.15,
+          "corner_radius_m": 0.018
+        },
+        {
+          "x": 0.25,
+          "y": -0.15,
+          "corner_radius_m": 0.018
+        },
+        {
+          "x": 0.25,
+          "y": -0.05,
+          "corner_radius_m": 0.018
+        },
+        {
+          "x": 0.15,
+          "y": -0.05,
+          "corner_radius_m": 0.018
+        },
+        {
+          "x": 0.05,
+          "y": -0.05,
+          "corner_radius_m": 0.018
+        },
+        {
+          "x": 0.05,
+          "y": -0.15,
+          "corner_radius_m": 0.018
+        },
+        {
+          "x": 0.15,
+          "y": -0.15,
+          "corner_radius_m": 0.018
+        },
+        {
+          "x": 0.15,
+          "y": -0.25,
+          "corner_radius_m": 0.018
+        },
+        {
+          "x": 0.05,
+          "y": -0.25,
+          "corner_radius_m": 0.018
+        },
+        {
+          "x": 0.05,
+          "y": -0.35,
+          "corner_radius_m": 0.018
+        },
+        {
+          "x": 0.15,
+          "y": -0.35,
+          "corner_radius_m": 0.018
+        },
+        {
+          "x": 0.25,
+          "y": -0.35,
+          "corner_radius_m": 0.018
+        },
+        {
+          "x": 0.25,
+          "y": -0.25,
+          "corner_radius_m": 0.018
+        },
+        {
+          "x": 0.35,
+          "y": -0.25,
+          "corner_radius_m": 0.018
+        },
+        {
+          "x": 0.35,
+          "y": -0.35,
+          "corner_radius_m": 0.018
+        }
+      ]
+    }
+  ]
+}

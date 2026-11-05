@@ -9,6 +9,7 @@ use crate::plugins::keyboard::KeyboardControlPlugin;
 use crate::plugins::menu::ServerMenuWorkflowPlugin;
 use crate::plugins::network::NetworkingPlugin;
 use crate::plugins::path::PathNetworkPlugin;
+use common::pipeline::plugin::PathPipelinePlugin;
 use crate::plugins::projector::ProjectorPlugin;
 use crate::plugins::scene::ScenePlugin;
 use crate::plugins::status::StatusPlugin;
@@ -37,6 +38,9 @@ pub struct RuntimeSettings {
     pub log_level: String,
     /// Extra per-target `tracing` directives, e.g. "wgpu=error,server_core::plugins::projector=debug".
     pub log_filter: String,
+    /// Asset root (pipelines, shapes). Relative paths are taken from the working directory when
+    /// it contains them, otherwise from the executable's directory.
+    pub assets_dir: String,
 }
 
 impl Default for RuntimeSettings {
@@ -46,7 +50,21 @@ impl Default for RuntimeSettings {
             fixed_hz: 50.0,
             log_level: "info".into(),
             log_filter: bevy::log::DEFAULT_FILTER.into(),
+            assets_dir: "assets".into(),
         }
+    }
+}
+
+impl RuntimeSettings {
+    /// [`Self::assets_dir`] resolved against the working directory when it exists there
+    pub fn resolved_assets_dir(&self) -> String {
+        let dir = std::path::PathBuf::from(&self.assets_dir);
+        if dir.is_relative() {
+            if let Some(found) = std::env::current_dir().ok().map(|cwd| cwd.join(&dir)).filter(|d| d.is_dir()) {
+                return found.to_string_lossy().into_owned();
+            }
+        }
+        self.assets_dir.clone()
     }
 }
 
@@ -64,6 +82,10 @@ pub fn create_server_app(schedule_runner: ScheduleRunnerPlugin) -> App {
 /// Insert a [`common::settings::ConfigSource`] beforehand to configure them from YAML.
 pub fn add_server_plugins(app: &mut App, schedule_runner: ScheduleRunnerPlugin) {
     app.add_plugins(MinimalPlugins.set(schedule_runner));
+    app.init_config::<RuntimeSettings>();
+    let assets_dir = app.world().resource::<RuntimeSettings>().resolved_assets_dir();
+    // Pipeline files are assets; the `hot_reload` feature watches them for changes
+    app.add_plugins(AssetPlugin { file_path: assets_dir, ..default() });
     app.add_plugins(InputPlugin);
     // On Linux (Raspberry Pi), gilrs uses evdev which works headlessly.
     // On Windows, gilrs uses WGI which requires a focused window — we use XInput directly instead.
@@ -91,6 +113,7 @@ pub fn add_common_server_plugins(app: &mut App) {
         .add_plugins(QuinnetServerPlugin::default())
         .add_plugins(NetworkingPlugin)
         .add_plugins(PathNetworkPlugin)
+        .add_plugins(PathPipelinePlugin)
         .add_plugins(SessionLifecyclePlugin)
         .add_plugins(CuratorCorePlugin)
         .add_plugins(ServerMenuWorkflowPlugin)

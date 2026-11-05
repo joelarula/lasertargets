@@ -5,7 +5,7 @@ use common::scene::{SceneEntity, SceneSetup};
 use common::state::SessionState;
 
 use crate::common::GAME_ID;
-use crate::components::{HunterShotRipple, HunterTitleAnnouncement};
+use crate::components::HunterTitleAnnouncement;
 
 pub fn spawn_hunter_title_on_session_start(
     mut commands: Commands,
@@ -102,24 +102,6 @@ pub fn animate_hunter_title_announcement(
         if announcement.timer.just_finished() {
             info!("★ [Hunter] Vector title announcement finished -> despawned");
             commands.entity(entity).despawn();
-        }
-    }
-}
-
-/// Animate expanding shot ripple rings upon Hunter game clicks
-pub fn animate_hunter_shot_ripples(
-    mut commands: Commands,
-    time: Res<Time>,
-    mut ripple_query: Query<(Entity, &mut HunterShotRipple, &mut UniversalPath)>,
-) {
-    for (entity, mut ripple, mut path) in ripple_query.iter_mut() {
-        ripple.current_radius += ripple.growth_rate * time.delta_secs();
-        if ripple.current_radius >= ripple.max_radius {
-            if let Ok(mut e) = commands.get_entity(entity) {
-                e.despawn();
-            }
-        } else {
-            *path = UniversalPath::circle(Vec2::ZERO, ripple.current_radius, ripple.color);
         }
     }
 }

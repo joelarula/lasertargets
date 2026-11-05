@@ -15,7 +15,9 @@ pub struct SceneData{
     pub mouse_world_pos: Option<Vec3>
 }
 
-/// Marker component for the scene entity
+/// Marker component for the scene entity: the billboard, the physical canvas on the wall the
+/// laser draws on. Scene content (overlays, mouse crosshairs, game shapes) are its children, in
+/// billboard x, y metres from its centre.
 #[derive(Component)]
 pub struct SceneEntity;
 
@@ -297,6 +299,25 @@ pub fn projector_ndc(world_pos: Vec3, projector: &ProjectorConfiguration) -> Opt
 /// would push the scene out is refused: it returns `false` and changes nothing. A scene that is
 /// already out may still move back in.
 impl SceneSetup {
+    /// World point on the billboard for a position in billboard units: (0, 0) is its top-left
+    /// corner, (1, 1) the bottom-right.
+    pub fn billboard_point(&self, uv: Vec2) -> Vec3 {
+        let size = self.scene.scene_dimension;
+        let local = Vec3::new((uv.x - 0.5) * size.x, (0.5 - uv.y) * size.y, 0.0);
+        let origin = &self.scene.origin;
+        Mat4::from_scale_rotation_translation(origin.scale, origin.rotation, origin.translation).transform_point3(local)
+    }
+
+    /// Billboard x, y (metres from the billboard centre) of a world point, projected onto the
+    /// billboard plane.
+    pub fn world_to_billboard(&self, world_pos: Vec3) -> Vec2 {
+        let origin = &self.scene.origin;
+        Mat4::from_scale_rotation_translation(origin.scale, origin.rotation, origin.translation)
+            .inverse()
+            .transform_point3(world_pos)
+            .truncate()
+    }
+
     /// [`projector_ndc`] for this setup's projector.
     pub fn projector_ndc(&self, world_pos: Vec3) -> Option<Vec2> {
         projector_ndc(world_pos, &self.projector)
@@ -474,6 +495,25 @@ mod tests {
         assert!(setup.scene_extent() > 1.0);
         assert!(!setup.resize_scene(Vec2::new(0.05, 0.0)));
         assert!(setup.resize_scene(Vec2::new(-0.05, 0.0)));
+    }
+
+    #[test]
+    fn scene_point_maps_box_corners() {
+        let setup = SceneSetup::default();
+        let center = setup.scene.origin.translation;
+        let half = setup.scene.scene_dimension / 2.0;
+        assert!(setup.billboard_point(Vec2::splat(0.5)).abs_diff_eq(center, 1e-5));
+        assert!(setup.billboard_point(Vec2::ZERO).abs_diff_eq(center + Vec3::new(-half.x, half.y, 0.0), 1e-5));
+        assert!(setup.billboard_point(Vec2::ONE).abs_diff_eq(center + Vec3::new(half.x, -half.y, 0.0), 1e-5));
+    }
+
+    #[test]
+    fn world_to_scene_drops_distance_from_plane() {
+        let setup = SceneSetup::default();
+        let center = setup.scene.origin.translation;
+        assert!(setup.world_to_billboard(center + Vec3::new(1.0, -0.5, 0.0)).abs_diff_eq(Vec2::new(1.0, -0.5), 1e-5));
+        // A point in front of the plane lands on it
+        assert!(setup.world_to_billboard(center + Vec3::new(1.0, -0.5, 3.0)).abs_diff_eq(Vec2::new(1.0, -0.5), 1e-5));
     }
 
     #[test]

@@ -14,8 +14,8 @@ members = [
     "curator-core",
     "terminal-ui",
     "test-harness",
-    "xtask",
 ]
+exclude = ["xtask"]
 
 [workspace.dependencies]
 terminal-ui = { path = "terminal-ui" }

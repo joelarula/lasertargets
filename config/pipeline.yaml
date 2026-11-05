@@ -1,0 +1,56 @@
+# Bevy Transformer Pipeline Configuration
+#
+# Each entry under `components` maps to a Bevy Component attached to the laser entity.
+# Editing this file hot-reloads components at runtime without rebuilding the program.
+
+name: "audio_reactive_raster"
+description: "Interlaced raster fill modulated by audio bass energy with filleted corners and galvo kinematics"
+
+components:
+  # ---------------------------------------------------------------------------
+  # Fill Transformer Component (RasterFillPlugin)
+  # ---------------------------------------------------------------------------
+  raster_fill:
+    enabled: true
+    density_lines: 24
+    interlaced: true
+    overscan_m: 0.06
+
+  # ---------------------------------------------------------------------------
+  # Geometry Fillet Component (CornerFilletPlugin)
+  # ---------------------------------------------------------------------------
+  corner_fillet:
+    enabled: true
+    radius_m: 0.015
+    threshold_deg: 120.0
+
+  # ---------------------------------------------------------------------------
+  # Audio-Reactive Displacement Component (AudioDisplacePlugin)
+  # Reads live Res<AudioAnalysis> in LaserTransformSet::AudioModulation
+  # ---------------------------------------------------------------------------
+  audio_wave_displace:
+    enabled: true
+    band: "Bass"              # SubBass, Bass, Mid, or High
+    amplitude_m: 0.035        # Max displacement in metres
+    frequency: 16.0           # Spatial ripple frequency along the scanlines
+
+  # ---------------------------------------------------------------------------
+  # Galvo Kinematics Component (GalvoKinematicsPlugin)
+  # ---------------------------------------------------------------------------
+  galvo_kinematics:
+    enabled: true
+    pps: 30000
+    lit_speed_m_s: 18.0
+    blank_speed_m_s: 35.0
+    max_accel_m_s2: 1400.0
+    corner_hold_ms: 0.15
+    settle_ms: 0.40
+
+  # ---------------------------------------------------------------------------
+  # Diode Compensation Component (DiodeCompensationPlugin)
+  # ---------------------------------------------------------------------------
+  diode_compensation:
+    enabled: true
+    laser_on_delay_us: 15.0
+    laser_off_delay_us: 10.0
+    velocity_shading: true

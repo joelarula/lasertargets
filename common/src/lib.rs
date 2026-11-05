@@ -5,6 +5,7 @@ pub mod config;
 pub use session as game;
 pub mod network;
 pub mod path;
+pub mod pipeline;
 pub mod scene; 
 pub mod session;
 pub mod settings;

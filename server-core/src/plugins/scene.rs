@@ -1,5 +1,4 @@
 use bevy::prelude::*;
-use common::config::{CameraConfiguration, ProjectorConfiguration, SceneConfiguration};
 use common::scene::{SceneEntity, SceneSetup, SceneSystemSet};
 
 pub struct ScenePlugin;
@@ -8,7 +7,7 @@ impl Plugin for ScenePlugin {
     fn build(&self, app: &mut App) {
         app
             .add_systems(Startup, setup_scene_entity.in_set(SceneSystemSet))
-            .add_systems(Update, (sync_scene_transform, log_scene_change_report).in_set(SceneSystemSet));
+            .add_systems(Update, sync_scene_transform.in_set(SceneSystemSet));
     }
 }
 
@@ -40,28 +39,6 @@ fn sync_scene_transform(
             transform.rotation = scene_setup.scene.origin.rotation;
             transform.scale = scene_setup.scene.origin.scale;
         }
-    }
-}
-
-/// Quiet time after the last change before the scene report is logged, so held calibration keys
-/// produce one report instead of one per step.
-const SCENE_REPORT_SETTLE_SECS: f32 = 1.0;
-
-/// System to log scene configuration changes once the scene parameters stop changing
-fn log_scene_change_report(
-    time: Res<Time>,
-    scene_setup: Res<SceneSetup>,
-    camera_config: Res<CameraConfiguration>,
-    projector_config: Res<ProjectorConfiguration>,
-    scene_config: Res<SceneConfiguration>,
-    mut settle: Local<Option<Timer>>,
-) {
-    if scene_setup.is_changed() || camera_config.is_changed() || projector_config.is_changed() || scene_config.is_changed() {
-        *settle = Some(Timer::from_seconds(SCENE_REPORT_SETTLE_SECS, TimerMode::Once));
-    }
-    if settle.as_mut().is_some_and(|timer| timer.tick(time.delta()).just_finished()) {
-        *settle = None;
-        log_readable_scene_report(&scene_setup);
     }
 }
 

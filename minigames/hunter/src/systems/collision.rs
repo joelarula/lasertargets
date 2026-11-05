@@ -1,10 +1,11 @@
 use bevy::math::Mat4;
 use bevy::prelude::*;
 use common::path::{PathRenderable, UniversalPath};
+use common::pipeline::plugin::{DespawnOnFinish, Pipelines};
 use common::scene::{SceneEntity, SceneSetup};
 use crate::types::HunterTarget;
 
-use crate::components::{CollisionIndicator, HunterShotRipple, HunterTargetEntity, TargetSpawnImmunity};
+use crate::components::{CollisionIndicator, HunterTargetEntity, TargetSpawnImmunity};
 use crate::events::{BroadcastStatsUpdateEvent, HunterClickEvent};
 use crate::resources::HunterGameStats;
 
@@ -19,6 +20,7 @@ pub fn handle_hunter_clicks(
     time: Res<Time>,
     mut stats_events: MessageWriter<BroadcastStatsUpdateEvent>,
     indicator_query: Query<Entity, With<CollisionIndicator>>,
+    pipelines: Pipelines,
 ) {
     for event in click_events.read() {
         let click_pos = event.click_position;
@@ -134,12 +136,9 @@ pub fn handle_hunter_clicks(
             let indicator_transform = Transform::from_translation(local_click);
             let indicator_entity = commands.spawn((
                 CollisionIndicator,
-                HunterShotRipple {
-                    current_radius: 0.05,
-                    max_radius: 0.35,
-                    growth_rate: 3.0,
-                    color: dot_color,
-                },
+                // Grows and despawns through assets/pipelines/hunter/ripple.pipeline.yaml
+                pipelines.get("hunter/ripple"),
+                DespawnOnFinish,
                 indicator_transform,
                 GlobalTransform::from(indicator_transform),
                 Visibility::default(),

@@ -1,7 +1,6 @@
 use bevy::prelude::*;
 use common::path::{
-    AbstractPathData, BroadcastScenePaths, ModifierContext, MorphStrategyRegistry,
-    PathModifierPipeline, PathModifierRegistry, PathModulator, PathRenderable, UniversalPath,
+    AbstractPathData, BroadcastScenePaths, MorphStrategyRegistry, PathModulator, PathRenderable, UniversalPath,
     VectorFrame,
 };
 
@@ -14,12 +13,8 @@ impl Plugin for PathNetworkPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<VectorFrameCounter>()
             .init_resource::<MorphStrategyRegistry>()
-            .init_resource::<PathModifierRegistry>()
             .add_message::<BroadcastScenePaths>()
-            .add_systems(
-                Update,
-                (evaluate_path_modulators, apply_path_modifier_pipelines).chain(),
-            )
+            .add_systems(Update, evaluate_path_modulators)
             .add_systems(PostUpdate, broadcast_combined_abstract_scene_paths);
     }
 }
@@ -45,31 +40,6 @@ fn evaluate_path_modulators(
         } = &mut *modulator;
 
         strategy.morph(keyframe_a, keyframe_b, eased_t, &mut path);
-    }
-}
-
-/// Evaluates pluggable modifier pipelines (transformers, oscillators, color shaders) in-place
-fn apply_path_modifier_pipelines(
-    time: Res<Time>,
-    mut query: Query<(&mut UniversalPath, &mut PathModifierPipeline, Option<&PathModulator>)>,
-) {
-    let delta_secs = time.delta_secs();
-    let elapsed_secs = time.elapsed_secs();
-
-    for (mut path, mut pipeline, modulator) in query.iter_mut() {
-        if !pipeline.enabled || pipeline.modifiers.is_empty() {
-            continue;
-        }
-
-        let modulation_t = modulator.map(|m| m.current_t).unwrap_or(1.0);
-        let ctx = ModifierContext {
-            delta_secs,
-            elapsed_secs,
-            modulation_t,
-            audio_spectral: None,
-        };
-
-        pipeline.apply(&mut path, &ctx);
     }
 }
 

@@ -10,6 +10,7 @@
 .PARAMETER Action
     The action to execute:
       - check      : Ping, SSH, CPU governor, and USB DAC detection.
+      - camera     : Probe CSI and USB camera hardware specifications.
       - check-sd   : Validate inserted SD card bootfs partition before first boot.
       - optimize   : Apply CPU performance governor & disable USB autosuspend.
       - deploy     : Copy binaries, libraries, assets, and systemd units to the Pi.
@@ -48,7 +49,7 @@
 #>
 param(
     [Parameter(Position = 0)]
-    [ValidateSet("check", "check-sd", "optimize", "deploy", "run", "dac-test", "logs")]
+    [ValidateSet("check", "camera", "check-sd", "optimize", "deploy", "run", "dac-test", "logs")]
     [string]$Action = "check",
 
     [string]$TargetHost = "lasertargets.local",
@@ -82,66 +83,153 @@ $DistDir     = Join-Path $ProjectRoot "dist\pi"
 # ACTION: check
 # ==============================================================================
 if ($Action -eq "check") {
-    Write-Host "=== Checking Raspberry Pi Status ($TargetHost) ===" -ForegroundColor Cyan
+    Write-Host "=== Raspberry Pi Full Status Cycle ($TargetHost) ===" -ForegroundColor Cyan
 
     $pureHost = $TargetHost -replace "^.*@", ""
 
+    # --------------------------------------------------------------------------
+    # PHASE 1: Connection & Reachability
+    # --------------------------------------------------------------------------
+    Write-Host "`n[Phase 1/3] Connection & Reachability" -ForegroundColor Yellow
+    Write-Host "--------------------------------------" -ForegroundColor DarkGray
+
     # 1. Ping
-    Write-Host "`n--- 1. Network Ping ---" -ForegroundColor Yellow
     $pingOk = Test-Connection -ComputerName $pureHost -Count 2 -Quiet -ErrorAction SilentlyContinue
     if ($pingOk) {
-        Write-Host "  [PASS] Ping OK to $pureHost" -ForegroundColor Green
+        Write-Host "  [PASS] Network Ping OK to $pureHost" -ForegroundColor Green
     } else {
-        Write-Host "  [WARN] Ping failed or timed out for $pureHost" -ForegroundColor Yellow
+        Write-Host "  [WARN] Network Ping timed out for $pureHost" -ForegroundColor Yellow
     }
 
     # 2. SSH Connection
-    Write-Host "`n--- 2. SSH Connectivity ---" -ForegroundColor Yellow
     $sshCheck = ssh -o BatchMode=yes -o ConnectTimeout=5 $TargetHost "echo OK" 2>&1
     if ($sshCheck -eq "OK") {
-        Write-Host "  [PASS] SSH login successful" -ForegroundColor Green
+        Write-Host "  [PASS] SSH login verified" -ForegroundColor Green
     } else {
         Write-Host "  [FAIL] Cannot establish SSH connection to $TargetHost" -ForegroundColor Red
         Write-Host "         Error: $sshCheck" -ForegroundColor DarkGray
         exit 1
     }
 
+    # --------------------------------------------------------------------------
+    # PHASE 2: System Status & Health Parameters
+    # --------------------------------------------------------------------------
+    Write-Host "`n[Phase 2/3] System Status & Health Parameters" -ForegroundColor Yellow
+    Write-Host "----------------------------------------------" -ForegroundColor DarkGray
+
     # 3. System info
-    Write-Host "`n--- 3. System Information ---" -ForegroundColor Yellow
     $sysInfo = ssh $TargetHost "uname -srm; uptime -p" 2>$null
     foreach ($line in $sysInfo) {
         Write-Host "  [INFO] $line" -ForegroundColor Gray
     }
 
-    # 4. CPU Governor
-    Write-Host "`n--- 4. CPU Governor ---" -ForegroundColor Yellow
-    $gov = ssh $TargetHost "cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor 2>/dev/null || echo unknown" 2>$null
-    if ($gov -eq "performance") {
-        Write-Host "  [PASS] CPU Governor is '$gov'" -ForegroundColor Green
-    } else {
-        Write-Host "  [WARN] CPU Governor is '$gov' (run '.\scripts\pi.ps1 optimize' to set to 'performance')" -ForegroundColor Yellow
+    # 4. Temperature & Throttling
+    $healthInfo = ssh $TargetHost "vcgencmd measure_temp 2>/dev/null || cat /sys/class/thermal/thermal_zone0/temp 2>/dev/null | awk '{printf \"temp=%.1f''C\n\", `$1/1000}'; vcgencmd get_throttled 2>/dev/null || true" 2>$null
+    if ($healthInfo) {
+        if ($healthInfo.Length -ge 1) {
+            Write-Host "  [INFO] CPU Temperature: $($healthInfo[0])" -ForegroundColor Gray
+        }
+        if ($healthInfo.Length -ge 2) {
+            $thr = $healthInfo[1]
+            if ($thr -match "0x0") {
+                Write-Host "  [PASS] Power & Thermal Throttle: $thr (Normal, no undervoltage)" -ForegroundColor Green
+            } else {
+                Write-Host "  [WARN] Power & Thermal Throttle: $thr (Check power supply / cooling!)" -ForegroundColor Yellow
+            }
+        }
     }
 
-    # 5. USB DAC hardware
-    Write-Host "`n--- 5. USB DAC Hardware ---" -ForegroundColor Yellow
+    # 5. Memory & Storage
+    $resInfo = ssh $TargetHost "free -h | awk '/^Mem:/ {print \"RAM: \" `$3 \" used / \" `$2 \" total\"}'; df -h / | awk 'NR==2 {print \"Disk (/): \" `$3 \" used / \" `$2 \" total (\" `$5 \" used)\"}'" 2>$null
+    foreach ($line in $resInfo) {
+        Write-Host "  [INFO] $line" -ForegroundColor Gray
+    }
+
+    # 6. CPU Governor
+    $gov = ssh $TargetHost "cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor 2>/dev/null || echo unknown" 2>$null
+    if ($gov -eq "performance") {
+        Write-Host "  [PASS] CPU Governor: '$gov' (Optimized for real-time laser galvo timing)" -ForegroundColor Green
+    } else {
+        Write-Host "  [WARN] CPU Governor: '$gov' (Run '.\scripts\pi.ps1 optimize' to set to 'performance')" -ForegroundColor Yellow
+    }
+
+    # --------------------------------------------------------------------------
+    # PHASE 3: Peripherals, Devices & Services
+    # --------------------------------------------------------------------------
+    Write-Host "`n[Phase 3/3] Peripherals, Devices & Services" -ForegroundColor Yellow
+    Write-Host "--------------------------------------------" -ForegroundColor DarkGray
+
+    # 7. USB DAC hardware
     $lsusb = ssh $TargetHost "lsusb 2>/dev/null" 2>$null
     $dacFound = $false
     foreach ($l in $lsusb) {
         if ($l -match "(?i)helios|laser|ftdi|1105|2408") {
             $dacFound = $true
-            Write-Host "  [PASS] Detected USB Device: $l" -ForegroundColor Green
+            Write-Host "  [PASS] Laser DAC USB hardware detected: $l" -ForegroundColor Green
         }
     }
     if (-not $dacFound) {
         Write-Host "  [WARN] No recognized Laser DAC detected in lsusb" -ForegroundColor Yellow
     }
 
-    # 6. Service status
-    Write-Host "`n--- 6. Service Status ---" -ForegroundColor Yellow
+    # 8. Camera hardware
+    $camInfo = ssh $TargetHost "rpicam-hello --list-cameras 2>/dev/null || libcamera-hello --list-cameras 2>/dev/null || v4l2-ctl --list-devices 2>/dev/null || echo 'none'" 2>$null
+    if ($camInfo -and $camInfo -notmatch "none|No cameras available") {
+        Write-Host "  [PASS] Camera hardware detected:" -ForegroundColor Green
+        foreach ($line in $camInfo) {
+            Write-Host "    $line" -ForegroundColor Gray
+        }
+    } else {
+        Write-Host "  [WARN] No active camera detected (run '.\scripts\pi.ps1 camera' for deep probe)" -ForegroundColor Yellow
+    }
+
+    # 9. Service status
     $svcStatus = ssh $TargetHost "systemctl is-active lasertargets-server 2>/dev/null || echo inactive" 2>$null
     Write-Host "  [INFO] lasertargets-server.service: $svcStatus" -ForegroundColor Gray
 
-    Write-Host "`nCheck complete." -ForegroundColor Cyan
+    Write-Host "`nStatus cycle complete." -ForegroundColor Cyan
+    exit 0
+}
+
+# ==============================================================================
+# ACTION: camera
+# ==============================================================================
+if ($Action -eq "camera") {
+    Write-Host "=== Probing Camera Hardware on Raspberry Pi ($TargetHost) ===" -ForegroundColor Cyan
+
+    Write-Host "`n--- 1. CSI / libcamera Detection ---" -ForegroundColor Yellow
+    $csi = ssh $TargetHost "rpicam-hello --list-cameras 2>&1 || libcamera-hello --list-cameras 2>&1" 2>$null
+    if ($csi -and $csi -notmatch "No cameras available") {
+        Write-Host "  [PASS] CSI Camera(s) found:" -ForegroundColor Green
+        foreach ($line in $csi) { Write-Host "    $line" -ForegroundColor Gray }
+    } else {
+        Write-Host "  [INFO] No active CSI camera detected via libcamera." -ForegroundColor Yellow
+    }
+
+    Write-Host "`n--- 2. V4L2 Video Devices ---" -ForegroundColor Yellow
+    $v4l2 = ssh $TargetHost "v4l2-ctl --list-devices 2>/dev/null || echo 'v4l2-ctl not installed'" 2>$null
+    if ($v4l2 -and $v4l2 -ne "v4l2-ctl not installed") {
+        foreach ($line in $v4l2) { Write-Host "    $line" -ForegroundColor Gray }
+    } else {
+        Write-Host "  [WARN] v4l2-ctl not available on Pi (sudo apt install v4l-utils)." -ForegroundColor Yellow
+    }
+
+    Write-Host "`n--- 3. Kernel Driver & I2C Probing (dmesg) ---" -ForegroundColor Yellow
+    $dmesg = ssh $TargetHost "dmesg | grep -iE 'camera|imx|ov5647|unicam|csi|sensor' | tail -n 15 || true" 2>$null
+    if ($dmesg) {
+        foreach ($line in $dmesg) { Write-Host "    $line" -ForegroundColor Gray }
+    } else {
+        Write-Host "  [INFO] No camera kernel messages in dmesg." -ForegroundColor Gray
+    }
+
+    Write-Host "`n--- 4. Formats & Resolutions for /dev/video* ---" -ForegroundColor Yellow
+    $detailCmd = 'for dev in $(ls /dev/video* 2>/dev/null); do echo "=== Device: $dev ==="; v4l2-ctl -d "$dev" --list-formats-ext 2>/dev/null || true; done'
+    $formats = ssh $TargetHost $detailCmd 2>$null
+    if ($formats) {
+        foreach ($line in $formats) { Write-Host "    $line" -ForegroundColor Gray }
+    }
+
+    Write-Host "`nCamera probe complete." -ForegroundColor Cyan
     exit 0
 }
 

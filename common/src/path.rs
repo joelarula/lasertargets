@@ -742,96 +742,6 @@ impl MorphStrategyRegistry {
     }
 }
 
-/// Evaluation context supplied to PathModifiers during in-place processing
-pub struct ModifierContext<'a> {
-    pub delta_secs: f32,
-    pub elapsed_secs: f32,
-    pub modulation_t: f32,
-    pub audio_spectral: Option<&'a [f32]>,
-}
-
-/// Pluggable vector modifier trait.
-/// Allows contributors to implement transformers, oscillators, wave shaders, and spatial effects.
-pub trait PathModifier: Send + Sync + 'static {
-    fn name(&self) -> &'static str;
-    fn type_id(&self) -> &'static str;
-
-    /// Execute the modification in-place on the path's segments and points.
-    /// MUST be zero-allocation during steady-state processing.
-    fn apply(&mut self, path: &mut UniversalPath, ctx: &ModifierContext);
-
-    fn clone_box(&self) -> Box<dyn PathModifier>;
-}
-
-impl Clone for Box<dyn PathModifier> {
-    fn clone(&self) -> Self {
-        self.clone_box()
-    }
-}
-
-/// Component holding an ordered pipeline of pluggable modifiers applied sequentially in-place.
-#[derive(Component)]
-pub struct PathModifierPipeline {
-    pub modifiers: Vec<Box<dyn PathModifier>>,
-    pub enabled: bool,
-}
-
-impl Default for PathModifierPipeline {
-    fn default() -> Self {
-        Self {
-            modifiers: Vec::new(),
-            enabled: true,
-        }
-    }
-}
-
-impl PathModifierPipeline {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn with_modifier(mut self, modifier: impl PathModifier) -> Self {
-        self.modifiers.push(Box::new(modifier));
-        self
-    }
-
-    pub fn add(&mut self, modifier: impl PathModifier) {
-        self.modifiers.push(Box::new(modifier));
-    }
-
-    pub fn apply(&mut self, path: &mut UniversalPath, ctx: &ModifierContext) {
-        if !self.enabled {
-            return;
-        }
-        for modifier in &mut self.modifiers {
-            modifier.apply(path, ctx);
-        }
-    }
-}
-
-/// Pluggable registry of available path modifiers.
-#[derive(Resource, Default)]
-pub struct PathModifierRegistry {
-    factories: std::collections::HashMap<String, Box<dyn Fn() -> Box<dyn PathModifier> + Send + Sync>>,
-}
-
-impl PathModifierRegistry {
-    pub fn new() -> Self {
-        Self {
-            factories: std::collections::HashMap::new(),
-        }
-    }
-
-    pub fn register<T: PathModifier + Default + Clone>(&mut self) {
-        let key = T::default().type_id().to_string();
-        self.factories.insert(key, Box::new(|| Box::new(T::default())));
-    }
-
-    pub fn create(&self, type_id: &str) -> Option<Box<dyn PathModifier>> {
-        self.factories.get(type_id).map(|f| f())
-    }
-}
-
 /// Unified modulator component connecting a signal source through an EasingFunction
 /// and a pluggable MorphStrategy to drive UniversalPath morphing.
 #[derive(Component)]
@@ -980,50 +890,6 @@ mod tests {
     }
 
     #[test]
-    fn test_pluggable_path_modifier_pipeline() {
-        #[derive(Clone, Default)]
-        struct TestOffsetModifier {
-            dx: f32,
-            dy: f32,
-        }
-
-        impl PathModifier for TestOffsetModifier {
-            fn name(&self) -> &'static str { "TestOffset" }
-            fn type_id(&self) -> &'static str { "test_offset" }
-            fn apply(&mut self, path: &mut UniversalPath, _ctx: &ModifierContext) {
-                for seg in &mut path.segments {
-                    for pt in &mut seg.points {
-                        pt.x += self.dx;
-                        pt.y += self.dy;
-                    }
-                }
-            }
-            fn clone_box(&self) -> Box<dyn PathModifier> {
-                Box::new(self.clone())
-            }
-        }
-
-        let mut path = UniversalPath::from_segment(PathSegment::new(vec![
-            PathPoint::new(1.0, 2.0, 255, 255, 255, 0),
-        ]));
-
-        let mut pipeline = PathModifierPipeline::new()
-            .with_modifier(TestOffsetModifier { dx: 10.0, dy: 20.0 });
-
-        let ctx = ModifierContext {
-            delta_secs: 0.016,
-            elapsed_secs: 1.0,
-            modulation_t: 1.0,
-            audio_spectral: None,
-        };
-
-        pipeline.apply(&mut path, &ctx);
-
-        assert!((path.segments[0].points[0].x - 11.0).abs() < 1e-4);
-        assert!((path.segments[0].points[0].y - 22.0).abs() < 1e-4);
-    }
-
-    #[test]
     fn test_strategy_registry() {
         let registry = MorphStrategyRegistry::new();
         let strategy = registry.create("cycle_modulo");
@@ -1037,34 +903,6 @@ mod tests {
 
     fn is_dark(p: &PathPoint) -> bool {
         p.r == 0 && p.g == 0 && p.b == 0
-    }
-
-    fn ctx(modulation_t: f32) -> ModifierContext<'static> {
-        ModifierContext { delta_secs: 0.02, elapsed_secs: 1.0, modulation_t, audio_spectral: None }
-    }
-
-    #[derive(Clone, Default)]
-    struct Offset(f32);
-
-    impl PathModifier for Offset {
-        fn name(&self) -> &'static str { "Offset" }
-        fn type_id(&self) -> &'static str { "offset" }
-        fn apply(&mut self, path: &mut UniversalPath, _ctx: &ModifierContext) {
-            path.segments.iter_mut().flat_map(|s| s.points.iter_mut()).for_each(|p| p.x += self.0);
-        }
-        fn clone_box(&self) -> Box<dyn PathModifier> { Box::new(self.clone()) }
-    }
-
-    #[derive(Clone, Default)]
-    struct Scale(f32);
-
-    impl PathModifier for Scale {
-        fn name(&self) -> &'static str { "Scale" }
-        fn type_id(&self) -> &'static str { "scale" }
-        fn apply(&mut self, path: &mut UniversalPath, _ctx: &ModifierContext) {
-            path.segments.iter_mut().flat_map(|s| s.points.iter_mut()).for_each(|p| p.x *= self.0);
-        }
-        fn clone_box(&self) -> Box<dyn PathModifier> { Box::new(self.clone()) }
     }
 
     // --- PathPoint ------------------------------------------------------------
@@ -1400,42 +1238,7 @@ mod tests {
         assert_eq!(out.segments[0].line_style, LineStyle::Dashed);
     }
 
-    // --- Pipeline / registries ----------------------------------------------------
-
-    #[test]
-    fn pipeline_applies_modifiers_in_order() {
-        let base = one_seg(vec![white(1.0, 0.0)]);
-
-        let mut path = base.clone();
-        PathModifierPipeline::new().with_modifier(Offset(1.0)).with_modifier(Scale(10.0)).apply(&mut path, &ctx(1.0));
-        assert_eq!(path.segments[0].points[0].x, 20.0);
-
-        let mut path = base;
-        let mut pipeline = PathModifierPipeline::new();
-        pipeline.add(Scale(10.0));
-        pipeline.add(Offset(1.0));
-        pipeline.apply(&mut path, &ctx(1.0));
-        assert_eq!(path.segments[0].points[0].x, 11.0);
-    }
-
-    #[test]
-    fn disabled_pipeline_is_noop() {
-        let mut path = one_seg(vec![white(1.0, 0.0)]);
-        let mut pipeline = PathModifierPipeline::new().with_modifier(Offset(5.0));
-        pipeline.enabled = false;
-        pipeline.apply(&mut path, &ctx(1.0));
-        assert_eq!(path.segments[0].points[0].x, 1.0);
-    }
-
-    #[test]
-    fn modifier_registry_creates_registered_types() {
-        let mut registry = PathModifierRegistry::new();
-        assert!(registry.create("offset").is_none());
-        registry.register::<Offset>();
-        let modifier = registry.create("offset").unwrap();
-        assert_eq!(modifier.name(), "Offset");
-        assert!(registry.create("missing").is_none());
-    }
+    // --- Registries ---------------------------------------------------------------
 
     #[test]
     #[ignore = "BUG: MorphStrategyRegistry derives Default, so init_resource (used by PathNetworkPlugin) \

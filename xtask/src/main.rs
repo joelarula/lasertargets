@@ -45,6 +45,21 @@ enum Commands {
         user: String,
     },
 
+    /// Probe and inspect camera hardware specifications (CSI & USB) on the Raspberry Pi
+    Camera {
+        /// Raspberry Pi host or IP
+        #[arg(long, default_value = "lasertargets.local")]
+        host: String,
+
+        /// SSH username
+        #[arg(long, default_value = "lasertargets")]
+        user: String,
+
+        /// Query detailed formats and frame rates for each V4L2 video node
+        #[arg(short = 'd', long)]
+        detailed: bool,
+    },
+
     /// Apply OS performance tweaks (CPU governor, disable USB autosuspend)
     Optimize {
         /// Raspberry Pi host or IP
@@ -273,10 +288,15 @@ fn build_arm64(profile: Profile, remote: &str, no_cache: bool, no_export: bool, 
 
 fn check_pi(user: &str, host: &str) -> Result<(), String> {
     let target = target_spec(user, host);
-    println!("=== Checking Raspberry Pi Status ({target}) ===");
+    println!("=== Checking Raspberry Pi Full Status Cycle ({target}) ===");
+
+    // =======================================================================
+    // PHASE 1: Connection & Reachability
+    // =======================================================================
+    println!("\n[Phase 1/3] Connection & Reachability");
+    println!("--------------------------------------");
 
     // 1. Ping
-    println!("\n--- 1. Network Ping ---");
     let ping_cmd = if cfg!(target_os = "windows") {
         let mut c = Command::new("ping");
         c.args(["-n", "2", host]);
@@ -287,12 +307,11 @@ fn check_pi(user: &str, host: &str) -> Result<(), String> {
         c
     };
     match cmd_output(ping_cmd) {
-        Ok(_) => println!("  [PASS] Ping OK to {host}"),
-        Err(_) => println!("  [WARN] Ping failed or timed out for {host}"),
+        Ok(_) => println!("  [PASS] Network Ping OK to {host}"),
+        Err(_) => println!("  [WARN] Network Ping timed out for {host}"),
     }
 
     // 2. SSH Connection
-    println!("\n--- 2. SSH Connectivity ---");
     let mut ssh_test = Command::new("ssh");
     ssh_test.args([
         "-o",
@@ -303,14 +322,19 @@ fn check_pi(user: &str, host: &str) -> Result<(), String> {
         "echo OK",
     ]);
     match cmd_output(ssh_test) {
-        Ok(out) if out.contains("OK") => println!("  [PASS] SSH login successful"),
+        Ok(out) if out.contains("OK") => println!("  [PASS] SSH login verified"),
         Ok(_) | Err(_) => {
-            return Err(format!("Cannot establish SSH connection to {target}. Check host, user, and SSH keys."));
+            return Err(format!("Cannot establish SSH connection to {target}. Aborting status cycle."));
         }
     }
 
-    // 3. System info
-    println!("\n--- 3. System Information ---");
+    // =======================================================================
+    // PHASE 2: System Status & Health Parameters
+    // =======================================================================
+    println!("\n[Phase 2/3] System Status & Health Parameters");
+    println!("----------------------------------------------");
+
+    // 3. Kernel & Uptime
     let mut uname_cmd = Command::new("ssh");
     uname_cmd.args([&target, "uname -srm; uptime -p"]);
     if let Ok(info) = cmd_output(uname_cmd) {
@@ -319,43 +343,181 @@ fn check_pi(user: &str, host: &str) -> Result<(), String> {
         }
     }
 
-    // 4. CPU Governor
-    println!("\n--- 4. CPU Governor ---");
+    // 4. CPU Temperature & Throttle/Undervoltage State
+    let mut health_cmd = Command::new("ssh");
+    health_cmd.args([
+        &target,
+        "vcgencmd measure_temp 2>/dev/null || cat /sys/class/thermal/thermal_zone0/temp 2>/dev/null | awk '{printf \"temp=%.1f\\'C\\n\", $1/1000}'; vcgencmd get_throttled 2>/dev/null || true",
+    ]);
+    if let Ok(health) = cmd_output(health_cmd) {
+        let lines: Vec<&str> = health.lines().collect();
+        if let Some(temp_line) = lines.first() {
+            println!("  [INFO] CPU Temperature: {temp_line}");
+        }
+        if lines.len() > 1 {
+            let throttled = lines[1];
+            if throttled.contains("0x0") {
+                println!("  [PASS] Power & Thermal Throttle: {throttled} (Normal, no undervoltage)");
+            } else {
+                println!("  [WARN] Power & Thermal Throttle: {throttled} (Check power supply / cooling!)");
+            }
+        }
+    }
+
+    // 5. Memory & Storage
+    let mut res_cmd = Command::new("ssh");
+    res_cmd.args([
+        &target,
+        "free -h | awk '/^Mem:/ {print \"RAM: \" $3 \" used / \" $2 \" total\"}'; df -h / | awk 'NR==2 {print \"Disk (/): \" $3 \" used / \" $2 \" total (\" $5 \" used)\"}'",
+    ]);
+    if let Ok(res_out) = cmd_output(res_cmd) {
+        for line in res_out.lines() {
+            println!("  [INFO] {line}");
+        }
+    }
+
+    // 6. CPU Governor
     let mut gov_cmd = Command::new("ssh");
     gov_cmd.args([&target, "cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor 2>/dev/null || echo unknown"]);
     if let Ok(gov) = cmd_output(gov_cmd) {
         if gov == "performance" {
-            println!("  [PASS] CPU Governor is '{gov}'");
+            println!("  [PASS] CPU Governor: '{gov}' (Optimized for real-time laser galvo timing)");
         } else {
-            println!("  [WARN] CPU Governor is '{gov}' (run 'cargo xtask optimize' to set to 'performance')");
+            println!("  [WARN] CPU Governor: '{gov}' (Run 'cargo xtask optimize' to set to 'performance')");
         }
     }
 
-    // 5. USB DAC hardware
-    println!("\n--- 5. USB DAC Hardware ---");
+    // =======================================================================
+    // PHASE 3: Peripherals, Devices & Services
+    // =======================================================================
+    println!("\n[Phase 3/3] Peripherals, Devices & Services");
+    println!("--------------------------------------------");
+
+    // 7. USB Laser DAC Hardware
     let mut lsusb_cmd = Command::new("ssh");
     lsusb_cmd.args([&target, "lsusb"]);
     if let Ok(devices) = cmd_output(lsusb_cmd) {
-        let dac_found = devices.lines().any(|l| {
+        let dac_found = devices.lines().find(|l| {
             let lower = l.to_lowercase();
-            lower.contains("helios") || lower.contains("laser") || lower.contains("ftdi") || lower.contains("1105")
+            lower.contains("helios") || lower.contains("laser") || lower.contains("ftdi") || lower.contains("1105") || lower.contains("2408")
         });
-        if dac_found {
-            println!("  [PASS] Laser DAC USB hardware detected");
+        if let Some(dac_dev) = dac_found {
+            println!("  [PASS] Laser DAC USB hardware detected: {dac_dev}");
         } else {
             println!("  [WARN] No known Laser DAC detected in 'lsusb'");
         }
     }
 
-    // 6. LaserTargets service status
-    println!("\n--- 6. Service Status ---");
+    // 8. Camera Hardware
+    let mut cam_cmd = Command::new("ssh");
+    cam_cmd.args([
+        &target,
+        "rpicam-hello --list-cameras 2>/dev/null || libcamera-hello --list-cameras 2>/dev/null || v4l2-ctl --list-devices 2>/dev/null || echo 'none'",
+    ]);
+    if let Ok(out) = cmd_output(cam_cmd) {
+        let trimmed = out.trim();
+        if trimmed.is_empty() || trimmed == "none" || trimmed.contains("No cameras available") {
+            println!("  [WARN] No active camera detected (run 'cargo xtask camera' to probe)");
+        } else {
+            println!("  [PASS] Camera hardware detected:");
+            for line in trimmed.lines() {
+                println!("    {line}");
+            }
+        }
+    }
+
+    // 9. LaserTargets Service Status
     let mut svc_cmd = Command::new("ssh");
     svc_cmd.args([&target, "systemctl is-active lasertargets-server 2>/dev/null || echo inactive"]);
     if let Ok(status) = cmd_output(svc_cmd) {
         println!("  [INFO] lasertargets-server.service: {status}");
     }
 
-    println!("\nCheck complete.");
+    println!("\nStatus cycle complete.");
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Probe Camera
+// ---------------------------------------------------------------------------
+
+fn probe_camera(user: &str, host: &str, detailed: bool) -> Result<(), String> {
+    let target = target_spec(user, host);
+    println!("=== Probing Camera Hardware on Raspberry Pi ({target}) ===");
+
+    // 1. CSI Camera Detection (libcamera / rpicam)
+    println!("\n--- 1. CSI / libcamera Detection ---");
+    let csi_script = "rpicam-hello --list-cameras 2>&1 || libcamera-hello --list-cameras 2>&1";
+    let mut csi_cmd = Command::new("ssh");
+    csi_cmd.args([&target, csi_script]);
+    match cmd_output(csi_cmd) {
+        Ok(out) if !out.trim().is_empty() && !out.contains("No cameras available") => {
+            println!("  [PASS] CSI Camera(s) found:");
+            for line in out.lines() {
+                println!("    {line}");
+            }
+        }
+        Ok(out) => {
+            println!("  [INFO] No active CSI camera detected via libcamera ({})", out.trim());
+        }
+        Err(e) => {
+            println!("  [WARN] Failed to run libcamera check: {e}");
+        }
+    }
+
+    // 2. V4L2 Video Devices
+    println!("\n--- 2. V4L2 Video Devices (/dev/video*) ---");
+    let mut v4l2_cmd = Command::new("ssh");
+    v4l2_cmd.args([&target, "v4l2-ctl --list-devices 2>/dev/null || echo 'v4l2-ctl not installed'"]);
+    match cmd_output(v4l2_cmd) {
+        Ok(out) if !out.trim().is_empty() && out.trim() != "v4l2-ctl not installed" => {
+            for line in out.lines() {
+                println!("    {line}");
+            }
+        }
+        Ok(_) => println!("  [WARN] 'v4l2-ctl' not installed on Pi. (Run 'sudo apt install v4l-utils' on Pi)."),
+        Err(e) => println!("  [WARN] V4L2 query failed: {e}"),
+    }
+
+    // 3. Kernel & Device Tree Sensor Driver Probing
+    println!("\n--- 3. Kernel Driver & I2C Probing (dmesg) ---");
+    let mut dmesg_cmd = Command::new("ssh");
+    dmesg_cmd.args([
+        &target,
+        "dmesg | grep -iE 'camera|imx|ov5647|unicam|csi|sensor' | tail -n 15 || true",
+    ]);
+    if let Ok(out) = cmd_output(dmesg_cmd) {
+        if out.trim().is_empty() {
+            println!("  [INFO] No relevant camera kernel messages in dmesg.");
+        } else {
+            for line in out.lines() {
+                println!("    {line}");
+            }
+        }
+    }
+
+    // 4. Detailed Format & Framerate Query
+    if detailed {
+        println!("\n--- 4. Detailed V4L2 Formats & Controls ---");
+        let query_script = r#"
+for dev in $(ls /dev/video* 2>/dev/null); do
+    echo "=== Device: $dev ==="
+    v4l2-ctl -d "$dev" --list-formats-ext 2>/dev/null || true
+    echo "--- Controls: $dev ---"
+    v4l2-ctl -d "$dev" -l 2>/dev/null || true
+    echo ""
+done
+"#;
+        let mut detail_cmd = Command::new("ssh");
+        detail_cmd.args([&target, query_script]);
+        if let Ok(out) = cmd_output(detail_cmd) {
+            println!("{out}");
+        }
+    } else {
+        println!("\n[TIP] Pass '--detailed' (-d) to inspect full pixel formats (MJPEG/YUYV), resolutions, and controls for each /dev/video* node.");
+    }
+
+    println!("\nCamera probe complete.");
     Ok(())
 }
 
@@ -633,6 +795,7 @@ fn main() {
             dry_run,
         } => build_arm64(profile, &remote, no_cache, no_export, dry_run),
         Commands::Check { host, user } => check_pi(&user, &host),
+        Commands::Camera { host, user, detailed } => probe_camera(&user, &host, detailed),
         Commands::Optimize { host, user } => optimize_pi(&user, &host),
         Commands::Deploy {
             host,

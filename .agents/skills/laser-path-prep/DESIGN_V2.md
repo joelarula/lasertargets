@@ -113,7 +113,8 @@ Implemented in `laserlogic::optimize` (`Galvo`). Defaults in brackets.
 | `lit_speed_m_s` | m/s [10000] | Speed along lit lines on the scene plane. Sets the spacing of intermediate points on long lines, so the galvo moves linearly at constant speed. 10000 m/s is ~0.33 m per point at 30 kpps. |
 | `max_lit_step_dac` | DAC units [150] | Hard cap per lit point from the galvo rating; guards against too-large steps when the scene is far away. |
 | `corner_ramp_ms` | ms [0.1] | Slow-down before and speed-up after a sharp corner or stroke end: steps shrink towards it and grow after it, matching mirror inertia. Smooth vertices are passed at full speed. |
-| `corner_hold_ms` | ms [0.2] | Hold at a 90° turn; scales with turn angle. Gentle turns (curves) get no hold. Open stroke ends get this hold too. |
+| `corner_hold_ms` | ms [0.2] | Hold at a 90° turn; scales with turn angle. Gentle turns (curves) get no hold. |
+| `stroke_start_hold_ms` / `stroke_end_hold_ms` | ms [0.2 / 0.2] | Lit holds at the first and last point of open strokes, tuned separately from corners. The end hold lets lagging mirrors reach the end before the light goes off. A dot gets the longer of the two. |
 | `blank_speed_m_s` | m/s [20000] | Travel speed of laser-off jumps between strokes, with the same ramps at both ends. |
 | `max_blank_step_dac` | DAC units [300] | Hard cap per point during a jump. |
 | `depart_ms` | ms [0.5] | Laser-off hold at a stroke end before the galvo leaves. |
@@ -125,13 +126,14 @@ at the scene centre); milliseconds become points with the projector's PPS.
 The older point-count settings (`corner_dwell_points`, `start_dwell_points`, `end_dwell_points`,
 `blank_*`, `interp_*`) now apply to the text pipeline only.
 
-### 3b Diode model
+### 3b Diode model (light timing)
 
 | Parameter | Unit | Meaning |
 |---|---|---|
-| `laser_on_delay_ms` | ms | Time from "on" command to visible light. Light is commanded this much earlier. |
-| `laser_off_delay_ms` | ms | Time from "off" command to dark. Light is cut this much earlier. |
+| `laser_on_delay_ms` | ms [0] | At stroke starts. Positive: light switched on earlier (slow diode). Negative: switched on later (mirrors lagging behind). |
+| `laser_off_delay_ms` | ms [0] | At stroke ends. Positive: light cut earlier (afterglow). Negative: kept on longer while lagging mirrors finish the stroke. |
 
+Extensions only light blank points around a stroke; cuts always leave at least one lit point.
 Blank means r = g = b = 0 **and** intensity 0. There is no other blank convention.
 
 ### 3c Composer

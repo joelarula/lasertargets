@@ -30,6 +30,8 @@ struct Galvo {
     blank_step: f32,
     ramp_points: usize,
     corner_hold_points: usize,
+    stroke_start_hold_points: usize,
+    stroke_end_hold_points: usize,
     depart_points: usize,
     settle_points: usize,
     settle_points_per_dac: f32,
@@ -42,6 +44,8 @@ impl Galvo {
             blank_step: config.step_dac(config.blank_speed_m_s, config.max_blank_step_dac),
             ramp_points: config.ms_to_points(config.corner_ramp_ms),
             corner_hold_points: config.ms_to_points(config.corner_hold_ms),
+            stroke_start_hold_points: config.ms_to_points(config.stroke_start_hold_ms),
+            stroke_end_hold_points: config.ms_to_points(config.stroke_end_hold_ms),
             depart_points: config.ms_to_points(config.depart_ms),
             settle_points: config.ms_to_points(config.settle_ms),
             settle_points_per_dac: config.settle_ms_per_m.max(0.0) / 1000.0 * config.pps as f32
@@ -163,7 +167,17 @@ pub fn optimize(segments: &[LaserSegment], config: &OptimizeConfig) -> Vec<Laser
 
         // Holds: angle-proportional corner hold (stroke ends of open strokes count as corners),
         // replaced where the shape overrides it
-        let corner_holds = calculate_corner_dwells(pts, config.corner_angle_threshold, galvo.corner_hold_points);
+        let mut corner_holds = calculate_corner_dwells(pts, config.corner_angle_threshold, galvo.corner_hold_points);
+        if !is_closed_segment {
+            // Open stroke ends have their own holds; a dot (one point) gets the longer one
+            let last = pts.len() - 1;
+            corner_holds[last] = galvo.stroke_end_hold_points;
+            corner_holds[0] = if last == 0 {
+                galvo.stroke_start_hold_points.max(galvo.stroke_end_hold_points)
+            } else {
+                galvo.stroke_start_hold_points
+            };
+        }
         let holds: Vec<usize> = (0..pts.len())
             .map(|i| simplified.hold(i).map_or(corner_holds[i], |hold| hold as usize))
             .collect();
@@ -226,23 +240,24 @@ pub fn optimize(segments: &[LaserSegment], config: &OptimizeConfig) -> Vec<Laser
 
     apply_diode_delays(
         &mut output,
-        config.ms_to_points(config.laser_on_delay_ms),
-        config.ms_to_points(config.laser_off_delay_ms),
+        config.ms_to_points_signed(config.laser_on_delay_ms),
+        config.ms_to_points_signed(config.laser_off_delay_ms),
     );
 
     output
 }
 
-/// Diode model: the light takes `on_points` to appear and `off_points` to fade, so each lit run
-/// is switched on that much earlier and cut that much earlier. The frame loops on the DAC, so
-/// runs wrap around the frame end. The galvo is expected to hold still at run ends (stroke
-/// holds), so the earlier switching lands on the same position.
+/// Light timing at stroke starts and ends, cyclic over the frame (the DAC loops it).
 ///
-/// The on extension only lights blank points (it never recolours another run) and the off cut
-/// always leaves at least one lit point.
-fn apply_diode_delays(points: &mut [LaserPoint], on_points: usize, off_points: usize) {
+/// `on`: positive switches each lit run on that many points earlier (diode latency), negative
+/// that many points later. `off`: positive cuts each run that many points earlier (diode
+/// afterglow), negative keeps it on that many points longer (mirrors lagging behind the command).
+///
+/// Extensions only light blank points, never recolour another run, and keep the run's own
+/// colour; cuts always leave at least one lit point.
+fn apply_diode_delays(points: &mut [LaserPoint], on: i32, off: i32) {
     let len = points.len();
-    if len == 0 || (on_points == 0 && off_points == 0) {
+    if len == 0 || (on == 0 && off == 0) {
         return;
     }
     let lit: Vec<bool> = points.iter().map(|p| !p.is_blanked()).collect();
@@ -269,19 +284,37 @@ fn apply_diode_delays(points: &mut [LaserPoint], on_points: usize, off_points: u
     }
 
     let original = points.to_vec();
+    let light = |points: &mut [LaserPoint], i: usize, colour: LaserPoint| {
+        points[i] = LaserPoint::new(points[i].x, points[i].y, colour.r, colour.g, colour.b, colour.i);
+    };
     for &(start, run_len) in &runs {
         let end = (start + run_len - 1) % len;
-        for step in 0..off_points.min(run_len - 1) {
+        // Cuts first, sharing the run so at least one point stays lit
+        let cut_start = (-on).max(0) as usize;
+        let cut_start = cut_start.min(run_len - 1);
+        let cut_end = (off.max(0) as usize).min(run_len - 1 - cut_start);
+        for step in 0..cut_start {
+            let i = (start + step) % len;
+            points[i] = LaserPoint::blanked(points[i].x, points[i].y);
+        }
+        for step in 0..cut_end {
             let i = (end + len - step) % len;
             points[i] = LaserPoint::blanked(points[i].x, points[i].y);
         }
-        let first = original[start];
-        for step in 1..=on_points {
+        // Extensions into the blank points around the run
+        for step in 1..=on.max(0) as usize {
             let i = (start + len - step) % len;
             if lit[i] {
                 break;
             }
-            points[i] = LaserPoint::new(points[i].x, points[i].y, first.r, first.g, first.b, first.i);
+            light(points, i, original[start]);
+        }
+        for step in 1..=(-off).max(0) as usize {
+            let i = (end + step) % len;
+            if lit[i] {
+                break;
+            }
+            light(points, i, original[end]);
         }
     }
 }
@@ -673,6 +706,39 @@ mod tests {
     }
 
     #[test]
+    fn negative_delays_switch_light_later_and_keep_it_on_longer() {
+        // blank x4, lit x6, blank x4
+        let mut points: Vec<LaserPoint> = (0..4).map(|_| LaserPoint::blanked(0, 0))
+            .chain((0..6).map(|i| LaserPoint::new(i * 10, 0, 255, 0, 0, 255)))
+            .chain((0..4).map(|_| LaserPoint::blanked(50, 0)))
+            .collect();
+        apply_diode_delays(&mut points, -2, -3);
+        // Starts 2 later (index 6), stays on 3 longer (to index 12) in the run's colour
+        assert_eq!(lit_runs(&points), vec![(6, 7)]);
+        assert_eq!((points[12].r, points[12].x), (255, 50));
+
+        // A one-point run never disappears
+        let mut points = vec![LaserPoint::blanked(0, 0), LaserPoint::new(5, 5, 255, 255, 255, 255), LaserPoint::blanked(0, 0)];
+        apply_diode_delays(&mut points, -10, 10);
+        assert_eq!(lit_runs(&points), vec![(1, 1)]);
+    }
+
+    #[test]
+    fn open_stroke_ends_have_their_own_holds() {
+        let mut config = default_config();
+        config.stroke_start_hold_ms = 0.1; // 3 points
+        config.stroke_end_hold_ms = 0.5; // 15 points
+        let result = optimize(&[LaserSegment::new(vec![pt(100, 100), pt(2000, 100)])], &config);
+        let lit_at = |x| result.iter().filter(|p| p.x == x && p.y == 100 && !p.is_blanked()).count();
+        assert_eq!(lit_at(100), 1 + 3);
+        assert_eq!(lit_at(2000), 1 + 15);
+
+        // Corners keep the corner hold
+        let corner = optimize(&[LaserSegment::new(vec![pt(0, 0), pt(1000, 0), pt(1000, 1000)])], &config);
+        assert_eq!(corner.iter().filter(|p| p.x == 1000 && p.y == 0 && !p.is_blanked()).count(), 1 + Galvo::new(&config).corner_hold_points);
+    }
+
+    #[test]
     fn diode_delay_ms_follow_pps() {
         let mut config = default_config();
         config.pps = 30000;
@@ -680,6 +746,7 @@ mod tests {
         config.pps = 20000;
         assert_eq!(config.ms_to_points(0.1), 2);
         assert_eq!(config.ms_to_points(-1.0), 0);
+        assert_eq!(config.ms_to_points_signed(-0.1), -2);
     }
 
     #[test]

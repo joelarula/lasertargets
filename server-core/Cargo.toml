@@ -21,3 +21,7 @@ libc = "0.2"
 
 [dev-dependencies]
 test-harness = { workspace = true }
+
+[features]
+# Watch the asset folder and reload pipeline files on save (development)
+hot_reload = ["bevy/file_watcher"]

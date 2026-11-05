@@ -13,7 +13,7 @@ use crate::systems::lifecycle::{
 };
 use crate::systems::movement::{check_balloon_out_of_bounds, update_balloon_positions};
 use crate::systems::render::{
-    animate_hunter_shot_ripples, animate_hunter_title_announcement,
+    animate_hunter_title_announcement,
     spawn_hunter_title_on_session_start,
 };
 use crate::systems::spawn::{spawn_hunter_targets, update_target_spawn_immunity};
@@ -24,6 +24,7 @@ pub struct HunterGameServerPlugin;
 impl Plugin for HunterGameServerPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<HunterTargetSelection>();
+        app.embed_pipeline(include_str!("../../../assets/pipelines/hunter/ripple.pipeline.yaml"));
         app.add_message::<SpawnHunterTargetEvent>();
         app.add_message::<HunterClickEvent>();
         app.add_message::<BroadcastStatsUpdateEvent>();
@@ -48,7 +49,7 @@ impl Plugin for HunterGameServerPlugin {
                 (handle_hunter_gamepad_inputs, handle_hunter_mouse_clicks).in_set(HunterSystemSet::Input),
                 (spawn_hunter_targets, update_target_spawn_immunity).in_set(HunterSystemSet::Spawn),
                 handle_hunter_clicks.in_set(HunterSystemSet::Collision),
-                (animate_hunter_shot_ripples, check_balloon_out_of_bounds).in_set(HunterSystemSet::Render),
+                check_balloon_out_of_bounds.in_set(HunterSystemSet::Render),
                 (forward_hunter_stats_to_network, handle_incoming_hunter_payloads).in_set(HunterSystemSet::Lifecycle),
             ),
         );
