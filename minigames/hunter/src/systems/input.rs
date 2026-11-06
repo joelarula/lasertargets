@@ -1,105 +1,82 @@
 use bevy::prelude::*;
-use common::game::GameSession;
 use common::network::MouseButtonInputEvent;
-use common::state::SessionState;
+use common::state::CalibrationState;
 use gamepad::{Btn, GamepadState, PrevGamepadState, ServerGamepadCursor};
 
-use crate::common::GAME_ID;
+use crate::audit::ShotSource;
 use crate::events::{HunterClickEvent, SpawnHunterTargetEvent};
 use crate::resources::HunterTargetSelection;
 
-/// Handles gamepad input during Hunter game:
-/// - Button A (South): Roll / cycle through target types
-/// - Button B (East) or RT: Release selected target or shoot
-/// - LB / RB: Adjust target size
-pub fn handle_hunter_gamepad_inputs(
-    state: Option<Res<GamepadState>>,
-    prev: Option<Res<PrevGamepadState>>,
-    cursor: Option<Res<ServerGamepadCursor>>,
-    mut selection: ResMut<HunterTargetSelection>,
-    game_sessions: Query<&GameSession>,
-    mut click_events: MessageWriter<HunterClickEvent>,
-    mut spawn_events: MessageWriter<SpawnHunterTargetEvent>,
+/// Trigger at `at`: release the carried target there, or shoot
+fn trigger(
+    selection: &mut HunterTargetSelection,
+    at: Vec3,
+    source: ShotSource,
+    spawns: &mut MessageWriter<SpawnHunterTargetEvent>,
+    shots: &mut MessageWriter<HunterClickEvent>,
 ) {
-    let (Some(state), Some(prev), Some(cursor)) = (state, prev, cursor) else { return; };
-    if !state.connected { return; }
-
-    let Some(active_session) = game_sessions.iter().find(|s| s.game_id == GAME_ID && s.state == SessionState::Active) else { return; };
-
-    // Button A (South) -> Roll / Cycle reticle mode
-    if state.just_pressed(&prev, Btn::South) {
-        selection.cycle();
-        info!("🎮 [Hunter Mode Switch] Selected cursor mode #{}: {}", selection.selected_index, selection.target_name());
-    }
-
-    // LeftBumper (LB) -> Decrease active target radius (-0.05m)
-    if state.just_pressed(&prev, Btn::LeftBumper) {
-        selection.decrease_size();
-        info!("🎮 [Hunter Target Size] Decreased target size: {}", selection.target_name());
-    }
-
-    // RightBumper (RB) -> Increase active target radius (+0.05m)
-    if state.just_pressed(&prev, Btn::RightBumper) {
-        selection.increase_size();
-        info!("🎮 [Hunter Target Size] Increased target size: {}", selection.target_name());
-    }
-
-    // Button B (East) or Right Trigger (RT) -> Release target or Shoot
-    if state.just_pressed(&prev, Btn::East) || state.just_pressed(&prev, Btn::RightTrigger) {
-        let click_pos = cursor.position;
-
-        if let Some(target_to_spawn) = selection.get_target() {
-            info!("🚀 [Hunter Gamepad] RELEASING target [{}] at {:?}", selection.target_name(), click_pos);
-            spawn_events.write(SpawnHunterTargetEvent {
-                target: target_to_spawn,
-                position: click_pos,
-            });
-            selection.reset_to_gunshot();
-            info!("🎯 [Hunter Gamepad] Reticle cursor mode auto-reset to GunShot Mode");
-        } else {
-            info!("🎯 [Hunter Gamepad] SHOOTING at {:?}", click_pos);
-            click_events.write(HunterClickEvent {
-                session_id: active_session.session_id,
-                click_position: click_pos,
-            });
+    match selection.release() {
+        Some(target) => {
+            info!("[Hunter] {source:?} released {target:?} at {at}");
+            spawns.write(SpawnHunterTargetEvent { target, position: at });
+        }
+        None => {
+            shots.write(HunterClickEvent { source, click_position: at });
         }
     }
 }
 
-/// Handles mouse button input (clicks) during Hunter game:
-/// - Right Click: Roll / cycle through target types
-/// - Left Click: Release selected target or shoot
-pub fn handle_hunter_mouse_clicks(
-    mut mouse_button_events: MessageReader<MouseButtonInputEvent>,
+/// Gamepad: A cycles the carried target, LB/RB resize it, B or RT releases it or shoots.
+/// While calibrating, the buttons calibration uses (A, RB, RT) are its own; LB and B still work.
+pub fn read_gamepad(
+    state: Option<Res<GamepadState>>,
+    prev: Option<Res<PrevGamepadState>>,
+    cursor: Option<Res<ServerGamepadCursor>>,
+    calibration: Option<Res<State<CalibrationState>>>,
     mut selection: ResMut<HunterTargetSelection>,
-    game_sessions: Query<&GameSession>,
-    mut click_events: MessageWriter<HunterClickEvent>,
-    mut spawn_events: MessageWriter<SpawnHunterTargetEvent>,
+    mut spawns: MessageWriter<SpawnHunterTargetEvent>,
+    mut shots: MessageWriter<HunterClickEvent>,
 ) {
-    let Some(active_session) = game_sessions.iter().find(|s| s.game_id == GAME_ID && s.state == SessionState::Active) else { return; };
+    let (Some(state), Some(prev), Some(cursor)) = (state, prev, cursor) else { return };
+    if !state.connected {
+        return;
+    }
+    let calibrating = calibration.is_some_and(|c| *c.get() == CalibrationState::On);
+    let pressed = |btn: Btn| btn.is_for_game(calibrating) && state.just_pressed(&prev, btn);
 
-    for event in mouse_button_events.read() {
-        if event.pressed {
-            if let Some(position) = event.position {
-                if event.button == "Right" {
-                    selection.cycle();
-                    info!("🖱️ [Hunter Mouse Mode] Cycled target mode #{}: {}", selection.selected_index, selection.target_name());
-                } else if event.button == "Left" {
-                    if let Some(target_to_spawn) = selection.get_target() {
-                        spawn_events.write(SpawnHunterTargetEvent {
-                            target: target_to_spawn,
-                            position,
-                        });
-                        selection.reset_to_gunshot();
-                        info!("🖱️ [Hunter Mouse Mode] Spawned target at {:?} and reset mode to GunShot", position);
-                    } else {
-                        click_events.write(HunterClickEvent {
-                            session_id: active_session.session_id,
-                            click_position: position,
-                        });
-                    }
-                }
+    if pressed(Btn::South) {
+        selection.cycle();
+    }
+    if pressed(Btn::LeftBumper) {
+        selection.resize(-1.0);
+    }
+    if pressed(Btn::RightBumper) {
+        selection.resize(1.0);
+    }
+    if [Btn::South, Btn::LeftBumper, Btn::RightBumper].into_iter().any(|btn| pressed(btn)) {
+        info!("🎮 [Hunter] Reticle: {}", selection.name());
+    }
+    if pressed(Btn::East) || pressed(Btn::RightTrigger) {
+        trigger(&mut selection, cursor.position, ShotSource::Gamepad, &mut spawns, &mut shots);
+    }
+}
+
+/// Mouse: right click cycles the carried target, left click releases it or shoots
+pub fn read_mouse(
+    mut clicks: MessageReader<MouseButtonInputEvent>,
+    mut selection: ResMut<HunterTargetSelection>,
+    mut spawns: MessageWriter<SpawnHunterTargetEvent>,
+    mut shots: MessageWriter<HunterClickEvent>,
+) {
+    for click in clicks.read().filter(|c| c.pressed) {
+        let Some(at) = click.position else { continue };
+        match click.button.as_str() {
+            "Right" => {
+                selection.cycle();
+                info!("🖱️ [Hunter] Reticle: {}", selection.name());
             }
+            "Left" => trigger(&mut selection, at, ShotSource::Mouse, &mut spawns, &mut shots),
+            _ => {}
         }
     }
 }

@@ -1,0 +1,15 @@
+# HUNTER title at the start of a round. The game writes the text outline as the base; the
+# entity is removed when the lifetime ends.
+name: hunter/title
+
+# self.life goes from 0 to 1 over these 3 s.
+lifetime_ms: 3000
+
+stages:
+  # Draw only part of the text: self.life × 4 of it, so the text writes itself on during the
+  # first quarter (0.75 s) and stays complete after that.
+  - trim: { id: write_on, amount: { signal: self.life, range: [0.0, 4.0] } }
+
+  # Brightness: from full to off over the lifetime. EaseInQuad keeps it bright for most of
+  # the time and fades mostly at the end.
+  - fade: { id: fade_out, amount: { signal: self.life, range: [1.0, 0.0], curve: EaseInQuad } }

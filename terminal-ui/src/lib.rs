@@ -1,9 +1,20 @@
 use bevy::prelude::*;
 use std::collections::HashMap;
+use std::marker::PhantomData;
+use std::ops::DerefMut;
 
+/// The clickable UI node drawn for a [`ToolbarItem`]; `item` is the entity holding that item
 #[derive(Component, Debug, Clone)]
 pub struct ToolbarButton {
     pub name: String,
+    pub item: Entity,
+}
+
+/// Triggered on a [`ToolbarItem`] entity when its button is pressed. React with
+/// `commands.spawn(item).observe(|_: On<ToolbarPressed>, ...| ...)`.
+#[derive(EntityEvent, Debug, Clone, Copy)]
+pub struct ToolbarPressed {
+    pub entity: Entity,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -53,6 +64,90 @@ impl Default for ToolbarItem {
     }
 }
 
+impl ToolbarItem {
+    pub fn new(name: impl Into<String>) -> Self {
+        Self { name: name.into(), ..default() }
+    }
+
+    /// A Nerd Font glyph shown on the button
+    pub fn icon(mut self, icon: &str) -> Self {
+        self.icon = Some(icon.to_string());
+        self
+    }
+
+    /// Tooltip text shown on hover
+    pub fn text(mut self, text: impl Into<String>) -> Self {
+        self.text = Some(text.into());
+        self
+    }
+
+    pub fn order(mut self, order: u8) -> Self {
+        self.order = order;
+        self
+    }
+
+    pub fn dock(mut self, docking: Docking) -> Self {
+        self.docking = docking;
+        self
+    }
+
+    pub fn state(mut self, state: ItemState) -> Self {
+        self.state = state;
+        self
+    }
+
+    pub fn on(self, on: bool) -> Self {
+        self.state(if on { ItemState::On } else { ItemState::Off })
+    }
+}
+
+/// Ties a toolbar item to the bool resource `R` it toggles
+#[derive(Component)]
+struct ToggleOf<R>(PhantomData<R>);
+
+pub trait ToolbarAppExt {
+    /// Adds a toolbar button that flips the bool resource `R` and lights up while it is true.
+    /// Anything else may change `R` too (a window's close button); the button follows.
+    fn add_toolbar_toggle<R>(&mut self, item: ToolbarItem) -> &mut Self
+    where
+        R: Resource + Default + DerefMut<Target = bool>;
+}
+
+impl ToolbarAppExt for App {
+    fn add_toolbar_toggle<R>(&mut self, item: ToolbarItem) -> &mut Self
+    where
+        R: Resource + Default + DerefMut<Target = bool>,
+    {
+        self.init_resource::<R>()
+            .add_systems(Startup, move |mut commands: Commands| {
+                commands
+                    .spawn((item.clone(), ToggleOf::<R>(PhantomData)))
+                    .observe(|_: On<ToolbarPressed>, mut value: ResMut<R>| {
+                        **value = !**value;
+                    });
+            })
+            .add_systems(Update, sync_toggle::<R>.run_if(resource_changed::<R>))
+    }
+}
+
+/// Run condition: the bool resource `R` is true (`.run_if(toggled_on::<SettingsOpen>)`)
+pub fn toggled_on<R: Resource + std::ops::Deref<Target = bool>>(value: Res<R>) -> bool {
+    **value
+}
+
+fn sync_toggle<R: Resource + DerefMut<Target = bool>>(
+    value: Res<R>,
+    mut items: Query<&mut ToolbarItem, With<ToggleOf<R>>>,
+) {
+    let state = if **value { ItemState::On } else { ItemState::Off };
+    for mut item in &mut items {
+        // Comparing first keeps an unchanged item from triggering a toolbar rebuild
+        if item.state != state {
+            item.state = state;
+        }
+    }
+}
+
 // Button color palette - traditional mild scheme for black background
 pub mod button_colors {
     use bevy::prelude::Color;
@@ -88,6 +183,7 @@ impl Plugin for ToolbarPlugin {
             .add_systems(
                 Update,
                 (
+                    trigger_presses,
                     update_button_states,
                     update_button_text,
                     update_hover_tooltips,
@@ -105,7 +201,7 @@ fn load_nerd_font(mut commands: Commands, asset_server: Res<AssetServer>) {
 
 fn setup_toolbar(
     mut commands: Commands,
-    items_query: Query<&ToolbarItem>,
+    items_query: Query<(Entity, &ToolbarItem)>,
     nerd_font: Option<Res<NerdFont>>,
 ) {
     if let Some(font) = nerd_font {
@@ -117,7 +213,7 @@ fn setup_toolbar(
 
 fn rebuild_toolbar(
     mut commands: Commands,
-    items_query: Query<&ToolbarItem>,
+    items_query: Query<(Entity, &ToolbarItem)>,
     toolbar_query: Query<Entity, With<ToolbarContainer>>,
     nerd_font: Option<Res<NerdFont>>,
     changed_items: Query<(), Or<(Changed<ToolbarItem>, Added<ToolbarItem>)>>,
@@ -139,7 +235,7 @@ fn rebuild_toolbar(
 
 fn create_toolbar_ui(
     commands: &mut Commands,
-    items_query: &Query<&ToolbarItem>,
+    items_query: &Query<(Entity, &ToolbarItem)>,
     nerd_font: Option<&Handle<Font>>,
 ) {
     let mut left_buttons = Vec::new();
@@ -149,8 +245,8 @@ fn create_toolbar_ui(
     let mut statusbar_buttons = Vec::new();
 
     let mut buttons_map = HashMap::new();
-    for item in items_query.iter() {
-        buttons_map.insert(item.name.clone(), item.clone());
+    for (entity, item) in items_query.iter() {
+        buttons_map.insert(item.name.clone(), (entity, item.clone()));
         match item.docking {
             Docking::Left => left_buttons.push((item.order, item.name.clone())),
             Docking::Right => right_buttons.push((item.order, item.name.clone())),
@@ -181,7 +277,7 @@ fn create_toolbar_ui(
 
 fn create_docked_toolbar(
     commands: &mut Commands,
-    buttons_map: &HashMap<String, ToolbarItem>,
+    buttons_map: &HashMap<String, (Entity, ToolbarItem)>,
     nerd_font: Option<&Handle<Font>>,
     button_names: &[String],
     docking: Docking,
@@ -247,7 +343,7 @@ fn create_docked_toolbar(
         ))
         .with_children(|parent| {
             for button_name in button_names {
-                if let Some(button_handler) = buttons_map.get(button_name) {
+                if let Some((item, button_handler)) = buttons_map.get(button_name) {
                     let initial_color = if button_handler.state == ItemState::On {
                         button_colors::ACTIVE
                     } else {
@@ -258,6 +354,7 @@ fn create_docked_toolbar(
                         .spawn((
                             ToolbarButton {
                                 name: button_name.clone(),
+                                item: *item,
                             },
                             Button,
                             Node {
@@ -293,6 +390,18 @@ fn create_docked_toolbar(
                 }
             }
         });
+}
+
+/// Tells the pressed button's item entity, so its plugin's observer runs
+fn trigger_presses(
+    mut commands: Commands,
+    buttons: Query<(&Interaction, &ToolbarButton), Changed<Interaction>>,
+) {
+    for (interaction, button) in &buttons {
+        if *interaction == Interaction::Pressed {
+            commands.trigger(ToolbarPressed { entity: button.item });
+        }
+    }
 }
 
 fn update_button_states(

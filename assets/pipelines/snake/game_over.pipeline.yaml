@@ -1,5 +1,5 @@
 # GAME OVER text. The game writes the text outline (red) as the base; the entity is removed
-# when the lifetime ends, which is when the game resets.
+# when the lifetime ends, which is when the next round starts.
 name: snake/game_over
 
 # self.life goes from 0 to 1 over these 2.5 s.

@@ -148,6 +148,11 @@ impl NetworkMessage {
     }
 }
 
+/// A message a terminal plugin wants sent to the server. Write it with `MessageWriter<ToServer>`;
+/// the terminal's network plugin sends it, so feature plugins never touch the connection.
+#[derive(bevy::prelude::Message, Debug, Clone)]
+pub struct ToServer(pub NetworkMessage);
+
 /// Server configuration
 pub const SERVER_PORT: u16 = 6000;
 pub const SERVER_HOST: &str = "0.0.0.0";

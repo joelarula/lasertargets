@@ -1391,18 +1391,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "bevy_prototype_lyon"
-version = "0.15.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eb09bb9cadacae3238d1bdc856b71a164a17f93e1e94db62011dd969dacbe75b"
-dependencies = [
- "bevy",
- "lyon_algorithms",
- "lyon_tessellation",
- "svgtypes",
-]
-
-[[package]]
 name = "bevy_ptr"
 version = "0.17.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3279,7 +3267,6 @@ version = "0.1.0"
 dependencies = [
  "bevy",
  "common",
- "figment",
  "log",
  "serde",
  "serde_json",
@@ -3679,12 +3666,10 @@ dependencies = [
  "common",
  "gamepad",
  "laserlogic",
- "log",
- "rand",
- "seldom_state",
  "serde",
  "serde_json",
  "terminal-ui",
+ "test-harness",
 ]
 
 [[package]]
@@ -4032,17 +4017,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "kurbo"
-version = "0.11.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c62026ae44756f8a599ba21140f350303d4f08dcdcc71b5ad9c9bb8128c13c62"
-dependencies = [
- "arrayvec",
- "euclid",
- "smallvec",
-]
-
-[[package]]
 name = "laser-vision"
 version = "0.1.0"
 dependencies = [
@@ -4171,16 +4145,6 @@ name = "lru-slab"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "112b39cec0b298b6c1999fee3e31427f74f676e4cb9879ed1a121b43661a4154"
-
-[[package]]
-name = "lyon_algorithms"
-version = "1.0.16"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f4c0829e28c4f336396f250d850c3987e16ce6db057ffe047ce0dd54aab6b647"
-dependencies = [
- "lyon_path",
- "num-traits",
-]
 
 [[package]]
 name = "lyon_geom"
@@ -5807,22 +5771,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "seldom_state"
-version = "0.15.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3a0120152eb7bc1ae5fbc6e8bd37398dd3c8df64dca385fdd23e7ea791abd9dd"
-dependencies = [
- "bevy_app",
- "bevy_derive",
- "bevy_ecs",
- "bevy_log",
- "bevy_math",
- "bevy_utils",
- "either",
- "variadics_please",
-]
-
-[[package]]
 name = "self_cell"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6132,6 +6080,7 @@ dependencies = [
  "serde",
  "serde_json",
  "terminal-ui",
+ "test-harness",
 ]
 
 [[package]]
@@ -6206,16 +6155,6 @@ name = "svg_fmt"
 version = "0.4.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0193cc4331cfd2f3d2011ef287590868599a2f33c3e69bc22c1a3d3acf9e02fb"
-
-[[package]]
-name = "svgtypes"
-version = "0.15.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "68c7541fff44b35860c1a7a47a7cadf3e4a304c457b58f9870d9706ece028afc"
-dependencies = [
- "kurbo",
- "siphasher",
-]
 
 [[package]]
 name = "swash"
@@ -6323,15 +6262,10 @@ name = "terminal"
 version = "0.1.0"
 dependencies = [
  "bevy",
- "bevy_camera",
  "bevy_egui",
- "bevy_prototype_lyon",
  "bevy_quinnet",
  "common",
- "curator-core",
- "egui",
  "hunter",
- "log",
  "pretty_env_logger",
  "serde",
  "serde_json",

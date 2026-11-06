@@ -1,51 +1,32 @@
 use bevy::prelude::*;
-use common::scene::SceneSetup;
-use crate::types::HunterTarget;
 
-use crate::components::{BalloonRiseSpeed, BalloonTargetEntity, HunterTargetEntity};
-use crate::events::BroadcastStatsUpdateEvent;
-use crate::resources::HunterGameStats;
+use crate::audit::{HunterAuditEvent, HunterGameStats};
+use crate::components::{Rising, Target};
+use common::scene::Billboard;
 
-/// Move balloon targets upward each fixed tick
-pub fn update_balloon_positions(
-    mut balloon_query: Query<(&mut Transform, &BalloonRiseSpeed), With<BalloonTargetEntity>>,
-    time: Res<Time>,
-) {
-    for (mut transform, speed) in balloon_query.iter_mut() {
-        transform.translation.y += speed.0 * time.delta_secs();
+/// Balloons rise each fixed tick
+pub fn rise_balloons(mut rising: Query<(&mut Transform, &Rising)>, time: Res<Time>) {
+    for (mut transform, rising) in &mut rising {
+        transform.translation.y += rising.0 * time.delta_secs();
     }
 }
 
-/// Despawn balloons that have risen past the top of the scene
-pub fn check_balloon_out_of_bounds(
+/// Balloons wholly above the scene escape: logged and removed
+pub fn release_escaped(
     mut commands: Commands,
-    balloon_query: Query<(Entity, &Transform, &HunterTargetEntity), With<BalloonTargetEntity>>,
-    scene_setup: Res<SceneSetup>,
-    mut stats: Option<ResMut<HunterGameStats>>,
-    mut stats_events: MessageWriter<BroadcastStatsUpdateEvent>,
+    rising: Query<(Entity, &Transform, &Target), With<Rising>>,
+    billboard: Billboard,
+    mut stats: ResMut<HunterGameStats>,
+    time: Res<Time>,
 ) {
-    let half_height = scene_setup.scene.scene_dimension.y as f32 / 2.0;
-    
-    for (entity, transform, target) in balloon_query.iter() {
-        let radius = match &target.target_type {
-            HunterTarget::Baloon(size, _) => *size,
-            _ => 0.2,
-        };
-        
-        if transform.translation.y > half_height + radius {
-            info!("Balloon {} escaped at y={:.2}", target.uuid, transform.translation.y);
-            
-            if let Some(stats) = stats.as_mut() {
-                stats.misses += 1;
-                stats_events.write(BroadcastStatsUpdateEvent {
-                    session_id: target.session_id,
-                    targets_spawned: stats.targets_spawned,
-                    targets_popped: stats.targets_popped,
-                    misses: stats.misses,
-                    score: stats.score,
-                });
-            }
-            
+    let top = billboard.half_size().y;
+    for (entity, transform, target) in &rising {
+        if transform.translation.y > top + target.kind.radius() {
+            stats.record(
+                time.elapsed_secs_f64(),
+                HunterAuditEvent::Escaped { target: target.id, local: transform.translation },
+            );
+            info!("Balloon {} escaped at y={:.2}", target.id, transform.translation.y);
             commands.entity(entity).despawn();
         }
     }

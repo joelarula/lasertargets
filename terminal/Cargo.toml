@@ -5,17 +5,12 @@ edition = "2024"
 
 [dependencies]
 bevy = { workspace = true }
-egui = { workspace = true }
 bevy_egui = { workspace = true }
 common = { path = "../common" }
 terminal-ui = { workspace = true }
-curator-core = { path = "../curator-core" }
 hunter = { path = "../minigames/hunter" }
 snake = { path = "../minigames/snake" }
-log = { workspace = true }
 pretty_env_logger = { workspace = true }
 bevy_quinnet = { workspace = true }
-bevy_camera = "0.17.2"
-bevy_prototype_lyon = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

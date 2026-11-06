@@ -695,6 +695,8 @@ fn gamepad_toggle_calibration(
     }
 }
 
+/// Uses only [`gamepad::CALIBRATION_BUTTONS`] (and the sticks); games keep the other buttons
+/// while calibrating, so a button added here must be added there too.
 fn gamepad_calibration_controls(
     time: Res<Time>,
     mut cooldowns: ResMut<CalibrationGamepadCooldowns>,

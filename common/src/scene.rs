@@ -21,6 +21,53 @@ pub struct SceneData{
 #[derive(Component)]
 pub struct SceneEntity;
 
+/// System param for game content on the billboard: world ↔ billboard conversion from the
+/// [`SceneSetup`] in effect (the configuration, so positions agree with a logged setup), and
+/// spawning under the [`SceneEntity`].
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct Billboard<'w, 's> {
+    entity: Option<Single<'w, 's, Entity, With<SceneEntity>>>,
+    setup: Res<'w, SceneSetup>,
+}
+
+impl Billboard<'_, '_> {
+    pub fn entity(&self) -> Option<Entity> {
+        self.entity.as_deref().copied()
+    }
+
+    pub fn setup(&self) -> &SceneSetup {
+        &self.setup
+    }
+
+    /// See [`SceneSetup::world_to_scene`]
+    pub fn to_local(&self, world: Vec3) -> Vec3 {
+        self.setup.world_to_scene(world)
+    }
+
+    pub fn to_world(&self, local: Vec3) -> Vec3 {
+        self.setup.scene_to_world(local)
+    }
+
+    /// Half the billboard's width and height, metres
+    pub fn half_size(&self) -> Vec2 {
+        self.setup.scene.scene_dimension / 2.0
+    }
+
+    pub fn contains(&self, local: Vec3) -> bool {
+        self.setup.scene_contains(local)
+    }
+
+    /// Spawns `bundle` as a child of the billboard (at the root when there is none), so its
+    /// `Transform` is in billboard space
+    pub fn spawn(&self, commands: &mut Commands, bundle: impl Bundle) -> Entity {
+        let mut entity = commands.spawn(bundle);
+        if let Some(scene) = self.entity() {
+            entity.insert(ChildOf(scene));
+        }
+        entity.id()
+    }
+}
+
 impl SceneData {
     pub fn new(mouse_pos: Option<Vec3>) -> Self {
         SceneData { mouse_world_pos: mouse_pos }
@@ -303,19 +350,33 @@ impl SceneSetup {
     /// corner, (1, 1) the bottom-right.
     pub fn billboard_point(&self, uv: Vec2) -> Vec3 {
         let size = self.scene.scene_dimension;
-        let local = Vec3::new((uv.x - 0.5) * size.x, (0.5 - uv.y) * size.y, 0.0);
-        let origin = &self.scene.origin;
-        Mat4::from_scale_rotation_translation(origin.scale, origin.rotation, origin.translation).transform_point3(local)
+        self.scene_to_world(Vec3::new((uv.x - 0.5) * size.x, (0.5 - uv.y) * size.y, 0.0))
     }
 
     /// Billboard x, y (metres from the billboard centre) of a world point, projected onto the
     /// billboard plane.
     pub fn world_to_billboard(&self, world_pos: Vec3) -> Vec2 {
+        self.world_to_scene(world_pos).truncate()
+    }
+
+    /// Billboard space → world: scene-local metres from the billboard centre, z off its plane
+    pub fn scene_matrix(&self) -> Mat4 {
         let origin = &self.scene.origin;
         Mat4::from_scale_rotation_translation(origin.scale, origin.rotation, origin.translation)
-            .inverse()
-            .transform_point3(world_pos)
-            .truncate()
+    }
+
+    /// A world point in billboard space, keeping its distance off the plane in z
+    pub fn world_to_scene(&self, world_pos: Vec3) -> Vec3 {
+        self.scene_matrix().inverse().transform_point3(world_pos)
+    }
+
+    pub fn scene_to_world(&self, local: Vec3) -> Vec3 {
+        self.scene_matrix().transform_point3(local)
+    }
+
+    /// Whether a billboard-space point lies within the billboard's width and height
+    pub fn scene_contains(&self, local: Vec3) -> bool {
+        local.truncate().abs().cmple(self.scene.scene_dimension / 2.0).all()
     }
 
     /// [`projector_ndc`] for this setup's projector.
@@ -359,12 +420,10 @@ impl SceneSetup {
                 .looking_at(self.scene.origin.translation, Vec3::Y)
                 .rotation;
         }
-        let origin = &self.scene.origin;
-        let scene_transform = Mat4::from_scale_rotation_translation(origin.scale, origin.rotation, origin.translation);
         let half = self.scene.scene_dimension / 2.0;
         [(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)]
             .into_iter()
-            .map(|(sx, sy)| scene_transform.transform_point3(Vec3::new(sx * half.x, sy * half.y, 0.0)))
+            .map(|(sx, sy)| self.scene_to_world(Vec3::new(sx * half.x, sy * half.y, 0.0)))
             .map(|corner| projector_ndc(corner, &projector).map_or(f32::INFINITY, |ndc| ndc.abs().max_element()))
             .fold(0.0, f32::max)
     }

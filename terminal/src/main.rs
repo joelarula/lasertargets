@@ -1,78 +1,48 @@
-use std::env;
+//! The operator terminal: shows the scene and what the laser draws, mirrors the server's state,
+//! and sends the server input and edits.
+
+mod net;
+mod ui;
+mod view;
+
 use bevy::prelude::*;
+use bevy::window::PresentMode;
 use bevy_egui::EguiPlugin;
 use common::game::GameRegistryPlugin;
 use common::scene::SceneSetupPlugin;
-use common::state::{CalibrationState, ServerState, TerminalState};
-use hunter::terminal::HunterTerminalPlugin;
-
-mod plugins;
-mod util;
-use crate::plugins::game::GamePlugin;
-use crate::plugins::instructions::InstructionsPlugin;
-use crate::plugins::config::ConfigPlugin;
-use crate::plugins::camera::CameraPlugin;
-use crate::plugins::calibration::CalibrationPlugin;
-use crate::plugins::camera_calibration::CameraCalibrationPlugin as CameraCalibrationPanelPlugin;
-use crate::plugins::projector::ProjectorPlugin;
-use crate::plugins::scene::ScenePlugin;
-use crate::plugins::toolbar::ToolbarPlugin;
-use crate::plugins::settings::SettingsPlugin;
-use crate::plugins::network::NetworkPlugin;
-use crate::plugins::path::PathPlugin;
-use crate::plugins::keyboard::KeyboardPlugin;
-use crate::plugins::mouse::MousePlugin;
-use crate::plugins::editor::ShapeEditorPlugin;
-use crate::plugins::prompt::CuratorPromptPlugin;
-use hunter::common::HunterGamePlugin;
-use snake::common::SnakeGamePlugin;
-use snake::terminal::SnakeTerminalPlugin;
+use terminal_ui::ToolbarPlugin;
 
 fn main() {
-    util::setup_logging();
-    unsafe {
-        env::set_var("RUST_LOG", "debug");
-    }
-
-    let mut app = App::new();
-
-    app.add_plugins(
-        DefaultPlugins.set(WindowPlugin {
+    setup_logging();
+    App::new()
+        .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
-                title: "LaserTargets Server".to_string(),
-                present_mode: bevy::window::PresentMode::AutoNoVsync,
-                ..Default::default()
+                title: "LaserTargets Terminal".to_string(),
+                present_mode: PresentMode::AutoNoVsync,
+                ..default()
             }),
-            ..Default::default()
-        })
-    )
-    .init_state::<ServerState>()
-    .init_state::<CalibrationState>()
-    .init_state::<TerminalState>()
-    .add_plugins(NetworkPlugin)
-    .add_plugins(EguiPlugin::default())
-    .insert_resource(ClearColor(Color::BLACK))
-    .add_plugins(InstructionsPlugin)
-    .add_plugins(ConfigPlugin)
-    .add_plugins(SceneSetupPlugin)
-    .add_plugins(ScenePlugin)
-    .add_plugins(CameraPlugin)
-    .add_plugins(CalibrationPlugin)
-    .add_plugins(CameraCalibrationPanelPlugin)
-    .add_plugins(ProjectorPlugin)
-    .add_plugins(ToolbarPlugin)
-    .add_plugins(SettingsPlugin)
-    .add_plugins(ShapeEditorPlugin)
-    .add_plugins(CuratorPromptPlugin)
-    .add_plugins(PathPlugin)
-    .add_plugins(KeyboardPlugin)
-    .add_plugins(MousePlugin)
-    .add_plugins(GameRegistryPlugin)
-    .add_plugins(GamePlugin)
-    .add_plugins(HunterGamePlugin)
-    .add_plugins(HunterTerminalPlugin)
-    .add_plugins(SnakeGamePlugin)
-    .add_plugins(SnakeTerminalPlugin);
+            ..default()
+        }))
+        .insert_resource(ClearColor(Color::BLACK))
+        .add_plugins((EguiPlugin::default(), ToolbarPlugin, SceneSetupPlugin, GameRegistryPlugin))
+        // The connection plugin creates the server-driven states, so it comes before the games
+        .add_plugins((net::NetPlugin, view::ViewPlugin, ui::UiPlugin))
+        .add_plugins((
+            hunter::common::HunterGamePlugin,
+            hunter::terminal::HunterTerminalPlugin,
+            snake::common::SnakeGamePlugin,
+            snake::terminal::SnakeTerminalPlugin,
+        ))
+        .run();
+}
 
-    app.run();
+/// Colourised `log` output without timestamps or module paths
+fn setup_logging() {
+    use pretty_env_logger::env_logger::{Builder, Env, WriteStyle};
+    Builder::from_env(Env::default().filter_or("RUST_LOG", "info"))
+        .format_timestamp(None)
+        .format_module_path(false)
+        .format_target(false)
+        .write_style(WriteStyle::Always)
+        .init();
 }

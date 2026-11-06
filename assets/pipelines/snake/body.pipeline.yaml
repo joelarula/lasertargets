@@ -27,7 +27,11 @@ reactions:
   snake.gem_eaten:
     - envelope: { name: flash, decay_ms: 300 }
 
-  # Game over: self.dead rises from 0 to 1 over 2.4 s and stays there until the game resets
-  # and respawns the body, so the body shakes and dims.
+  # Game over: self.dead rises from 0 to 1 over 2.4 s and stays there until the next round
+  # starts, so the body shakes and dims.
   snake.game_over:
     - envelope: { name: dead, attack_ms: 2400, hold_ms: 60000, decay_ms: 0 }
+
+  # Next round: self.dead drops straight back to 0, so the body stops shaking and is bright again.
+  snake.restart:
+    - envelope: { name: dead, peak: 0.0, decay_ms: 0 }

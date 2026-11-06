@@ -1,63 +1,44 @@
-use bevy::asset::uuid::Uuid;
-use bevy::color::Color;
-use bevy::math::Vec3;
+use bevy::prelude::*;
 use common::path::UniversalPath;
-use common::scene::SceneSetup;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Points for popping a target
+pub const TARGET_REWARD: u32 = 10;
+
+/// How fast balloons rise, scene metres per second
+pub const BALLOON_RISE_SPEED: f32 = 0.3;
+
+/// Radius of the shot ripple's base circle (its pipeline grows it), scene metres
+pub const RIPPLE_RADIUS: f32 = 0.05;
+
+pub const HIT_COLOR: Color = Color::srgb(1.0, 0.95, 0.1);
+pub const MISS_COLOR: Color = Color::srgb(1.0, 0.1, 0.0);
+
+/// A target to spawn: its shape, radius in scene metres and colour
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum HunterTarget {
-    Basic(f32, Color),  // size
-    Baloon(f32, Color), // size
+    /// A circle that stays where it was placed
+    Basic(f32, Color),
+    /// A balloon that rises until shot or out of the scene
+    Balloon(f32, Color),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Hunter {
-    pub uuid: Uuid,
-    pub actor: Uuid,   
-    pub score: u32,
-    pub hits: Vec<Uuid>,
-}
+impl HunterTarget {
+    pub fn radius(self) -> f32 {
+        match self {
+            Self::Basic(radius, _) | Self::Balloon(radius, _) => radius,
+        }
+    }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Target {
-    pub name: String,
-    pub uuid: Uuid,
-    pub actor: Uuid,
-    pub lives: u8,   
-    pub reward: u32,
-    pub path: UniversalPath,
-}
+    pub fn is_balloon(self) -> bool {
+        matches!(self, Self::Balloon(..))
+    }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HunterGame {
-    pub game: Uuid,
-    pub controller: Uuid,
-    pub hunters: Vec<Hunter>,   
-    pub targets: Vec<Target>,  
-}
-
-/// Event tracking for targets (spawned or popped)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TargetEvent {
-    pub target_uuid: Uuid,
-    pub event_type: String, // "spawned" or "popped"
-    pub timestamp: f64,
-    pub position: Vec3,
-}
-
-/// Post-game report with analytics
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GameReport {
-    pub scene_setup: SceneSetup,
-    pub total_targets_spawned: u32,
-    pub total_targets_popped: u32,
-    pub total_misses: u32,
-    pub total_score: u32,
-    pub total_game_time: f64,
-    pub avg_spawn_interval: f64,
-    pub avg_target_lifetime: f64,
-    pub spawn_positions: Vec<Vec3>,
-    pub pop_positions: Vec<Vec3>,
-    pub timeline: Vec<TargetEvent>,
+    /// The outline the laser draws, centred on the target's position
+    pub fn path(self) -> UniversalPath {
+        match self {
+            Self::Basic(radius, color) => UniversalPath::circle(Vec2::ZERO, radius, color),
+            Self::Balloon(radius, color) => UniversalPath::balloon(Vec2::ZERO, radius, color),
+        }
+    }
 }

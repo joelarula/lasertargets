@@ -1,101 +1,64 @@
 use bevy::prelude::*;
 use common::pipeline::plugin::ReactiveAppExt;
-use common::state::ServerState;
+use common::state::{ServerState, SessionState};
 
-use crate::events::{BroadcastStatsUpdateEvent, HunterClickEvent};
-pub use crate::components::HunterTitleAnnouncement;
-pub use crate::events::SpawnHunterTargetEvent;
-pub use crate::resources::HunterTargetSelection;
-use crate::systems::collision::handle_hunter_clicks;
-use crate::systems::input::{handle_hunter_gamepad_inputs, handle_hunter_mouse_clicks};
-use crate::systems::lifecycle::{
-    forward_hunter_stats_to_network, handle_incoming_hunter_payloads, hunter_session_is_running,
-    reset_hunter_on_new_session, reset_hunter_session, save_hunter_report,
-};
-use crate::systems::movement::{check_balloon_out_of_bounds, update_balloon_positions};
-use crate::systems::render::{
-    animate_hunter_title_announcement,
-    spawn_hunter_title_on_session_start,
-};
-use crate::systems::spawn::{spawn_hunter_targets, update_target_spawn_immunity};
+use crate::audit::HunterGameStats;
+use crate::events::{HunterClickEvent, SpawnHunterTargetEvent};
+use crate::resources::HunterTargetSelection;
 use crate::systems::HunterSystemSet;
+use crate::systems::collision::resolve_shots;
+use crate::systems::input::{read_gamepad, read_mouse};
+use crate::systems::lifecycle::{
+    audit_pause, audit_setup, broadcast_tally, end_round, follow_sessions, forward_spawn_requests,
+};
+use crate::systems::movement::{release_escaped, rise_balloons};
+use crate::systems::spawn::{lift_spawn_immunity, spawn_targets};
+use crate::workflow::handle_hunter_phase_events;
 
+/// Server side of Hunter: the authoritative round and its audit log
 pub struct HunterGameServerPlugin;
 
 impl Plugin for HunterGameServerPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<HunterTargetSelection>();
-        app.embed_pipeline(include_str!("../../../assets/pipelines/hunter/ripple.pipeline.yaml"));
-        app.add_message::<SpawnHunterTargetEvent>();
-        app.add_message::<HunterClickEvent>();
-        app.add_message::<BroadcastStatsUpdateEvent>();
+        app.init_resource::<HunterTargetSelection>()
+            .add_message::<SpawnHunterTargetEvent>()
+            .add_message::<HunterClickEvent>()
+            .embed_pipeline(include_str!("../../../assets/pipelines/hunter/ripple.pipeline.yaml"))
+            .embed_pipeline(include_str!("../../../assets/pipelines/hunter/title.pipeline.yaml"));
 
-        // System sets configuration
-        app.configure_sets(
-            Update,
-            (
-                HunterSystemSet::Input,
-                HunterSystemSet::Spawn,
-                HunterSystemSet::Collision,
-                HunterSystemSet::Render,
-                HunterSystemSet::Lifecycle,
-            )
-                .run_if(in_state(ServerState::Session))
-                .run_if(hunter_session_is_running),
-        );
+        use HunterSystemSet::*;
+        app.configure_sets(Update, (Lifecycle, Input, Spawn, Collision, Output).chain());
+        app.configure_sets(Update, (Input, Spawn, Collision).run_if(round_running));
+        app.configure_sets(Update, Output.run_if(resource_exists::<HunterGameStats>));
 
         app.add_systems(
             Update,
             (
-                (handle_hunter_gamepad_inputs, handle_hunter_mouse_clicks).in_set(HunterSystemSet::Input),
-                (spawn_hunter_targets, update_target_spawn_immunity).in_set(HunterSystemSet::Spawn),
-                handle_hunter_clicks.in_set(HunterSystemSet::Collision),
-                check_balloon_out_of_bounds.in_set(HunterSystemSet::Render),
-                (forward_hunter_stats_to_network, handle_incoming_hunter_payloads).in_set(HunterSystemSet::Lifecycle),
+                (
+                    follow_sessions,
+                    (audit_setup, audit_pause).run_if(resource_exists::<HunterGameStats>),
+                    handle_hunter_phase_events,
+                )
+                    .chain()
+                    .in_set(Lifecycle),
+                (
+                    // Shares the pad with calibration: see gamepad::Btn::is_for_game
+                    read_gamepad,
+                    read_mouse,
+                    forward_spawn_requests,
+                )
+                    .in_set(Input),
+                (spawn_targets, lift_spawn_immunity).chain().in_set(Spawn),
+                (resolve_shots, release_escaped).chain().in_set(Collision),
+                broadcast_tally.in_set(Output),
             ),
         );
-
-        app.add_systems(
-            FixedUpdate,
-            update_balloon_positions
-                .in_set(HunterSystemSet::Movement)
-                .run_if(in_state(ServerState::Session))
-                .run_if(hunter_session_is_running),
-        );
-
-        app.add_systems(
-            OnExit(ServerState::Session),
-            (save_hunter_report, reset_hunter_session).chain(),
-        );
-
-        app.add_systems(
-            Update,
-            (
-                reset_hunter_on_new_session,
-                spawn_hunter_title_on_session_start,
-                animate_hunter_title_announcement,
-                spawn_hunter_workflow_on_session_start,
-                crate::workflow::handle_hunter_phase_events,
-            ),
-        );
+        app.add_systems(FixedUpdate, rise_balloons.run_if(round_running));
+        app.add_systems(OnExit(ServerState::Session), end_round);
     }
 }
 
-fn spawn_hunter_workflow_on_session_start(
-    mut commands: Commands,
-    mut created_events: MessageReader<common::game::GameSessionCreated>,
-    existing_workflows: Query<&common::curator_core::WorkflowInstance>,
-) {
-    use common::curator_core::CuratorCommandsExt;
-    for event in created_events.read() {
-        if event.game_session.game_id != crate::common::GAME_ID {
-            continue;
-        }
-        let session_id = event.game_session.session_id;
-        let already_running = existing_workflows.iter().any(|w| w.session_id == Some(session_id) && w.status == common::curator_core::WorkflowStatus::Running);
-        if !already_running {
-            info!("[HunterServer] Launching declarative Curator workflow for session {}", session_id);
-            commands.spawn_workflow_with_session(session_id, crate::workflow::build_hunter_workflow(session_id));
-        }
-    }
+/// A round exists and its session is active (not paused or finished)
+fn round_running(stats: Option<Res<HunterGameStats>>, session: Option<Res<State<SessionState>>>) -> bool {
+    stats.is_some() && session.is_some_and(|s| *s.get() == SessionState::Active)
 }

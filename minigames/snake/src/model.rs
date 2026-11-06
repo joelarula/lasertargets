@@ -3,4 +3,5 @@
 pub use crate::components::*;
 pub use crate::events::*;
 pub use crate::resources::*;
+pub use crate::rules::*;
 pub use crate::types::*;

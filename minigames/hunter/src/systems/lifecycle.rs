@@ -1,196 +1,143 @@
+use bevy::asset::uuid::Uuid;
 use bevy::prelude::*;
-use common::game::{GameSession, GameSessionCreated, ExitGameEvent};
+use common::curator_core::{CuratorCommandsExt, CuratorEventEnvelope, WorkflowInstance, WorkflowStatus};
+use common::game::{ExitGameEvent, GameSessionCreated, GameSessionUpdate};
 use common::scene::SceneSetup;
 use common::state::SessionState;
 
-use crate::common::{GAME_ID, generate_game_report};
-use crate::components::{CollisionIndicator, HunterTargetEntity, HunterTitleAnnouncement};
+use crate::audit::{HunterAuditEvent, GameReport, HunterGameStats};
+use crate::common::GAME_ID;
+use crate::components::HunterEntity;
 use crate::events::{BroadcastStatsUpdateEvent, SpawnHunterTargetEvent};
-use crate::resources::HunterGameStats;
-use crate::types::GameReport;
+use crate::workflow::build_hunter_workflow;
 
-pub fn hunter_session_is_running(game_sessions: Query<&GameSession>) -> bool {
-    game_sessions
-        .iter()
-        .any(|session| session.game_id == GAME_ID && session.state == SessionState::Active)
-}
-
-pub fn reset_hunter_session(
+/// A hunter session becoming active starts a round with a fresh audit log; a session of another
+/// game, or exiting this one, ends it (saving the report)
+pub fn follow_sessions(
     mut commands: Commands,
-    targets: Query<Entity, With<HunterTargetEntity>>,
-    indicators: Query<Entity, With<CollisionIndicator>>,
-    titles: Query<Entity, With<HunterTitleAnnouncement>>,
-    stats: Option<ResMut<HunterGameStats>>,
-) {
-    for entity in targets.iter() {
-        commands.entity(entity).despawn();
-    }
-    for entity in indicators.iter() {
-        commands.entity(entity).despawn();
-    }
-    for entity in titles.iter() {
-        commands.entity(entity).despawn();
-    }
-
-    if stats.is_some() {
-        commands.remove_resource::<HunterGameStats>();
-    }
-}
-
-pub fn reset_hunter_on_new_session(
-    mut commands: Commands,
-    mut created_events: MessageReader<GameSessionCreated>,
-    mut exit_events: MessageReader<ExitGameEvent>,
-    targets: Query<Entity, With<HunterTargetEntity>>,
-    indicators: Query<Entity, With<CollisionIndicator>>,
-    titles: Query<Entity, With<HunterTitleAnnouncement>>,
-    stats: Option<ResMut<HunterGameStats>>,
-) {
-    let mut should_cleanup = false;
-    for _ in created_events.read() {
-        should_cleanup = true;
-    }
-    for _ in exit_events.read() {
-        should_cleanup = true;
-    }
-
-    if should_cleanup {
-        for entity in targets.iter() {
-            commands.entity(entity).despawn();
-        }
-        for entity in indicators.iter() {
-            commands.entity(entity).despawn();
-        }
-        for entity in titles.iter() {
-            commands.entity(entity).despawn();
-        }
-
-        if stats.is_some() {
-            commands.remove_resource::<HunterGameStats>();
-        }
-    }
-}
-
-pub fn save_hunter_report(
+    mut created: MessageReader<GameSessionCreated>,
+    mut updated: MessageReader<GameSessionUpdate>,
+    mut exits: MessageReader<ExitGameEvent>,
     stats: Option<Res<HunterGameStats>>,
+    entities: Query<Entity, With<HunterEntity>>,
+    workflows: Query<&WorkflowInstance>,
+    setup: Res<SceneSetup>,
     time: Res<Time>,
-    scene_setup: Res<SceneSetup>,
 ) {
-    let Some(stats) = stats else { return; };
+    let current = stats.as_ref().map(|s| s.session_id);
+    let is_active_hunter =
+        |s: &common::game::GameSession| s.game_id == GAME_ID && s.state == SessionState::Active;
+    let (mut start, mut end, mut new_workflow) = (None, false, false);
 
-    let report = generate_game_report(&stats, time.elapsed_secs_f64(), &scene_setup);
-    let text = format_report_text(&report);
+    for session in created.read().map(|e| &e.game_session) {
+        start = is_active_hunter(session).then_some(session.session_id);
+        new_workflow = start.is_some();
+        end = start.is_none();
+    }
+    for session in updated.read().map(|e| &e.game_session) {
+        if is_active_hunter(session) && current != Some(session.session_id) {
+            start = Some(session.session_id);
+        }
+    }
+    end |= exits.read().any(|e| Some(e.game_session_uuid) == current);
 
-    let session_id = stats.session_id;
-    let stats_dir = format!("stats/hunter/{}", session_id);
-
-    if let Err(e) = std::fs::create_dir_all(&stats_dir) {
-        warn!("Failed to create stats directory {}: {}", stats_dir, e);
+    if start.is_none() && !end {
         return;
     }
-
-    let md_path = format!("{}/report.md", stats_dir);
-    match std::fs::write(&md_path, &text) {
-        Ok(_) => info!("Hunter game report saved to {}", md_path),
-        Err(e) => warn!("Failed to save hunter markdown report {}: {}", md_path, e),
+    let now = time.elapsed_secs_f64();
+    if let Some(stats) = stats {
+        finish_round(&mut commands, &stats, now, &entities);
     }
+    let Some(session_id) = start else { return };
 
-    let json_path = format!("{}/report.json", stats_dir);
-    match serde_json::to_string_pretty(&report) {
-        Ok(json) => match std::fs::write(&json_path, &json) {
-            Ok(_) => info!("Hunter game report (JSON) saved to {}", json_path),
-            Err(e) => warn!("Failed to save hunter JSON report {}: {}", json_path, e),
-        },
-        Err(e) => warn!("Failed to serialize hunter report to JSON: {}", e),
+    let mut stats = HunterGameStats::new(session_id, now);
+    stats.note_setup(now, &setup);
+    commands.insert_resource(stats);
+    info!("[Hunter] Round started for session {session_id}");
+
+    let running = workflows
+        .iter()
+        .any(|w| w.session_id == Some(session_id) && w.status == WorkflowStatus::Running);
+    if new_workflow && !running {
+        commands.spawn_workflow_with_session(session_id, build_hunter_workflow(session_id));
     }
 }
 
-fn format_report_text(report: &GameReport) -> String {
-    use std::fmt::Write;
-    let mut s = String::new();
-
-    writeln!(s, "# Hunter Game Report").unwrap();
-    writeln!(s).unwrap();
-
-    writeln!(s, "## Configuration").unwrap();
-    let scene = &report.scene_setup.scene;
-    writeln!(s, "### Scene").unwrap();
-    writeln!(s, "- **Dimensions**: {} x {}", scene.scene_dimension.x, scene.scene_dimension.y).unwrap();
-    writeln!(s, "- **Origin**: ({:.3}, {:.3}, {:.3})",
-        scene.origin.translation.x, scene.origin.translation.y, scene.origin.translation.z).unwrap();
-    writeln!(s, "- **Rotation**: ({:.3}, {:.3}, {:.3}, {:.3})",
-        scene.origin.rotation.x, scene.origin.rotation.y, scene.origin.rotation.z, scene.origin.rotation.w).unwrap();
-    writeln!(s, "- **Y Difference**: {:.3}", scene.y_difference).unwrap();
-
-    let camera = &report.scene_setup.camera;
-    writeln!(s, "### Camera").unwrap();
-    writeln!(s, "- **Resolution**: {} x {}", camera.resolution.x, camera.resolution.y).unwrap();
-    writeln!(s, "- **Position**: ({:.3}, {:.3}, {:.3})",
-        camera.origin.translation.x, camera.origin.translation.y, camera.origin.translation.z).unwrap();
-    writeln!(s, "- **FOV**: {:.1} deg", camera.angle).unwrap();
-    writeln!(s, "- **Locked to Scene**: {}", camera.locked_to_scene).unwrap();
-
-    let proj = &report.scene_setup.projector;
-    writeln!(s, "### Projector").unwrap();
-    writeln!(s, "- **Resolution**: {} x {}", proj.resolution.x, proj.resolution.y).unwrap();
-    writeln!(s, "- **Position**: ({:.3}, {:.3}, {:.3})",
-        proj.origin.translation.x, proj.origin.translation.y, proj.origin.translation.z).unwrap();
-    writeln!(s, "- **Angle**: {:.1} deg", proj.angle).unwrap();
-    writeln!(s, "- **Enabled**: {}", proj.switched_on).unwrap();
-    writeln!(s, "- **Connected**: {}", proj.connected).unwrap();
-    writeln!(s, "- **Locked to Scene**: {}", proj.locked_to_scene).unwrap();
-
-    writeln!(s).unwrap();
-    writeln!(s, "## Statistics").unwrap();
-    writeln!(s, "- **Game Duration**: {:.2}s", report.total_game_time).unwrap();
-    writeln!(s, "- **Targets Spawned**: {}", report.total_targets_spawned).unwrap();
-    writeln!(s, "- **Targets Popped**: {}", report.total_targets_popped).unwrap();
-    writeln!(s, "- **Misses**: {}", report.total_misses).unwrap();
-    writeln!(s, "- **Score**: {}", report.total_score).unwrap();
-    writeln!(s, "- **Avg Spawn Interval**: {:.2}s", report.avg_spawn_interval).unwrap();
-    writeln!(s, "- **Avg Target Lifetime**: {:.2}s", report.avg_target_lifetime).unwrap();
-
-    writeln!(s).unwrap();
-    writeln!(s, "## Event Timeline (scene coordinates)").unwrap();
-    writeln!(s, "| Timestamp | Event | Target UUID | Position |").unwrap();
-    writeln!(s, "|-----------|-------|-------------|----------|").unwrap();
-    for event in &report.timeline {
-        writeln!(s, "| {:.2}s | {} | {} | ({:.3}, {:.3}, {:.3}) |",
-            event.timestamp,
-            event.event_type,
-            event.target_uuid,
-            event.position.x,
-            event.position.y,
-            event.position.z,
-        ).unwrap();
-    }
-
-    writeln!(s).unwrap();
-    writeln!(s, "---").unwrap();
-    s
-}
-
-pub fn forward_hunter_stats_to_network(
-    mut events: MessageReader<BroadcastStatsUpdateEvent>,
-    mut envelope_writer: MessageWriter<common::curator_core::CuratorEventEnvelope>,
+/// The server left the session: save the report and clear the round
+pub fn end_round(
+    mut commands: Commands,
+    stats: Option<Res<HunterGameStats>>,
+    entities: Query<Entity, With<HunterEntity>>,
+    time: Res<Time>,
 ) {
-    for event in events.read() {
-        envelope_writer.write(common::curator_core::CuratorEventEnvelope::from_payload(
-            event,
-            Some(event.session_id),
-        ));
+    if let Some(stats) = stats {
+        finish_round(&mut commands, &stats, time.elapsed_secs_f64(), &entities);
     }
 }
 
-pub fn handle_incoming_hunter_payloads(
-    mut envelopes: MessageReader<common::curator_core::CuratorEventEnvelope>,
-    mut spawn_events: MessageWriter<SpawnHunterTargetEvent>,
+fn finish_round(
+    commands: &mut Commands,
+    stats: &HunterGameStats,
+    now: f64,
+    entities: &Query<Entity, With<HunterEntity>>,
 ) {
-    for env in envelopes.read() {
-        if env.is::<SpawnHunterTargetEvent>() {
-            if let Ok(event) = env.downcast::<SpawnHunterTargetEvent>() {
-                spawn_events.write(event);
-            }
-        }
+    let report = GameReport::new(stats, now);
+    match report.save() {
+        Ok(dir) => info!("[Hunter] Report for session {} saved to {}", stats.session_id, dir.display()),
+        Err(e) => warn!("[Hunter] Could not save report for session {}: {e}", stats.session_id),
     }
+    for entity in entities {
+        commands.entity(entity).despawn();
+    }
+    commands.remove_resource::<HunterGameStats>();
+}
+
+/// Logs scene, camera and projector changes so every later event can be read against the setup
+/// that was in effect
+pub fn audit_setup(mut stats: ResMut<HunterGameStats>, setup: Res<SceneSetup>, time: Res<Time>) {
+    if setup.is_changed() {
+        stats.note_setup(time.elapsed_secs_f64(), &setup);
+    }
+}
+
+/// Logs pauses and resumes of the session
+pub fn audit_pause(
+    mut stats: ResMut<HunterGameStats>,
+    session: Option<Res<State<SessionState>>>,
+    mut last: Local<Option<(Uuid, SessionState)>>,
+    time: Res<Time>,
+) {
+    let Some(state) = session.map(|s| s.get().clone()) else { return };
+    let previous = last.replace((stats.session_id, state.clone()));
+    let event = match (previous, &state) {
+        (Some((id, SessionState::Active)), SessionState::Paused) if id == stats.session_id => HunterAuditEvent::Paused,
+        (Some((id, SessionState::Paused)), SessionState::Active) if id == stats.session_id => HunterAuditEvent::Resumed,
+        _ => return,
+    };
+    stats.record(time.elapsed_secs_f64(), event);
+}
+
+/// Sends the tally to terminals whenever it changes
+pub fn broadcast_tally(
+    stats: Res<HunterGameStats>,
+    mut last: Local<Option<BroadcastStatsUpdateEvent>>,
+    mut envelopes: MessageWriter<CuratorEventEnvelope>,
+) {
+    let update = BroadcastStatsUpdateEvent { session_id: stats.session_id, tally: stats.tally };
+    if last.replace(update) != Some(update) {
+        envelopes.write(CuratorEventEnvelope::from_payload(&update, Some(update.session_id)));
+    }
+}
+
+/// Spawn requests arriving from terminals as curator envelopes
+pub fn forward_spawn_requests(
+    mut envelopes: MessageReader<CuratorEventEnvelope>,
+    mut spawns: MessageWriter<SpawnHunterTargetEvent>,
+) {
+    spawns.write_batch(
+        envelopes
+            .read()
+            .filter(|env| env.is::<SpawnHunterTargetEvent>())
+            .filter_map(|env| env.downcast::<SpawnHunterTargetEvent>().ok()),
+    );
 }

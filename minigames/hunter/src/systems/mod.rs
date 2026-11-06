@@ -7,13 +7,14 @@ pub mod movement;
 pub mod render;
 pub mod spawn;
 
-/// System sets for explicit execution ordering of the Hunter minigame
+/// Order of the Hunter server systems within a frame
 #[derive(SystemSet, Debug, Hash, PartialEq, Eq, Clone)]
 pub enum HunterSystemSet {
+    /// Sessions, setup changes, pauses
+    Lifecycle,
     Input,
     Spawn,
-    Movement,
     Collision,
-    Render,
-    Lifecycle,
+    /// Tally broadcast to terminals
+    Output,
 }

@@ -11,8 +11,8 @@ pub struct ChangeSnakeDirectionEvent {
     pub direction: SnakeDirection,
 }
 
-/// Raised on server to broadcast stats to terminal
-#[derive(Message, Debug, Clone, Serialize, Deserialize)]
+/// Stats the server sends to terminals (curator envelope `snake_stats`) whenever they change
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct BroadcastSnakeStatsEvent {
     pub session_id: Uuid,
     pub score: u32,
@@ -26,7 +26,7 @@ impl CuratorPayload for BroadcastSnakeStatsEvent {
     }
 }
 
-/// Raised on server when game ends
+/// Raised on server when a round ends; pipelines react to it as `snake.game_over`
 #[derive(Message, Debug, Clone, Serialize, Deserialize)]
 pub struct SnakeGameOverEvent {
     pub session_id: Uuid,
@@ -44,4 +44,11 @@ impl CuratorPayload for SnakeGameOverEvent {
 pub struct SnakeGemEatenEvent {
     pub session_id: Uuid,
     pub gems_eaten: u32,
+}
+
+/// Raised on server when a new round starts after GAME OVER; pipelines react to it as
+/// `snake.restart` (clearing their game-over look)
+#[derive(Message, Debug, Clone, Serialize, Deserialize)]
+pub struct SnakeRestartEvent {
+    pub session_id: Uuid,
 }

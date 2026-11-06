@@ -5,11 +5,15 @@ pub mod lifecycle;
 pub mod movement;
 pub mod render;
 
-/// System sets for explicit execution ordering of the Snake minigame
+/// Server-side order of the Snake minigame within a frame (chained, before the pipelines run)
 #[derive(SystemSet, Debug, Hash, PartialEq, Eq, Clone)]
 pub enum SnakeSystemSet {
-    Input,
-    Movement,
-    Render,
+    /// Start and stop games as sessions come and go
     Lifecycle,
+    /// Keys and gamepad become direction changes
+    Input,
+    /// Move the snake; end and restart rounds
+    Movement,
+    /// Write base shapes, signals and stats from the state
+    Output,
 }

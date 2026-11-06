@@ -1,209 +1,139 @@
+use bevy::asset::uuid::Uuid;
 use bevy::prelude::*;
-use common::scene::{SceneEntity, SceneSetup};
+use common::curator_core::CuratorEventEnvelope;
+use common::game::{GameSessionCreated, GameSessionUpdate};
+use common::scene::SceneSetup;
 use common::state::SessionState;
 
-use crate::components::*;
+use crate::common::SnakePhase;
+use crate::components::SnakeEntity;
 use crate::events::{BroadcastSnakeStatsEvent, SnakeGameOverEvent};
-use crate::resources::{SnakeMoveTimer, SnakeState};
-use crate::systems::render::{
-    random_color, random_gem_position, spawn_gem_entity, spawn_head_entity,
-    spawn_snake_body_entity, spawn_snake_title_entity,
-};
-use crate::types::{CELL_SIZE, GAME_ID, INITIAL_TICK_INTERVAL, SnakeDirection};
+use crate::resources::{SnakeMoveTimer, SnakeRestartTimer};
+use crate::rules::{Grid, SnakeState};
+use crate::systems::render::{SceneRoot, spawn_announcement, spawn_parts};
+use crate::types::GAME_ID;
 
-/// Initialise the snake game when a new session with our game_id is created
-pub fn init_snake_game(
+/// Starts a game when a snake session becomes active (or is updated to active with no game
+/// running), and stops it when a session of another game starts
+pub fn follow_sessions(
     mut commands: Commands,
-    mut created_events: MessageReader<common::game::GameSessionCreated>,
-    mut update_events: MessageReader<common::game::GameSessionUpdate>,
-    existing_state: Option<Res<SnakeState>>,
+    mut created: MessageReader<GameSessionCreated>,
+    mut updated: MessageReader<GameSessionUpdate>,
+    running: Option<Res<SnakeState>>,
     scene_setup: Res<SceneSetup>,
-    scene_query: Query<Entity, With<SceneEntity>>,
-    head_query: Query<Entity, With<SnakeHead>>,
-    seg_query: Query<Entity, With<SnakeSegment>>,
-    gem_query: Query<Entity, With<DiamondFood>>,
-    title_query: Query<Entity, With<SnakeTitleAnnouncement>>,
-    border_query: Query<Entity, With<SnakeBorder>>,
-    mut stats_events: MessageWriter<BroadcastSnakeStatsEvent>,
+    scene: SceneRoot,
+    existing: Query<Entity, With<SnakeEntity>>,
+    mut next_phase: ResMut<NextState<SnakePhase>>,
 ) {
-    let mut should_init: Option<bevy::asset::uuid::Uuid> = None;
-    let mut other_game_started = false;
-
-    for event in created_events.read() {
-        if event.game_session.game_id == GAME_ID && event.game_session.state == SessionState::Active {
-            should_init = Some(event.game_session.session_id);
-        } else {
-            other_game_started = true;
+    let is_active_snake = |session: &common::session::Session| {
+        session.game_id == GAME_ID && session.state == SessionState::Active
+    };
+    let mut start = None;
+    let mut stop = false;
+    for session in created.read().map(|e| &e.game_session) {
+        start = is_active_snake(session).then_some(session.session_id);
+        stop = start.is_none();
+    }
+    for session in updated.read().map(|e| &e.game_session) {
+        if is_active_snake(session) && running.is_none() {
+            start = Some(session.session_id);
         }
     }
-    for event in update_events.read() {
-        if event.game_session.game_id == GAME_ID && event.game_session.state == SessionState::Active && existing_state.is_none() {
-            should_init = Some(event.game_session.session_id);
-        }
-    }
 
-    if other_game_started {
-        for e in head_query
-            .iter()
-            .chain(seg_query.iter())
-            .chain(gem_query.iter())
-            .chain(title_query.iter())
-            .chain(border_query.iter())
-        {
-            if let Ok(mut entity_cmds) = commands.get_entity(e) {
-                entity_cmds.despawn();
+    match start {
+        Some(session_id) => {
+            for entity in &existing {
+                commands.entity(entity).despawn();
             }
+            start_game(&mut commands, session_id, &scene_setup, scene.map(|s| *s));
+            next_phase.set(SnakePhase::Waiting);
         }
-        if existing_state.is_some() {
-            commands.remove_resource::<SnakeState>();
-        }
+        None if stop => next_phase.set(SnakePhase::Off),
+        None => {}
     }
-
-    let Some(session_id) = should_init else {
-        return;
-    };
-
-    for e in head_query
-        .iter()
-        .chain(seg_query.iter())
-        .chain(gem_query.iter())
-        .chain(title_query.iter())
-    {
-        if let Ok(mut entity_cmds) = commands.get_entity(e) {
-            entity_cmds.despawn();
-        }
-    }
-
-    let dim = scene_setup.scene.scene_dimension;
-    let grid_w = ((dim.x as f32 / CELL_SIZE).floor() as i32).max(4);
-    let grid_h = ((dim.y as f32 / CELL_SIZE).floor() as i32).max(4);
-    let start = IVec2::new(grid_w / 2, grid_h / 2);
-
-    let mut state = SnakeState {
-        segments: vec![
-            start,
-            start + IVec2::new(-1, 0),
-            start + IVec2::new(-2, 0),
-        ],
-        segment_colors: vec![
-            (1.0, 1.0, 1.0),
-            (0.6, 0.6, 0.6),
-            (0.6, 0.6, 0.6),
-        ],
-        direction: SnakeDirection::Right,
-        queued_direction: None,
-        gem_position: IVec2::ZERO,
-        gem_color: (0.0, 0.0, 0.0),
-        gems_eaten: 0,
-        pending_growth: 0,
-        grid_w,
-        grid_h,
-        session_id,
-        is_started: false,
-        game_over: false,
-        game_over_reset_timer: None,
-    };
-
-    state.gem_position = random_gem_position(&state);
-    let gc = random_color();
-    state.gem_color = gc;
-
-    let scene_entity = scene_query.single().ok();
-    spawn_head_entity(&mut commands, &state, scene_entity);
-    spawn_snake_body_entity(&mut commands, &state, scene_entity);
-    spawn_gem_entity(&mut commands, &state, scene_entity);
-    spawn_snake_title_entity(&mut commands, &scene_setup, scene_entity);
-
-    commands.insert_resource(state.clone());
-    commands.insert_resource(SnakeMoveTimer::new(INITIAL_TICK_INTERVAL));
-
-    stats_events.write(BroadcastSnakeStatsEvent {
-        session_id,
-        score: 0,
-        length: 3,
-        game_over: false,
-    });
-
-    info!("Snake game initialized: {}x{} grid, session {}", grid_w, grid_h, session_id);
 }
 
-pub fn handle_snake_game_over(
-    mut game_over_events: MessageReader<SnakeGameOverEvent>,
+fn start_game(
+    commands: &mut Commands,
+    session_id: Uuid,
+    scene_setup: &SceneSetup,
+    scene: Option<Entity>,
 ) {
-    for event in game_over_events.read() {
-        info!("Snake game over event received. Final score: {}", event.final_score);
-    }
+    let state = SnakeState::new(session_id, Grid::fitting(scene_setup.scene.scene_dimension));
+    spawn_parts(commands, &state, scene);
+    spawn_announcement(
+        commands,
+        scene_setup,
+        scene,
+        "SNAKE",
+        Color::srgb(0.2, 1.0, 0.4),
+        "snake/title",
+    );
+    info!(
+        "Snake game initialized: {} grid, session {}",
+        state.grid.size, session_id
+    );
+    commands.insert_resource(SnakeMoveTimer::new(state.move_interval()));
+    commands.insert_resource(state);
 }
 
-pub fn cleanup_snake_game(
+/// Ends the game when the server leaves the session
+pub fn stop_game(mut next_phase: ResMut<NextState<SnakePhase>>) {
+    next_phase.set(SnakePhase::Off);
+}
+
+/// [`SnakePhase::Off`]: everything the game spawned or inserted goes
+pub fn clear_game(mut commands: Commands, entities: Query<Entity, With<SnakeEntity>>) {
+    for entity in &entities {
+        commands.entity(entity).despawn();
+    }
+    commands.remove_resource::<SnakeState>();
+    commands.remove_resource::<SnakeMoveTimer>();
+    commands.remove_resource::<SnakeRestartTimer>();
+}
+
+/// [`SnakePhase::GameOver`]: GAME OVER text, the event pipelines react to, and the restart countdown
+pub fn announce_game_over(
     mut commands: Commands,
-    head_query: Query<Entity, With<SnakeHead>>,
-    seg_query: Query<Entity, With<SnakeSegment>>,
-    gem_query: Query<Entity, With<DiamondFood>>,
-    title_query: Query<Entity, With<SnakeTitleAnnouncement>>,
-    state: Option<Res<SnakeState>>,
-    timer: Option<Res<SnakeMoveTimer>>,
+    state: Res<SnakeState>,
+    scene_setup: Res<SceneSetup>,
+    scene: SceneRoot,
+    mut game_over: MessageWriter<SnakeGameOverEvent>,
 ) {
-    for e in head_query.iter().chain(seg_query.iter()).chain(gem_query.iter()).chain(title_query.iter()) {
-        if let Ok(mut entity_cmds) = commands.get_entity(e) {
-            entity_cmds.despawn();
-        }
-    }
-    if state.is_some() {
-        commands.remove_resource::<SnakeState>();
-    }
-    if timer.is_some() {
-        commands.remove_resource::<SnakeMoveTimer>();
-    }
-    info!("Snake game cleaned up");
+    info!("★ [Snake] Game over! Score: {}", state.gems_eaten);
+    spawn_announcement(
+        &mut commands,
+        &scene_setup,
+        scene.map(|s| *s),
+        "GAME OVER",
+        Color::srgb(1.0, 0.2, 0.2),
+        "snake/game_over",
+    );
+    game_over.write(SnakeGameOverEvent {
+        session_id: state.session_id,
+        final_score: state.gems_eaten,
+    });
+    commands.insert_resource(SnakeRestartTimer::default());
 }
 
-pub fn save_snake_report(
-    state: Option<Res<SnakeState>>,
+/// Sends score, length and game over to terminals whenever one of them changes
+pub fn broadcast_stats(
+    state: Res<SnakeState>,
+    phase: Res<State<SnakePhase>>,
+    mut last: Local<Option<BroadcastSnakeStatsEvent>>,
+    mut envelopes: MessageWriter<CuratorEventEnvelope>,
 ) {
-    let Some(state) = state else { return; };
-
-    let session_id = state.session_id;
-    let stats_dir = format!("stats/snake/{}", session_id);
-
-    if let Err(e) = std::fs::create_dir_all(&stats_dir) {
-        warn!("Failed to create snake stats directory {}: {}", stats_dir, e);
-        return;
-    }
-
-    let mut text = String::new();
-    text.push_str("# Snake Game Report\n\n");
-    text.push_str(&format!("- **Session ID**: {}\n", session_id));
-    text.push_str(&format!("- **Final Score (Gems Eaten)**: {}\n", state.gems_eaten));
-    text.push_str(&format!("- **Final Length**: {}\n", state.segments.len()));
-    text.push_str(&format!("- **Grid Dimensions**: {}x{}\n", state.grid_w, state.grid_h));
-    text.push_str(&format!("- **Game Over State**: {}\n", state.game_over));
-    text.push_str("\n---");
-
-    let md_path = format!("{}/report.md", stats_dir);
-    match std::fs::write(&md_path, &text) {
-        Ok(_) => info!("Snake game report saved to {}", md_path),
-        Err(e) => warn!("Failed to save snake markdown report {}: {}", md_path, e),
-    }
-
-    let json_path = format!("{}/report.json", stats_dir);
-    match serde_json::to_string_pretty(&*state) {
-        Ok(json) => match std::fs::write(&json_path, &json) {
-            Ok(_) => info!("Snake game report (JSON) saved to {}", json_path),
-            Err(e) => warn!("Failed to save snake JSON report {}: {}", json_path, e),
-        },
-        Err(e) => warn!("Failed to serialize snake state to JSON: {}", e),
-    }
-}
-
-pub fn forward_snake_stats_to_network(
-    mut events: MessageReader<BroadcastSnakeStatsEvent>,
-    mut envelope_writer: MessageWriter<common::curator_core::CuratorEventEnvelope>,
-) {
-    for event in events.read() {
-        envelope_writer.write(common::curator_core::CuratorEventEnvelope::from_payload(
-            event,
-            Some(event.session_id),
+    let stats = BroadcastSnakeStatsEvent {
+        session_id: state.session_id,
+        score: state.gems_eaten,
+        length: state.length(),
+        game_over: *phase.get() == SnakePhase::GameOver,
+    };
+    if last.as_ref() != Some(&stats) {
+        envelopes.write(CuratorEventEnvelope::from_payload(
+            &stats,
+            Some(stats.session_id),
         ));
+        *last = Some(stats);
     }
 }

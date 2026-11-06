@@ -24,6 +24,12 @@ impl Default for ConfigTransform {
     }
 }
 
+impl ConfigTransform {
+    pub fn transform(&self) -> Transform {
+        Transform { translation: self.translation, rotation: self.rotation, scale: self.scale }
+    }
+}
+
 /// The billboard: the physical canvas on the wall the laser draws on (size and pose).
 #[derive(Resource, Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SceneConfiguration {

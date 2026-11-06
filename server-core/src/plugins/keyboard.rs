@@ -1,7 +1,8 @@
 //! Keyboard control for the headless server.
 //!
-//! Keys from every source go through the shared key map ([`common::calibration::ControlKey`])
-//! and become [`CalibrationAction`]s:
+//! Keys from every source go through the shared key map ([`common::calibration::ControlKey`]) and
+//! [`ControlKey::route`]: [`CalibrationAction`]s while calibration is on (the calibration and laser
+//! toggles always), [`GameKeyPressed`] for the running game otherwise. Sources:
 //! - keys forwarded by terminals (`KeyboardInputEvent`), always on
 //! - the server's own console ([`ConsoleKeyboardPlugin`]), when stdin is an interactive terminal;
 //!   Ctrl+C quits there. The console mouse acts as an actor mouse: the console window maps onto
@@ -9,9 +10,10 @@
 
 use bevy::prelude::*;
 use bevy_quinnet::server::ConnectionLostEvent;
-use common::calibration::{CalibrationAction, ControlKey, KEY_HELP};
+use common::calibration::{CalibrationAction, ControlKey, GameKeyPressed, KeyRoute, KEY_HELP};
 use common::network::{KeyboardInputEvent, MouseButtonInputEvent, MousePositionEvent};
 use common::scene::SceneSetup;
+use common::state::CalibrationState;
 use std::collections::{HashMap, HashSet};
 use std::io::IsTerminal;
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -29,7 +31,7 @@ pub struct KeyboardControlPlugin;
 
 impl Plugin for KeyboardControlPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(PreUpdate, handle_terminal_keys);
+        app.add_message::<GameKeyPressed>().add_systems(PreUpdate, handle_terminal_keys);
     }
 }
 
@@ -44,9 +46,12 @@ fn handle_terminal_keys(
     mut key_events: MessageReader<KeyboardInputEvent>,
     mut connection_lost: MessageReader<ConnectionLostEvent>,
     mut keys: Local<TerminalKeys>,
+    calibration: Option<Res<State<CalibrationState>>>,
     mut actions: MessageWriter<CalibrationAction>,
+    mut game_keys: MessageWriter<GameKeyPressed>,
 ) {
     let TerminalKeys { shift, held } = &mut *keys;
+    let calibration_on = is_calibrating(calibration.as_deref());
 
     for event in key_events.read() {
         if event.key.starts_with("Shift") {
@@ -59,8 +64,10 @@ fn handle_terminal_keys(
         }
         let Some(key) = ControlKey::from_key_name(&event.key) else { continue };
         if event.pressed {
-            actions.write(key.action(shift.contains(&event.client_id)));
-            if key.repeats() {
+            let route = key.route(shift.contains(&event.client_id), calibration_on);
+            send_key(route, event.client_id, &mut actions, &mut game_keys);
+            // Only calibration nudges repeat; a game sees one press per press
+            if matches!(route, KeyRoute::Calibration(_)) && key.repeats() {
                 held.insert((event.client_id, key), Timer::from_seconds(REPEAT_DELAY_SECS, TimerMode::Once));
             }
         } else {
@@ -73,10 +80,35 @@ fn handle_terminal_keys(
         held.retain(|(client_id, _), _| *client_id != lost.id);
     }
 
+    // Calibration switched off while an arrow is held: stop repeating it
+    if !calibration_on {
+        held.clear();
+    }
     for (&(client_id, key), timer) in held.iter_mut() {
         if timer.tick(time.delta()).just_finished() {
             actions.write(key.action(shift.contains(&client_id)));
             *timer = Timer::from_seconds(REPEAT_INTERVAL_SECS, TimerMode::Once);
+        }
+    }
+}
+
+/// Calibration counts as on when the state is missing (apps without calibration never route to games)
+fn is_calibrating(state: Option<&State<CalibrationState>>) -> bool {
+    state.is_none_or(|s| *s.get() == CalibrationState::On)
+}
+
+fn send_key(
+    route: KeyRoute,
+    client_id: u64,
+    actions: &mut MessageWriter<CalibrationAction>,
+    game_keys: &mut MessageWriter<GameKeyPressed>,
+) {
+    match route {
+        KeyRoute::Calibration(action) => {
+            actions.write(action);
+        }
+        KeyRoute::Game(key) => {
+            game_keys.write(GameKeyPressed { client_id, key });
         }
     }
 }
@@ -96,7 +128,9 @@ impl Plugin for ConsoleKeyboardPlugin {
         match ConsoleKeyboard::start() {
             Ok(keyboard) => {
                 info!("Console keyboard detected. {}  [Ctrl+C] quit", KEY_HELP);
-                app.insert_resource(keyboard).add_systems(PreUpdate, read_console_keys);
+                app.insert_resource(keyboard)
+                    .add_message::<GameKeyPressed>()
+                    .add_systems(PreUpdate, read_console_keys);
             }
             Err(e) => warn!("Console keyboard unavailable: {}", e),
         }
@@ -217,7 +251,9 @@ fn console_reader(sender: Sender<ConsoleInput>) {
 fn read_console_keys(
     keyboard: Res<ConsoleKeyboard>,
     scene_setup: Res<SceneSetup>,
+    calibration: Option<Res<State<CalibrationState>>>,
     mut actions: MessageWriter<CalibrationAction>,
+    mut game_keys: MessageWriter<GameKeyPressed>,
     mut mouse_positions: MessageWriter<MousePositionEvent>,
     mut mouse_buttons: MessageWriter<MouseButtonInputEvent>,
     mut exit: MessageWriter<AppExit>,
@@ -226,7 +262,8 @@ fn read_console_keys(
     for input in receiver.try_iter() {
         match input {
             ConsoleInput::Key(key, fine) => {
-                actions.write(key.action(fine));
+                let route = key.route(fine, is_calibrating(calibration.as_deref()));
+                send_key(route, CONSOLE_CLIENT_ID, &mut actions, &mut game_keys);
             }
             ConsoleInput::Mouse { at, button } => {
                 // The console window is the billboard

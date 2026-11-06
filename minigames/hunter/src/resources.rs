@@ -1,79 +1,82 @@
-use bevy::asset::uuid::Uuid;
 use bevy::prelude::*;
+
 use crate::types::HunterTarget;
-use serde::{Deserialize, Serialize};
 
-use crate::types::TargetEvent;
+/// A target the reticle can carry and release
+pub struct TargetPreset {
+    pub name: &'static str,
+    pub balloon: bool,
+    pub color: Color,
+    pub default_size: f32,
+}
 
-/// Resource tracking the reticle cursor mode and target selection
+pub const TARGET_PRESETS: [TargetPreset; 4] = [
+    TargetPreset { name: "Cyan Practice Circle", balloon: false, color: Color::srgb(0.0, 0.9, 1.0), default_size: 0.45 },
+    TargetPreset { name: "Yellow Rising Balloon", balloon: true, color: Color::srgb(1.0, 0.9, 0.1), default_size: 0.30 },
+    TargetPreset { name: "Magenta Fast Balloon", balloon: true, color: Color::srgb(1.0, 0.1, 0.9), default_size: 0.20 },
+    TargetPreset { name: "Green Medium Balloon", balloon: true, color: Color::srgb(0.1, 1.0, 0.3), default_size: 0.25 },
+];
+
+const SIZE_STEP: f32 = 0.05;
+const SIZE_RANGE: (f32, f32) = (0.10, 1.00);
+
+/// What the reticle does on trigger: shoot, or release the carried target preset
 #[derive(Resource, Debug, Clone)]
 pub struct HunterTargetSelection {
-    pub selected_index: usize, // 0 = GunShot Mode (Default), 1 = Cyan Static Big, 2 = Yellow Balloon, 3 = Magenta Balloon, 4 = Green Balloon
-    pub sizes: [f32; 5],
+    /// Index into [`TARGET_PRESETS`]; `None` is gun-shot mode
+    pub carried: Option<usize>,
+    /// Current radius of each preset, scene metres
+    pub sizes: [f32; TARGET_PRESETS.len()],
 }
 
 impl Default for HunterTargetSelection {
     fn default() -> Self {
         Self {
-            selected_index: 0,
-            sizes: [0.0, 0.45, 0.30, 0.20, 0.25],
+            carried: None,
+            sizes: TARGET_PRESETS.map(|p| p.default_size),
         }
     }
 }
 
 impl HunterTargetSelection {
-    pub fn get_target(&self) -> Option<HunterTarget> {
-        let size = self.sizes.get(self.selected_index).copied().unwrap_or(0.25);
-        match self.selected_index {
-            1 => Some(HunterTarget::Basic(size, Color::srgb(0.0, 0.9, 1.0))),  // Static Big: Cyan Large Practice Circle
-            2 => Some(HunterTarget::Baloon(size, Color::srgb(1.0, 0.9, 0.1))),  // Balloon 1: Yellow Rising Balloon
-            3 => Some(HunterTarget::Baloon(size, Color::srgb(1.0, 0.1, 0.9))),  // Balloon 2: Magenta Small Fast Balloon
-            4 => Some(HunterTarget::Baloon(size, Color::srgb(0.1, 1.0, 0.3))),  // Balloon 3: Green Medium Balloon
-            _ => None, // 0 = GunShot Mode
+    /// The carried target, at its current size
+    pub fn target(&self) -> Option<HunterTarget> {
+        let i = self.carried?;
+        let (preset, size) = (&TARGET_PRESETS[i], self.sizes[i]);
+        Some(if preset.balloon {
+            HunterTarget::Balloon(size, preset.color)
+        } else {
+            HunterTarget::Basic(size, preset.color)
+        })
+    }
+
+    pub fn name(&self) -> String {
+        match self.carried {
+            Some(i) => format!("{} ({:.2}m)", TARGET_PRESETS[i].name, self.sizes[i]),
+            None => "Gun Shot Mode".to_string(),
         }
     }
 
-    pub fn target_name(&self) -> String {
-        let size = self.sizes.get(self.selected_index).copied().unwrap_or(0.25);
-        match self.selected_index {
-            0 => "Gun Shot Mode".to_string(),
-            1 => format!("Cyan Practice Circle ({:.2}m)", size),
-            2 => format!("Yellow Rising Balloon ({:.2}m)", size),
-            3 => format!("Magenta Fast Balloon ({:.2}m)", size),
-            4 => format!("Green Medium Balloon ({:.2}m)", size),
-            _ => "Gun Shot Mode".to_string(),
-        }
-    }
-
+    /// Gun shot → each preset → gun shot
     pub fn cycle(&mut self) {
-        self.selected_index = (self.selected_index + 1) % 5;
+        self.carried = match self.carried {
+            None => Some(0),
+            Some(i) if i + 1 < TARGET_PRESETS.len() => Some(i + 1),
+            Some(_) => None,
+        };
     }
 
-    pub fn reset_to_gunshot(&mut self) {
-        self.selected_index = 0;
+    /// Takes the carried target, back to gun-shot mode
+    pub fn release(&mut self) -> Option<HunterTarget> {
+        let target = self.target();
+        self.carried = None;
+        target
     }
 
-    pub fn increase_size(&mut self) {
-        if self.selected_index > 0 && self.selected_index < 5 {
-            self.sizes[self.selected_index] = (self.sizes[self.selected_index] + 0.05).min(1.00);
+    /// Grows (+1) or shrinks (−1) the carried preset by one step
+    pub fn resize(&mut self, steps: f32) {
+        if let Some(i) = self.carried {
+            self.sizes[i] = (self.sizes[i] + steps * SIZE_STEP).clamp(SIZE_RANGE.0, SIZE_RANGE.1);
         }
     }
-
-    pub fn decrease_size(&mut self) {
-        if self.selected_index > 0 && self.selected_index < 5 {
-            self.sizes[self.selected_index] = (self.sizes[self.selected_index] - 0.05).max(0.10);
-        }
-    }
-}
-
-/// Resource for tracking game statistics
-#[derive(Component, Resource, Debug, Clone, Serialize, Deserialize, Default)]
-pub struct HunterGameStats {
-    pub session_id: Uuid,
-    pub targets_spawned: u32,
-    pub targets_popped: u32,
-    pub misses: u32,
-    pub score: u32,
-    pub target_events: Vec<TargetEvent>,
-    pub game_start_time: f64,
 }

@@ -9,12 +9,15 @@
 //! | S            | next centre shape                    |
 //! | Space        | next calibration mode                |
 //! | Arrows       | adjust (hold Shift for fine steps)   |
+//!
+//! C/F3 and L/F1 always work. S, Space and the arrows belong to calibration only while it is on;
+//! with calibration off they go to the running game as [`GameKeyPressed`] (see [`ControlKey::route`]).
 
 use crate::scene::SceneSetup;
 use bevy::prelude::*;
 
 pub const KEY_HELP: &str =
-    "Keys: [C]/[F3] calibration overlays  [L]/[F1] laser on/off  [S] next shape  [Space] next mode  [Arrows] adjust ([Shift] fine)";
+    "Keys: [C]/[F3] calibration overlays  [L]/[F1] laser on/off  [S] next shape  [Space] next mode  [Arrows] adjust ([Shift] fine); with calibration off S/Space/Arrows go to the game";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ControlKey {
@@ -64,6 +67,43 @@ impl ControlKey {
     pub fn repeats(self) -> bool {
         matches!(self, Self::Up | Self::Down | Self::Left | Self::Right)
     }
+
+    /// Who a press is for. The calibration and laser toggles always go to calibration, so it can
+    /// be switched on from a game; every other key adjusts calibration only while it is on.
+    pub fn route(self, fine: bool, calibration_on: bool) -> KeyRoute {
+        match self {
+            Self::Laser | Self::Calibration => KeyRoute::Calibration(self.action(fine)),
+            _ if calibration_on => KeyRoute::Calibration(self.action(fine)),
+            _ => KeyRoute::Game(self),
+        }
+    }
+
+    /// Unit grid direction of an arrow key
+    pub fn direction(self) -> Option<IVec2> {
+        match self {
+            Self::Up => Some(IVec2::Y),
+            Self::Down => Some(IVec2::NEG_Y),
+            Self::Left => Some(IVec2::NEG_X),
+            Self::Right => Some(IVec2::X),
+            _ => None,
+        }
+    }
+}
+
+/// Where [`ControlKey::route`] sends a key press
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum KeyRoute {
+    Calibration(CalibrationAction),
+    Game(ControlKey),
+}
+
+/// A key press for the running game (calibration is off). Raised by the server for keys from
+/// terminals and from its own console alike, so games never parse raw key names.
+#[derive(Message, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GameKeyPressed {
+    /// Terminal connection id, or the console's id for keys pressed on the server
+    pub client_id: u64,
+    pub key: ControlKey,
 }
 
 /// Calibration commands shared by every input source (local console, terminal keys, later the gamepad).
@@ -243,6 +283,18 @@ mod tests {
         let before = setup.clone();
         assert!(!nudge(CalibrationMode::SceneSize, IVec2::X, false, &mut setup));
         assert_eq!(setup, before);
+    }
+
+    #[test]
+    fn keys_go_to_the_game_unless_calibrating_but_toggles_always_calibrate() {
+        use ControlKey::*;
+        for key in [Up, Down, Left, Right, Space, Shape] {
+            assert_eq!(key.route(false, true), KeyRoute::Calibration(key.action(false)), "{key:?}");
+            assert_eq!(key.route(false, false), KeyRoute::Game(key), "{key:?}");
+        }
+        for key in [Laser, Calibration] {
+            assert_eq!(key.route(false, false), KeyRoute::Calibration(key.action(false)), "{key:?}");
+        }
     }
 
     #[test]

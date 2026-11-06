@@ -66,6 +66,29 @@ pub const ALL_BTNS: [Btn; 16] = [
     Btn::LeftThumb, Btn::RightThumb,
 ];
 
+/// Toggles calibration on and off, whatever else is running
+pub const CALIBRATION_TOGGLE: Btn = Btn::North;
+
+/// Buttons the gamepad calibration controls use while calibration is on (server-core
+/// `gamepad_calibration_controls`): Select switches rig/billboard, South and LeftThumb set the
+/// speed, RightBumper/RightTrigger/RightThumb hold "move the middle", the D-pad steps.
+/// Keep this in step with those controls.
+pub const CALIBRATION_BUTTONS: [Btn; 10] = [
+    Btn::Select,
+    Btn::South, Btn::LeftThumb,
+    Btn::RightBumper, Btn::RightTrigger, Btn::RightThumb,
+    Btn::DPadUp, Btn::DPadDown, Btn::DPadLeft, Btn::DPadRight,
+];
+
+impl Btn {
+    /// Whether a game may act on this button: never on the calibration toggle, and not on the
+    /// buttons calibration uses while it is on. Every other button stays with the game, so
+    /// play (and its audit log) goes on while calibrating.
+    pub fn is_for_game(self, calibrating: bool) -> bool {
+        self != CALIBRATION_TOGGLE && !(calibrating && CALIBRATION_BUTTONS.contains(&self))
+    }
+}
+
 /// Event emitted when a gamepad button is pressed or released.
 #[derive(bevy::prelude::Message, Clone, Copy, Debug, PartialEq, Eq)]
 pub struct GamepadButtonEvent {
@@ -328,6 +351,23 @@ fn emit_gamepad_button_events(
                 button,
                 pressed: cur,
             });
+        }
+    }
+}
+
+#[cfg(test)]
+mod routing_tests {
+    use super::*;
+
+    #[test]
+    fn games_keep_buttons_calibration_does_not_use() {
+        assert!(!CALIBRATION_TOGGLE.is_for_game(false));
+        for btn in ALL_BTNS.into_iter().filter(|b| *b != CALIBRATION_TOGGLE) {
+            assert!(btn.is_for_game(false), "{btn:?} is the game's with calibration off");
+            assert_eq!(btn.is_for_game(true), !CALIBRATION_BUTTONS.contains(&btn), "{btn:?}");
+        }
+        for btn in [Btn::East, Btn::West, Btn::LeftBumper, Btn::LeftTrigger, Btn::Start] {
+            assert!(btn.is_for_game(true), "{btn:?} stays with the game while calibrating");
         }
     }
 }

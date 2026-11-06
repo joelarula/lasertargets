@@ -29,3 +29,7 @@ reactions:
   # A gem was eaten, so this gem has just moved to a new cell: draw it on again there.
   snake.gem_eaten:
     - envelope: { name: appear, decay_ms: 300 }
+
+  # Next round: the gem has moved to a new cell for it, so draw it on again there too.
+  snake.restart:
+    - envelope: { name: appear, decay_ms: 300 }

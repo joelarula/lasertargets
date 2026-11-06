@@ -1,27 +1,26 @@
 use bevy::asset::uuid::Uuid;
 use bevy::math::Vec3;
 use bevy::prelude::*;
-use crate::types::HunterTarget;
 use serde::{Deserialize, Serialize};
 
-/// Event for click detection from client (used by server)
+use crate::audit::{HunterTally, ShotSource};
+use crate::types::HunterTarget;
+
+/// A shot at a world position (server)
 #[derive(Message, Debug, Clone, Serialize, Deserialize)]
 pub struct HunterClickEvent {
-    pub session_id: Uuid,
+    pub source: ShotSource,
     pub click_position: Vec3,
 }
 
-/// Event to broadcast stats update (raised by server, sent by network plugin)
-#[derive(Message, Debug, Clone, Serialize, Deserialize)]
+/// Running totals, sent to terminals whenever they change
+#[derive(Message, Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct BroadcastStatsUpdateEvent {
     pub session_id: Uuid,
-    pub targets_spawned: u32,
-    pub targets_popped: u32,
-    pub misses: u32,
-    pub score: u32,
+    pub tally: HunterTally,
 }
 
-/// Event for spawning hunter targets (server-only)
+/// Request to place a target at a world position (from input, the workflow or a terminal)
 #[derive(Message, Debug, Clone, Serialize, Deserialize)]
 pub struct SpawnHunterTargetEvent {
     pub target: HunterTarget,

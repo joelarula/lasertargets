@@ -14,6 +14,10 @@ reactions:
   snake.gem_eaten:
     - envelope: { name: gulp, attack_ms: 30, decay_ms: 250 }
 
-  # Game over: self.dead rises to 1 over 0.6 s and stays there until the game resets.
+  # Game over: self.dead rises to 1 over 0.6 s and stays there until the next round starts.
   snake.game_over:
     - envelope: { name: dead, attack_ms: 600, hold_ms: 60000, decay_ms: 0 }
+
+  # Next round: self.dead drops straight back to 0, so the head is bright again.
+  snake.restart:
+    - envelope: { name: dead, peak: 0.0, decay_ms: 0 }
